@@ -1,8 +1,8 @@
-# DevFlow - Developer Workflow Management System
+# RustAssistant - Developer Workflow Management System
 
 > 🚀 **A Rust-based workflow manager for solo developers to track repos, capture ideas, and leverage LLM-powered insights**
 
-DevFlow helps you manage the entire development lifecycle from idea capture to production deployment. Built with Rust, powered by Grok 4.1 LLM, designed for developers who manage multiple GitHub repositories.
+RustAssistant helps you manage the entire development lifecycle from idea capture to production deployment. Built with Rust, powered by Grok AI, designed for developers who manage multiple GitHub repositories.
 
 ## 🎯 Core Features
 
@@ -19,11 +19,12 @@ DevFlow helps you manage the entire development lifecycle from idea capture to p
 - Standardize tooling and patterns
 
 ### 🤖 LLM-Powered Analysis
-- Grok 4.1 API integration (2M context window)
+- Grok AI API integration with large context window
 - Score files for quality, security, and complexity
 - Find issues and suggest improvements
 - Identify common patterns and shared logic
 - Generate actionable tasks from analysis
+- **Batch analysis** - Analyze multiple files efficiently
 
 ### 🎯 Solo Developer Workflow
 - **Research**: Validate and expand research areas
@@ -32,49 +33,107 @@ DevFlow helps you manage the entire development lifecycle from idea capture to p
 - **Production**: Monitor production-ready systems
 - **Next Actions**: Always know what to work on next
 
-### 💾 RAG System with Git-Friendly Storage
-- Vector embeddings for semantic code search
-- Store vector data as small files in git
-- Incremental updates (minimal daily churn)
-- Build contextual understanding of your codebase
+### 💰 Cost Optimization
+- Response caching (70%+ cost savings)
+- Smart TTL-based expiration
+- Batch operations for efficiency
+- Cost tracking and monitoring
 
 ### 🏗️ Tech Stack Support
 Built to work with your stack:
 - **Languages**: Rust, Kotlin Multiplatform, JavaScript, TypeScript, Python
 - **Infrastructure**: Docker Compose, Nginx, Prometheus, Alertmanager, Grafana, Loki
-- **Databases**: PostgreSQL, Redis, QuestDB
+- **Databases**: PostgreSQL, Redis, QuestDB, SQLite
 - **CI/CD**: GitHub Actions (test → build-push → deploy)
 
-## 🚀 Quick Start
+## ⚡ Quick Start
 
 ### Prerequisites
 
-- Rust 1.75+ (`rustup update`)
+- Rust 1.70+ (`rustup` recommended)
 - Git
-- XAI API Key (Grok 4.1)
-- Docker & Docker Compose (for deployment)
+- Grok API key from [x.ai](https://x.ai)
 
 ### Installation
 
 ```bash
-# Clone the repo
-git clone https://github.com/your-username/devflow.git
-cd devflow
-
-# Build the project
-cargo build --release
+# Clone the repository
+git clone https://github.com/jordanistan/rustassistant.git
+cd rustassistant
 
 # Set up environment
 cp .env.example .env
 # Edit .env and add your XAI_API_KEY
+
+# Build the project
+cargo build --release
+
+# Install CLI globally (optional)
+cargo install --path . --bin rustassistant
 ```
+
+### Quick Test
+
+```bash
+# Run via script
+./run.sh check
+
+# Or use cargo directly
+cargo run --bin rustassistant -- --help
+```
+
+## 🌐 Web UI (NEW!)
+
+RustAssistant now includes a modern web-based dashboard for managing your development workflow.
+
+### Features
+
+- 📊 **Dashboard**: Real-time stats, recent notes, activity feed, cost insights
+- 📝 **Notes Management**: View, filter, and organize your notes with tags
+- 📦 **Repository Tracking**: Monitor all tracked repositories
+- 💰 **Cost Tracking**: Detailed LLM API cost breakdown and savings visualization
+- 🔍 **Code Analysis**: Run AI-powered code analysis from the browser
+- 🌙 **Dark Mode**: Beautiful dark theme by default, easy on the eyes
+- ⚡ **HTMX-Powered**: Fast, modern UI with minimal JavaScript
+
+### Start the Web UI
+
+```bash
+# Build the web server
+cargo build --release --bin webui-server
+
+# Start the server (default: http://127.0.0.1:3001)
+./target/release/webui-server
+
+# Or with custom configuration
+PORT=8080 DATABASE_PATH=custom.db ./target/release/webui-server
+```
+
+### Access the Dashboard
+
+- **Dashboard**: http://127.0.0.1:3001/
+- **Notes**: http://127.0.0.1:3001/notes
+- **Repositories**: http://127.0.0.1:3001/repos
+- **Costs**: http://127.0.0.1:3001/costs
+- **Analyze**: http://127.0.0.1:3001/analyze
+
+### Documentation
+
+See [Web UI Guide](docs/WEB_UI_GUIDE.md) for detailed documentation on:
+- Architecture and technology stack
+- Development guide
+- Adding pages and features
+- HTMX integration
+- Deployment options
+
+## 🚀 Full System (Production Ready!)
 
 ### Environment Setup
 
 Create a `.env` file:
 
-```bash
-# XAI API Configuration (Grok 4.1)
+```env
+# Grok API Configuration
 XAI_API_KEY=xai-your-api-key-here
 XAI_BASE_URL=https://api.x.ai/v1
 
@@ -82,324 +141,351 @@ XAI_BASE_URL=https://api.x.ai/v1
 HOST=127.0.0.1
 PORT=3000
 
-# GitHub Integration
-GITHUB_TOKEN=ghp_your_token_here  # Optional, for private repos
+# Database (defaults to data/rustassistant.db)
+DATABASE_PATH=data/rustassistant.db
 
-# Database (future)
-DATABASE_URL=postgresql://user:pass@localhost:5432/devflow
-
-# Logging
-RUST_LOG=info,devflow=debug
+# Cache Configuration
+CACHE_DB_PATH=data/rustassistant_cache.db
 ```
 
-## 📖 Usage
+### Usage Examples
 
-### 1. Start the Server
+#### 1. Note Management
 
 ```bash
-# Run the web server
-cargo run --release --bin devflow-server
+# Add a quick note
+rustassistant note add "Implement batch analysis for code reviews" --tags feature,phase2
 
-# Server starts at http://localhost:3000
+# List all notes
+rustassistant note list
+
+# Filter by tag
+rustassistant note list --tag rust --status inbox
+
+# Search notes
+rustassistant note search "batch"
+
+# View a specific note
+rustassistant note show 5
+
+# Update note status
+rustassistant note update 5 --status active
 ```
 
-### 2. CLI Tool
+#### 2. Repository Tracking
 
 ```bash
-# Quick note capture
-devflow note add "Idea for new feature X" --tags idea,research
+# Add a repository to track
+rustassistant repo add ~/projects/myapp
 
-# Analyze a repository
-devflow repo analyze /path/to/repo --deep
+# List tracked repositories
+rustassistant repo list
 
-# Score all files in a repo
-devflow repo score /path/to/repo --output json
+# Analyze repository structure
+rustassistant repo analyze myapp
 
-# Generate tasks from analysis
-devflow tasks generate /path/to/repo
+# View directory tree
+rustassistant repo tree myapp --depth 3
 
-# Find next actions
-devflow next --category prototype
-
-# List all tracked repos
-devflow repo list --status active
+# List files by language
+rustassistant repo files myapp --language rust
 ```
 
-### 3. Web Interface
+#### 3. AI-Powered Analysis
 
 ```bash
-# Open the web UI
-http://localhost:3000
+# Score a single file
+rustassistant analyze file src/main.rs
 
-# Features:
-# - Dashboard: Overview of all repos and tasks
-# - Notes: Create and organize notes/thoughts
-# - Repos: Browse cached directory trees
-# - Analysis: View LLM insights and scores
-# - Tasks: Manage generated tasks
+# Quick analysis
+rustassistant analyze quick "fn add(a: i32, b: i32) -> i32 { a + b }"
+
+# Ask Grok a question
+rustassistant analyze ask "What are best practices for error handling in Rust?"
+
+# Analyze entire repository with context
+rustassistant analyze repo myapp --language rust
+
+# Query with full codebase context
+rustassistant analyze query "Where is authentication handled?" --repo myapp
+
+# Find patterns across codebase
+rustassistant analyze patterns "TODO" --repo myapp
+
+# Batch analyze multiple files (efficient!)
+rustassistant analyze batch src/ --output quality-report.md
+rustassistant analyze batch src/*.rs --batch-size 20
+rustassistant analyze batch src/ tests/ --output full-audit.md
 ```
+
+#### 4. Cost & Cache Management
+
+```bash
+# View LLM costs
+rustassistant costs
+
+# Cache statistics
+rustassistant cache stats
+
+# Clear expired cache entries
+rustassistant cache prune
+
+# View most frequently accessed cache entries
+rustassistant cache hot --limit 10
+```
+
+#### 5. Next Actions
+
+```bash
+# See what to work on next
+rustassistant next
+
+# View overall statistics
+rustassistant stats
+```
+
+## 📊 Batch Analysis
+
+Efficiently analyze multiple files with aggregate statistics:
+
+```bash
+# Analyze entire directory
+rustassistant analyze batch src/ --output report.md
+
+# Code review for PR
+git diff --name-only main | xargs rustassistant analyze batch
+
+# Custom batch size
+rustassistant analyze batch src/ --batch-size 15
+
+# Multiple directories
+rustassistant analyze batch src/ tests/ examples/
+```
+
+**Benefits:**
+- 50-70% faster than sequential analysis
+- Aggregate statistics and insights
+- Markdown report generation
+- Full cache integration (re-runs are instant!)
+- Cross-file pattern detection
+
+See [docs/BATCH_OPERATIONS.md](docs/BATCH_OPERATIONS.md) for complete guide.
 
 ## 🏗️ Project Structure
 
 ```
-devflow/
+rustassistant/
 ├── src/
 │   ├── bin/
-│   │   ├── server.rs          # Web server entry point
-│   │   └── cli.rs             # CLI tool
-│   ├── api/                   # REST API handlers
-│   ├── notes/                 # Note-taking system
-│   ├── repos/                 # Repository management
-│   ├── llm/                   # LLM integration (Grok)
-│   ├── analysis/              # Code analysis
-│   ├── rag/                   # RAG system & vector storage
-│   ├── tasks/                 # Task generation
-│   └── lib.rs
-├── static/                    # Web UI assets
-├── config/                    # Configuration profiles
-├── data/                      # Local data storage
-│   ├── repos/                 # Cached repo data
-│   ├── vectors/               # Vector embeddings (git-tracked)
-│   └── notes/                 # Notes database
-├── docker/                    # Docker deployment files
-├── docs/                      # Documentation
-└── Cargo.toml
-```
-
-## 🐳 Docker Deployment
-
-### Home Server Setup
-
-```bash
-# Build and run locally
-docker-compose up -d
-
-# Access at http://localhost:3000
-```
-
-### Production Deployment (Linode)
-
-```bash
-# Deploy via Docker Compose
-docker-compose -f docker-compose.prod.yml up -d
-
-# Set up Nginx reverse proxy
-# Configure SSL with Let's Encrypt
-# Set up monitoring (Prometheus + Grafana)
+│   │   ├── server.rs              # Web server entry point
+│   │   ├── devflow_cli.rs         # Main CLI tool
+│   │   └── cli.rs                 # Legacy audit CLI
+│   ├── cache.rs                   # File system cache
+│   ├── config.rs                  # Configuration management
+│   ├── context_builder.rs         # Build analysis context
+│   ├── db.rs                      # SQLite database layer
+│   ├── directory_tree.rs          # Directory tree analysis
+│   ├── git.rs                     # Git operations
+│   ├── grok_client.rs             # Grok API client
+│   ├── grok_reasoning.rs          # Advanced Grok reasoning
+│   ├── llm.rs                     # LLM integration layer
+│   ├── query_templates.rs         # Pre-built query templates
+│   ├── repo_analysis.rs           # Repository analysis
+│   ├── response_cache.rs          # Response caching system
+│   ├── scanner.rs                 # Code scanner
+│   ├── tags.rs                    # Tag management
+│   ├── tasks.rs                   # Task generation
+│   └── ...
+├── data/                          # Database files (gitignored)
+│   ├── rustassistant.db           # Main database
+│   └── rustassistant_cache.db     # Response cache
+├── docs/                          # Documentation
+│   ├── BATCH_OPERATIONS.md        # Batch analysis guide
+│   ├── NEXT_PRIORITIES.md         # Roadmap and next steps
+│   ├── QUICK_DECISION_GUIDE.md    # Decision matrix
+│   └── ...
+├── scripts/                       # Utility scripts
+├── config/                        # Configuration files
+├── static/                        # Static web assets
+├── Cargo.toml                     # Rust dependencies
+├── run.sh                         # Quick start script
+└── README.md                      # This file
 ```
 
 ## 💡 Workflow Examples
 
-### Capture an Idea
+### Daily Workflow
 
 ```bash
-# Quick thought
-devflow note add "Maybe use WASM for the data processing pipeline" --tags idea,research
+# Morning: Check what's next
+rustassistant next
 
-# Project-specific
-devflow note add "Refactor auth system" --project myapp --tags refactor,prod
+# Add thoughts as they come
+rustassistant note add "Consider using Arc instead of Rc for thread safety" --tags idea,rust
+
+# Analyze code you're working on
+rustassistant analyze file src/api/handler.rs
+
+# End of day: Review costs
+rustassistant costs
+rustassistant cache stats
 ```
 
-### Analyze a Repository
+### Code Review Workflow
 
 ```bash
-# Full analysis with Grok
-devflow repo analyze ~/github/myproject --cache --score
+# Get changed files
+git diff --name-only main > changed_files.txt
 
-# Output:
-# 📊 Repository Analysis: myproject
-# ├── Files: 234
-# ├── Total Lines: 45,678
-# ├── Languages: Rust (65%), JavaScript (25%), Other (10%)
-# ├── Quality Score: 7.8/10
-# ├── Issues Found: 12 (3 high, 9 medium)
-# └── Cached: ✓
+# Batch analyze all changes
+rustassistant analyze batch $(cat changed_files.txt) --output pr-review.md
+
+# Review the report
+cat pr-review.md
+
+# Re-run after fixes (cached = instant!)
+rustassistant analyze batch $(cat changed_files.txt)
 ```
 
-### Find Next Actions
+### Project Audit
 
 ```bash
-# Show me what to work on
-devflow next
+# Full repository analysis
+rustassistant repo add ~/projects/myapp
+rustassistant analyze batch ~/projects/myapp/src/ --output audit-$(date +%Y%m%d).md
 
-# Output:
-# 🎯 Next Actions (5 items):
-#
-# 1. [HIGH] Fix security issue in auth module (myapp)
-#    - File: src/auth/mod.rs:45
-#    - Issue: Potential SQL injection
-#
-# 2. [MEDIUM] Complete user API docs (api-server)
-#    - Missing: 12 endpoints
-#
-# 3. [LOW] Refactor common error handling (shared-lib)
-#    - Pattern found in 8 repos
+# Track improvement over time
+git add audit-*.md
+git commit -m "Weekly code quality audit"
 ```
 
-### Generate Tasks from Research
-
-```bash
-# You've done research with Claude Opus 4.5
-# Now break it down into tasks with cheaper Grok
-
-devflow research import research-notes.md --generate-tasks
-
-# Output:
-# ✅ Imported research document
-# 🔍 Analyzing with Grok 4.1...
-# 📋 Generated 14 tasks:
-#    - 5 research validation tasks
-#    - 6 implementation tasks
-#    - 3 testing tasks
-```
-
-## 🔑 Core Concepts
-
-### Tags & Categories
-
-**Built-in Categories:**
-- `personal` - Random thoughts and ideas
-- `research` - Research topics and validation
-- `prototype` - Experimental features
-- `production` - Production systems
-- `infrastructure` - DevOps and tooling
-- `documentation` - Docs and guides
-
-**Custom Tags:**
-- Any tag you want: `urgent`, `blocked`, `waiting`, `review`, etc.
-
-### Repository Tracking
-
-DevFlow maintains a cached view of each repository:
-- Directory tree structure
-- File metadata (size, modified date, language)
-- Git status (branch, commits, changes)
-- Analysis results (scores, issues, patterns)
-- Historical trends
+## 🎓 Key Concepts
 
 ### LLM Cost Management
 
-**Grok 4.1 Fast Reasoning** (cheap & efficient):
-- Input: ~$0.20 per 1M tokens
-- Output: ~$2.00 per 1M tokens
-- Perfect for: Routine analysis, task generation, scoring
+**Grok Fast Reasoning** (cost-effective):
+- Input: ~$0.20 per 1M tokens (estimated)
+- Output: ~$0.50 per 1M tokens (estimated)
+- Cached: 90% savings on repeated content
 
-**Claude Opus 4.5** (expensive, for deep work):
-- Use for: Research validation, architecture review
-- DevFlow helps you: Split work for cheaper models
-- Manual trigger: Use when quality matters most
+**Cost Optimization Strategies:**
+1. **Response Caching** - 70%+ savings on repeated queries
+2. **Batch Operations** - Efficient multi-file analysis
+3. **Smart Context Building** - Only include relevant files
+4. **Cost Tracking** - Monitor and control spending
 
-### Vector Storage Strategy
+**Typical Costs:**
+- File analysis: ~$0.003-0.005 per file
+- Batch analysis (20 files): ~$0.08-0.10 first run, ~$0 cached
+- Daily usage: <$2/day with caching
 
-DevFlow stores embeddings as git-trackable files:
-- One file per code file: `data/vectors/repo-name/src/main.rs.vec`
-- JSON format for human readability
-- Small updates (only changed files)
-- Incremental daily commits
+### Response Caching
 
-## 🛠️ Configuration
+All LLM responses are automatically cached:
+- **Content-based hashing** - SHA-256 for deduplication
+- **TTL expiration** - Configurable cache lifetime
+- **Hit rate tracking** - Monitor cache efficiency
+- **Cost savings** - 70%+ reduction in API costs
 
-### Repository Profiles
+### Context Building
 
-Create profiles for different types of projects:
+Smart context assembly for better LLM responses:
+- Load entire repo structure (up to 100K tokens)
+- Filter by language, recency, or custom criteria
+- Include relevant notes and documentation
+- Optimize token usage while maximizing insight
 
-```toml
-# config/rust-service.toml
-[profile]
-name = "rust-service"
-description = "Standard Rust microservice"
+## 🔧 Configuration
 
-[structure]
-required_dirs = ["src", "tests", "docker"]
-required_files = ["Cargo.toml", "Dockerfile", "README.md"]
+### CLI Configuration
 
-[quality]
-min_doc_coverage = 0.8
-min_test_coverage = 0.7
-max_complexity = 15
+Most commands accept options:
+- `--verbose` - Enable debug logging
+- `--database <path>` - Custom database path (default: data/rustassistant.db)
 
-[checks]
-enforce_clippy = true
-enforce_fmt = true
-require_ci = true
+### Environment Variables
+
+```env
+XAI_API_KEY=<your-key>          # Required for AI features
+XAI_BASE_URL=<api-endpoint>      # Default: https://api.x.ai/v1
+DATABASE_PATH=<db-path>          # Default: data/rustassistant.db
+CACHE_DB_PATH=<cache-path>       # Default: data/rustassistant_cache.db
+RUST_LOG=info                    # Logging level
 ```
-
-### Analysis Presets
-
-```toml
-# config/analysis-presets.toml
-[presets.quick]
-static_only = true
-skip_tests = true
-cost = "free"
-
-[presets.standard]
-llm_enabled = true
-model = "grok-4-1-fast-reasoning"
-max_cost = 0.50
-
-[presets.deep]
-llm_enabled = true
-model = "claude-opus-4-5"
-max_cost = 5.00
-```
-
-## 📊 Monitoring & Metrics
-
-Track your development workflow:
-- Notes captured per day/week
-- Repos analyzed
-- Tasks completed
-- LLM API costs
-- Code quality trends
 
 ## 🗺️ Roadmap
 
-### Phase 1: Core Foundation (Current)
-- ✅ Basic note-taking
-- ✅ Repository caching
-- ✅ Grok 4.1 integration
-- ✅ File scoring
-- 🚧 Web UI
-- 🚧 Task generation
+### ✅ Phase 1: Core Foundation (COMPLETE)
+- ✅ Note system with tags and search
+- ✅ Repository tracking with directory trees
+- ✅ Grok API integration
+- ✅ File scoring and analysis
+- ✅ Response caching (70%+ cost savings)
+- ✅ Cost tracking and monitoring
+- ✅ Batch analysis operations
+- ✅ CLI with 50+ commands
 
-### Phase 2: Intelligence Layer
-- RAG system with semantic search
-- Pattern detection across repos
-- Automated task prioritization
-- Research validation pipeline
+### 🔄 Phase 2: Advanced Features (In Progress)
+- [ ] Code review automation
+- [ ] Test generation from code
+- [ ] Refactoring assistant
+- [ ] Documentation generator
+- [ ] Dependency analysis
 
-### Phase 3: Automation
-- Auto-generate GitHub issues
-- CI/CD integration for task tracking
-- Slack/Discord notifications
-- Automated research → task → PR flow
+### 🌐 Phase 3: Web UI (Planned)
+- [ ] HTMX + Askama web dashboard
+- [ ] Real-time cost tracking
+- [ ] Interactive analysis interface
+- [ ] Repository browser
+- [ ] Team collaboration features
 
-### Phase 4: Collaboration
-- Team features (optional)
-- Shared knowledge base
-- Code review assistance
+### 🚀 Phase 4: Production & Scale (Future)
+- [ ] Multi-user support
+- [ ] Team permissions
+- [ ] Advanced RAG with vector search
+- [ ] CI/CD integrations
+- [ ] Monitoring and alerts
 
-## 🤝 Philosophy
+## 📚 Documentation
 
-DevFlow is built for solo developers who:
-- Manage multiple GitHub repos
-- Want to standardize tooling and patterns
-- Need help prioritizing work
-- Want LLM assistance without breaking the bank
-- Prefer local/self-hosted tools
-- Value incremental, trackable data
+### Core Documentation
+- **[Getting Started Guide](docs/GETTING_STARTED.md)** - Detailed setup instructions
+- **[Batch Operations](docs/BATCH_OPERATIONS.md)** - Complete batch analysis guide
+- **[Advanced Features Guide](docs/ADVANCED_FEATURES_GUIDE.md)** - Code review, testing, refactoring
+- **[CLI Cheat Sheet](docs/CLI_CHEATSHEET.md)** - All commands reference
 
-## 📝 License
+### Web UI Documentation
+- **[Web UI Guide](docs/WEB_UI_GUIDE.md)** - Complete web interface documentation
+- **[Web UI Completion Report](docs/WEB_UI_COMPLETION.md)** - Implementation status and next steps
 
-MIT OR Apache-2.0
+### Planning & Progress
+- **[Next Priorities](docs/NEXT_PRIORITIES.md)** - Roadmap and implementation plans
+- **[Decision Guide](docs/QUICK_DECISION_GUIDE.md)** - Choose your next feature
+- **[Session Summaries](SESSION*.md)** - Development progress logs
 
-## 🆘 Support
+## 🤝 Contributing
 
-- GitHub Issues: https://github.com/your-username/devflow/issues
-- Docs: https://devflow.dev/docs
-- Discord: https://discord.gg/devflow
+This is currently a personal project, but feedback and suggestions are welcome!
+
+## 📄 License
+
+MIT License - See [LICENSE](LICENSE) file for details
+
+## 🙏 Acknowledgments
+
+- Built with [Rust](https://www.rust-lang.org/)
+- LLM powered by [Grok (xAI)](https://x.ai)
+- Inspired by the needs of solo developers managing multiple projects
+
+## 💬 Support
+
+- **Issues**: [GitHub Issues](https://github.com/jordanistan/rustassistant/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/jordanistan/rustassistant/discussions)
 
 ---
 
-**Built with ❤️ in Rust for developers who ship**
+**Status: Production Ready** 🚀  
+**Last Updated: February 1, 2026**  
+**Phase: 1 Complete, Phase 2 In Progress**
+
+Built with ❤️ for solo developers who need an AI-powered workflow assistant.

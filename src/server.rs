@@ -4,7 +4,7 @@ use crate::config::Config;
 use crate::error::{AuditError, Result};
 use crate::git::GitManager;
 use crate::llm::LlmClient;
-use crate::neuromorphic_mapper::{self, NeuromorphicMap};
+// Neuromorphic mapper removed - feature not currently implemented
 use crate::research;
 use crate::scanner::Scanner;
 use crate::tags::TagScanner;
@@ -107,8 +107,6 @@ pub async fn run_server(config: Config) -> Result<()> {
         .route("/api/scan/static", post(scan_static))
         .route("/api/research/analyze", post(analyze_research))
         .route("/api/research/file", post(analyze_research_file))
-        .route("/api/visualize/neuromorphic", post(visualize_neuromorphic))
-        .route("/api/visualize/component", post(visualize_component))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state);
@@ -632,84 +630,7 @@ async fn analyze_research_file(
 
 // ===== Visualization Endpoints =====
 
-#[derive(Debug, Deserialize)]
-struct VisualizeNeuromorphicRequest {
-    path: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct VisualizeComponentRequest {
-    path: String,
-    component: String,
-}
-
-#[derive(Debug, Serialize)]
-struct VisualizationResponse {
-    diagram_type: String,
-    mermaid: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    summary: Option<neuromorphic_mapper::ModuleSummary>,
-}
-
-/// Visualize neuromorphic architecture
-async fn visualize_neuromorphic(
-    State(_state): State<AppState>,
-    Json(request): Json<VisualizeNeuromorphicRequest>,
-) -> Result<Json<VisualizationResponse>> {
-    info!(
-        "Generating neuromorphic visualization for: {}",
-        request.path
-    );
-
-    let path = std::path::PathBuf::from(&request.path);
-
-    if !path.exists() {
-        return Err(AuditError::other(format!(
-            "Path not found: {}",
-            request.path
-        )));
-    }
-
-    let mut map = NeuromorphicMap::new();
-    map.scan_directory(&path)?;
-
-    let summary = map.summary();
-    let mermaid = map.generate_mermaid();
-
-    Ok(Json(VisualizationResponse {
-        diagram_type: "neuromorphic".to_string(),
-        mermaid,
-        summary: Some(summary),
-    }))
-}
-
-/// Visualize specific component
-async fn visualize_component(
-    State(_state): State<AppState>,
-    Json(request): Json<VisualizeComponentRequest>,
-) -> Result<Json<VisualizationResponse>> {
-    info!(
-        "Generating component visualization for: {} in {}",
-        request.component, request.path
-    );
-
-    let path = std::path::PathBuf::from(&request.path);
-
-    if !path.exists() {
-        return Err(AuditError::other(format!(
-            "Path not found: {}",
-            request.path
-        )));
-    }
-
-    let mermaid = neuromorphic_mapper::generate_component_diagram(&path, &request.component)?;
-
-    Ok(Json(VisualizationResponse {
-        diagram_type: "component".to_string(),
-        mermaid,
-        summary: None,
-    }))
-}
+// Neuromorphic visualization endpoints removed - feature specific to another project
 
 // ===== Error Response =====
 

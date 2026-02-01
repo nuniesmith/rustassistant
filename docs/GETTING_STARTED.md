@@ -1,10 +1,10 @@
-# Getting Started with DevFlow
+# Getting Started with Rustassistant
 
-Welcome to DevFlow! This guide will help you set up and start using DevFlow to manage your developer workflow.
+Welcome to Rustassistant! This guide will help you set up and start using Rustassistant to manage your developer workflow.
 
-## What is DevFlow?
+## What is Rustassistant?
 
-DevFlow is a Rust-based workflow management system designed for solo developers who:
+Rustassistant is a Rust-based workflow management system designed for solo developers who:
 - Manage multiple GitHub repositories
 - Want to track ideas, notes, and tasks
 - Need help prioritizing what to work on next
@@ -107,7 +107,7 @@ cargo run --bin devflow -- note list
 # Add a repository to track
 cargo run --bin devflow -- repo add ~/github/myproject
 
-# DevFlow will:
+# Rustassistant will:
 # - Scan the directory tree
 # - Detect languages and frameworks
 # - Cache file metadata
@@ -232,7 +232,7 @@ devflow repo analyze myproject --full-report
 # Find common patterns across all repos
 devflow patterns analyze --all
 
-# DevFlow uses LLM to identify:
+# Rustassistant uses LLM to identify:
 # - Repeated code patterns
 # - Common configurations
 # - Shared utilities that should be extracted
@@ -290,7 +290,7 @@ devflow repo analyze myproject --preset deep
 
 ## Cost Management
 
-DevFlow helps you manage LLM costs:
+Rustassistant helps you manage LLM costs:
 
 ```bash
 # Check current usage
@@ -299,7 +299,7 @@ devflow costs today
 # Set a daily budget
 devflow config set budget.daily 5.00
 
-# DevFlow will:
+# Rustassistant will:
 # - Warn when approaching 80% of budget
 # - Block requests when budget exceeded
 # - Suggest using cheaper models

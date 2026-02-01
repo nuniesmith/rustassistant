@@ -1,0 +1,177 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}Dashboard - Rustassistant{% endblock %}
+
+{% block content %}
+<div class="page-header mb-4">
+    <h1>Dashboard</h1>
+    <p class="text-muted">Welcome to Rustassistant - Your AI-powered development assistant</p>
+</div>
+
+<!-- Stats Overview -->
+<div class="grid grid-4 mb-4">
+    <div class="card stat-card">
+        <div class="stat-value">{{ stats.total_notes }}</div>
+        <div class="stat-label">Total Notes</div>
+    </div>
+    <div class="card stat-card">
+        <div class="stat-value">{{ stats.total_repos }}</div>
+        <div class="stat-label">Repositories</div>
+    </div>
+    <div class="card stat-card">
+        <div class="stat-value">${{ stats.total_cost }}</div>
+        <div class="stat-label">Total Cost</div>
+    </div>
+    <div class="card stat-card">
+        <div class="stat-value">{{ stats.cache_hit_rate }}%</div>
+        <div class="stat-label">Cache Hit Rate</div>
+    </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h2 class="card-title">Quick Actions</h2>
+    </div>
+    <div class="grid grid-4">
+        <a href="/notes/new" class="btn btn-primary">
+            📝 New Note
+        </a>
+        <a href="/analyze" class="btn btn-primary">
+            🔍 Analyze Code
+        </a>
+        <a href="/repos/new" class="btn btn-primary">
+            📦 Add Repository
+        </a>
+        <a href="/costs" class="btn btn-primary">
+            💰 View Costs
+        </a>
+    </div>
+</div>
+
+<!-- Two Column Layout -->
+<div class="grid grid-2">
+    <!-- Recent Notes -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">Recent Notes</h2>
+            <a href="/notes" class="btn btn-sm btn-secondary">View All</a>
+        </div>
+
+        {% if recent_notes.len() > 0 %}
+        <div class="notes-list">
+            {% for note in recent_notes %}
+            <div class="note-item" style="padding: 1rem; border-bottom: 1px solid var(--border);">
+                <div style="display: flex; justify-content: space-between; align-items: start;">
+                    <div style="flex: 1;">
+                        <p style="margin-bottom: 0.5rem;">{{ note.content }}</p>
+                        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                            {% for tag in note.tags %}
+                            <span class="badge badge-primary">{{ tag }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <span class="badge {% if note.status == "inbox" %}badge-warning{% else if note.status == "active" %}badge-primary{% else if note.status == "processed" %}badge-success{% else %}badge-secondary{% endif %}">
+                        {{ note.status }}
+                    </span>
+                </div>
+                <div class="text-muted" style="font-size: 0.75rem; margin-top: 0.5rem;">
+                    {{ note.created_at }}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center text-muted" style="padding: 2rem;">
+            <p>No notes yet. Create your first note to get started!</p>
+            <a href="/notes/new" class="btn btn-primary mt-2">Create Note</a>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Activity Feed -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">Recent Activity</h2>
+        </div>
+
+        {% if recent_activity.len() > 0 %}
+        <div class="activity-list">
+            {% for activity in recent_activity %}
+            <div style="padding: 1rem; border-bottom: 1px solid var(--border);">
+                <div style="display: flex; gap: 1rem;">
+                    <div style="font-size: 1.5rem;">
+                        {% if activity.activity_type == "analysis" %}🔍
+                        {% else if activity.activity_type == "note" %}📝
+                        {% else if activity.activity_type == "repo" %}📦
+                        {% else %}⚡
+                        {% endif %}
+                    </div>
+                    <div style="flex: 1;">
+                        <p style="margin-bottom: 0.25rem; font-weight: 500;">{{ activity.description }}</p>
+                        <div class="text-muted" style="font-size: 0.75rem;">{{ activity.timestamp }}</div>
+                    </div>
+                    {% if let Some(cost) = activity.cost %}
+                    <div class="text-muted" style="font-size: 0.75rem;">
+                        ${{ cost }}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center text-muted" style="padding: 2rem;">
+            <p>No recent activity</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Cost Trend (Last 7 Days) -->
+<div class="card mt-4">
+    <div class="card-header">
+        <h2 class="card-title">Cost Trend (Last 7 Days)</h2>
+        <a href="/costs" class="btn btn-sm btn-secondary">Detailed View</a>
+    </div>
+    <div style="padding: 1rem;">
+        <div class="grid grid-3">
+            <div class="stat-card">
+                <div class="stat-value" style="font-size: 1.5rem;">${{ stats.cost_today }}</div>
+                <div class="stat-label">Today</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" style="font-size: 1.5rem;">${{ stats.cost_7d }}</div>
+                <div class="stat-label">Last 7 Days</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" style="font-size: 1.5rem;">${{ stats.cost_30d }}</div>
+                <div class="stat-label">Last 30 Days</div>
+            </div>
+        </div>
+
+        {% if stats.cost_30d > 0.0 %}
+        <div class="alert alert-info mt-2">
+            💡 <strong>Tip:</strong> Your average daily cost is ${{ stats.avg_daily_cost() }}.
+            With a {{ stats.cache_hit_rate }}% cache hit rate, you're saving approximately ${{ stats.estimated_savings }}/month!
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Next Recommended Action -->
+{% if let Some(action) = next_action %}
+<div class="card mt-4">
+    <div class="card-header">
+        <h2 class="card-title">💡 Next Recommended Action</h2>
+    </div>
+    <div style="padding: 1rem;">
+        <p style="font-size: 1.125rem; margin-bottom: 1rem;">{{ action.description }}</p>
+        <div style="display: flex; gap: 0.5rem;">
+            <a href="{{ action.action_url }}" class="btn btn-primary">{{ action.action_text }}</a>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}

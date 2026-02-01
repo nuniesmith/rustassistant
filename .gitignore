@@ -1,1 +1,56 @@
-target
+# Rust build artifacts
+/target/
+**/*.rs.bk
+*.pdb
+
+# Cargo.lock for libraries (keep for binaries)
+# Cargo.lock
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+data/*.db
+data/*.db-*
+
+# Environment files
+.env
+.env.local
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS files
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Reports and generated files
+reports/
+workspace/
+tasks/
+
+# Test coverage
+*.profraw
+*.profdata
+coverage/
+
+# Documentation build artifacts
+book/
+target/doc/
+
+# Cache directories
+.cache/

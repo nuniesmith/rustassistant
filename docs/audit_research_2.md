@@ -1,6 +1,6 @@
-# Building a Rust RAG system with Grok 4.1 for DevFlow
+# Building a Rust RAG system with Grok 4.1 for Rustassistant
 
-**Grok 4.1's 2-million-token context window and $0.20/M input pricing fundamentally changes RAG architecture decisions.** For DevFlow tracking GitHub repos, notes, and project files, you can often skip complex chunking entirely and load entire file trees directly into context. The optimal MVP stack: LanceDB (embedded, no Docker needed) + fastembed-rs for local embeddings + async-openai configured for xAI. Total time to working prototype: a weekend.
+**Grok 4.1's 2-million-token context window and $0.20/M input pricing fundamentally changes RAG architecture decisions.** For Rustassistant tracking GitHub repos, notes, and project files, you can often skip complex chunking entirely and load entire file trees directly into context. The optimal MVP stack: LanceDB (embedded, no Docker needed) + fastembed-rs for local embeddings + async-openai configured for xAI. Total time to working prototype: a weekend.
 
 ## xAI has no embedding API—use fastembed-rs locally
 
@@ -62,7 +62,7 @@ The **2-million-token context** (verified in official docs) at **$0.20/M input**
 - All your notes and ideas: almost certainly fits  
 - House building project documents: probably fits
 
-For DevFlow's scale, you may not need sophisticated chunking at all. A "context stuffing" approach becomes viable:
+For Rustassistant's scale, you may not need sophisticated chunking at all. A "context stuffing" approach becomes viable:
 
 ```rust
 async fn query_with_full_context(
@@ -71,7 +71,7 @@ async fn query_with_full_context(
     notes: &str,
 ) -> Result<String> {
     let system_prompt = format!(
-        "You are DevFlow, a personal assistant with access to:\n\n\
+        "You are Rustassistant, a personal assistant with access to:\n\n\
         ## Repository Contents\n{}\n\n\
         ## Notes and Ideas\n{}\n\n\
         Answer questions using this context.",
@@ -109,13 +109,13 @@ let response = client.chat().create(request).await?;
 
 Streaming works identically via `client.chat().create_stream(request)`. For rate limit handling, xAI returns standard 429 errors with `x-rate-limit-reset` headers—use the `backoff` crate for exponential retry.
 
-## Practical RAG architecture for DevFlow
+## Practical RAG architecture for Rustassistant
 
-Given DevFlow's use case (GitHub repos, tagged notes, project documents), here's the recommended architecture:
+Given Rustassistant's use case (GitHub repos, tagged notes, project documents), here's the recommended architecture:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     DevFlow RAG System                       │
+│                     Rustassistant RAG System                       │
 ├─────────────────────────────────────────────────────────────┤
 │  Content Sources                                             │
 │  ├── GitHub repos (file trees, cached locally)              │
@@ -146,12 +146,12 @@ Given DevFlow's use case (GitHub repos, tagged notes, project documents), here's
 For hybrid search with tag filtering:
 
 ```rust
-struct DevFlowSearcher {
+struct RustassistantSearcher {
     vector_index: lancedb::Table,
     tag_index: HashMap<String, HashSet<DocumentId>>,
 }
 
-impl DevFlowSearcher {
+impl RustassistantSearcher {
     async fn search(&self, query: &str, tags: &[String], k: usize) -> Vec<Chunk> {
         let query_embedding = self.embed(query)?;
         
@@ -172,7 +172,7 @@ impl DevFlowSearcher {
 
 ## Git-friendly vector storage is partially achievable
 
-True git tracking of vectors faces challenges: embedding files are binary, large, and change frequently. However, several approaches work for DevFlow's scale:
+True git tracking of vectors faces challenges: embedding files are binary, large, and change frequently. However, several approaches work for Rustassistant's scale:
 
 **Option 1: LanceDB + Git LFS** (Recommended)
 Lance files version naturally. Add to `.gitattributes`:
@@ -217,14 +217,14 @@ Build: Document loader → Chunker → Embedding generator → LanceDB storage
 - Add Grok 4.1 integration via async-openai
 - Build simple CLI or API interface
 
-**Week 3: DevFlow-specific features**
+**Week 3: Rustassistant-specific features**
 - GitHub repo crawler with file caching
 - Note ingestion with frontmatter tag parsing  
 - Incremental indexing (only re-embed changed files)
 
 ## Cost analysis for personal use
 
-At DevFlow's scale, costs are negligible:
+At Rustassistant's scale, costs are negligible:
 
 | Operation | Estimated Volume | Cost |
 |-----------|-----------------|------|
@@ -239,4 +239,4 @@ Using fastembed-rs locally eliminates embedding API costs entirely. Grok 4.1's p
 
 The Rust RAG ecosystem has matured significantly. **LanceDB + fastembed-rs + async-openai** provides a complete, production-viable stack with minimal dependencies and zero required infrastructure. Grok 4.1's massive context window and aggressive pricing make it ideal for personal developer tools—you can often bypass complex retrieval entirely by loading full context.
 
-For DevFlow specifically: start with the "context stuffing" approach (load everything into Grok's 2M window), then add vector retrieval only when your content exceeds that limit. The frameworks exist (Swiftide for production, Rig for simplicity), but for a solo developer, hand-rolling the pipeline with the recommended crates offers more control and understanding of your system.
+For Rustassistant specifically: start with the "context stuffing" approach (load everything into Grok's 2M window), then add vector retrieval only when your content exceeds that limit. The frameworks exist (Swiftide for production, Rig for simplicity), but for a solo developer, hand-rolling the pipeline with the recommended crates offers more control and understanding of your system.

@@ -1,5 +1,5 @@
 # ============================================================================
-# DevFlow - Developer Workflow Management System
+# RustAssistant - Developer Workflow Management System
 # ============================================================================
 # A Rust-based workflow management tool for solo developers to track repos,
 # manage notes, generate tasks, and leverage LLM-powered code analysis.
@@ -7,20 +7,20 @@
 # Features:
 # - GitHub repo tracking with cached directory trees
 # - Note-taking with tag-based categorization
-# - LLM-powered code analysis (Grok 4.1 API)
+# - LLM-powered code analysis (Grok API)
 # - RAG system for contextual insights
 # - File scoring and issue detection
 # - Next-action recommendations
 # ============================================================================
 
 [package]
-name = "devflow"
+name = "rustassistant"
 version = "0.1.0"
 edition = "2021"
 authors = ["nuniesmith"]
 license = "MIT"
 description = "Developer workflow management system with LLM-powered code analysis"
-repository = "https://github.com/nuniesmith/audit"
+repository = "https://github.com/jordanistan/rustassistant"
 keywords = ["developer-tools", "workflow", "llm", "code-analysis", "productivity"]
 categories = ["development-tools", "command-line-utilities"]
 
@@ -34,11 +34,22 @@ tower = { version = "0.4", features = ["util"] }
 tower-http = { version = "0.5", features = ["fs", "trace", "cors"] }
 
 # ---------------------------------------------------------------------------
+# Templates
+# ---------------------------------------------------------------------------
+askama = "0.12"
+askama_axum = "0.4"
+
+# ---------------------------------------------------------------------------
 # Serialization
 # ---------------------------------------------------------------------------
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "0.8"
+
+# ---------------------------------------------------------------------------
+# Database
+# ---------------------------------------------------------------------------
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
 
 # ---------------------------------------------------------------------------
 # HTTP Client (for LLM API)
@@ -118,12 +129,20 @@ tempfile = "3.8"
 # ---------------------------------------------------------------------------
 
 [[bin]]
-name = "devflow-server"
+name = "rustassistant-server"
 path = "src/bin/server.rs"
 
 [[bin]]
-name = "devflow"
+name = "rustassistant"
+path = "src/bin/devflow_cli.rs"
+
+[[bin]]
+name = "audit-cli"
 path = "src/bin/cli.rs"
+
+[[bin]]
+name = "webui-server"
+path = "src/bin/webui_server.rs"
 
 [profile.release]
 opt-level = 3

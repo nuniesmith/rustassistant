@@ -2,8 +2,8 @@
 //!
 //! Starts the Axum web server for the audit service.
 
-use devflow::prelude::*;
-use devflow::run_server;
+use rustassistant::prelude::*;
+use rustassistant::run_server;
 use tracing::info;
 
 #[tokio::main]

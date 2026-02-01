@@ -1,4 +1,4 @@
-# DevFlow Roadmap
+# Rustassistant Roadmap
 
 > **Vision**: Empower solo developers to manage multiple repositories, capture ideas efficiently, and leverage affordable LLM insights to always know what to work on next.
 
@@ -370,7 +370,7 @@
 
 ## How to Contribute
 
-DevFlow is open for contributions! Here's how you can help:
+Rustassistant is open for contributions! Here's how you can help:
 
 1. **Try it out** and report issues
 2. **Suggest features** via GitHub Issues

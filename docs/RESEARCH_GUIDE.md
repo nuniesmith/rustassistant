@@ -1,6 +1,6 @@
 # Research Guide: Building a Rust Web App with RAG System
 
-> **Purpose**: Guide research and architectural decisions for DevFlow's Rust-based web application with LLM RAG capabilities.
+> **Purpose**: Guide research and architectural decisions for Rustassistant's Rust-based web application with LLM RAG capabilities.
 
 ---
 

@@ -1,0 +1,134 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}Notes - Rustassistant{% endblock %}
+
+{% block content %}
+<div class="page-header mb-4">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+            <h1>Notes</h1>
+            <p class="text-muted">Capture ideas, tasks, and thoughts</p>
+        </div>
+        <a href="/notes/new" class="btn btn-primary">+ New Note</a>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card mb-4">
+    <div style="padding: 1rem; display: flex; gap: 1rem; align-items: center;">
+        <label style="margin: 0;">Filter by status:</label>
+        <select id="status-filter" style="width: auto;">
+            <option value="">All</option>
+            <option value="inbox">Inbox</option>
+            <option value="active">Active</option>
+            <option value="processed">Processed</option>
+            <option value="archived">Archived</option>
+        </select>
+        <label style="margin: 0;">Tag:</label>
+        <input type="text" id="tag-filter" placeholder="Filter by tag..." style="width: auto; flex: 1;">
+    </div>
+</div>
+
+<!-- Notes List -->
+{% if notes.len() > 0 %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">All Notes ({{ total }})</h2>
+    </div>
+
+    <div class="notes-grid">
+        {% for note in notes %}
+        <div class="note-card" style="padding: 1.5rem; border-bottom: 1px solid var(--border);">
+            <div style="display: flex; justify-content: space-between; gap: 1rem; margin-bottom: 1rem;">
+                <div style="flex: 1;">
+                    <p style="margin-bottom: 0.75rem; font-size: 1rem; line-height: 1.6;">
+                        {{ note.content }}
+                    </p>
+
+                    {% if note.tags.len() > 0 %}
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem;">
+                        {% for tag in note.tags %}
+                        <span class="badge badge-primary">{{ tag }}</span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+
+                    <div class="text-muted" style="font-size: 0.75rem;">
+                        Created: {{ note.created_at }}
+                    </div>
+                </div>
+
+                <div style="display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-end;">
+                    <span class="badge {% if note.status == "inbox" %}badge-warning{% else if note.status == "active" %}badge-primary{% else if note.status == "processed" %}badge-success{% else %}badge-secondary{% endif %}">
+                        {{ note.status }}
+                    </span>
+
+                    <div style="display: flex; gap: 0.25rem;">
+                        <button class="btn btn-sm btn-secondary" onclick="editNote({{ note.id }})">Edit</button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteNote({{ note.id }})">Delete</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <div style="text-align: center; padding: 4rem 2rem;">
+        <div style="font-size: 4rem; margin-bottom: 1rem;">📝</div>
+        <h2 style="margin-bottom: 1rem;">No Notes Yet</h2>
+        <p class="text-muted" style="margin-bottom: 2rem;">
+            Start capturing your ideas, tasks, and thoughts with Rustassistant notes.
+        </p>
+        <a href="/notes/new" class="btn btn-primary">Create Your First Note</a>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Filter functionality
+    const statusFilter = document.getElementById('status-filter');
+    const tagFilter = document.getElementById('tag-filter');
+
+    function filterNotes() {
+        const statusValue = statusFilter.value.toLowerCase();
+        const tagValue = tagFilter.value.toLowerCase();
+        const noteCards = document.querySelectorAll('.note-card');
+
+        noteCards.forEach(card => {
+            const status = card.querySelector('.badge').textContent.trim().toLowerCase();
+            const tags = Array.from(card.querySelectorAll('.badge-primary')).map(b => b.textContent.toLowerCase());
+
+            const statusMatch = !statusValue || status === statusValue;
+            const tagMatch = !tagValue || tags.some(t => t.includes(tagValue));
+
+            if (statusMatch && tagMatch) {
+                card.style.display = '';
+            } else {
+                card.style.display = 'none';
+            }
+        });
+    }
+
+    if (statusFilter) statusFilter.addEventListener('change', filterNotes);
+    if (tagFilter) tagFilter.addEventListener('input', filterNotes);
+
+    // Edit note (placeholder)
+    function editNote(id) {
+        alert('Edit functionality coming soon! Note ID: ' + id);
+        // TODO: Implement edit modal or redirect to edit page
+    }
+
+    // Delete note (placeholder)
+    function deleteNote(id) {
+        if (confirm('Are you sure you want to delete this note?')) {
+            alert('Delete functionality coming soon! Note ID: ' + id);
+            // TODO: Implement delete API call
+        }
+    }
+</script>
+{% endblock %}

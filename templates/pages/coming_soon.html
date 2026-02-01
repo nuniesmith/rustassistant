@@ -1,0 +1,67 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}{{ feature_name }} - Coming Soon - Rustassistant{% endblock %}
+
+{% block content %}
+<div class="page-header mb-4">
+    <h1>{{ feature_name }}</h1>
+    <p class="text-muted">This feature is coming soon!</p>
+</div>
+
+<div class="card">
+    <div style="text-align: center; padding: 4rem 2rem;">
+        <div style="font-size: 5rem; margin-bottom: 2rem;">🚧</div>
+        <h2 style="margin-bottom: 1rem;">Feature Under Construction</h2>
+        <p class="text-muted" style="font-size: 1.125rem; margin-bottom: 2rem; max-width: 600px; margin-left: auto; margin-right: auto;">
+            The <strong>{{ feature_name }}</strong> feature is currently being developed and will be available soon.
+        </p>
+
+        <div style="background: var(--bg); padding: 2rem; border-radius: 8px; margin: 2rem auto; max-width: 600px;">
+            <h3 style="font-size: 1rem; margin-bottom: 1rem;">🎯 What's Coming</h3>
+            <ul style="text-align: left; list-style: none; padding: 0;">
+                <li style="padding: 0.5rem 0;">
+                    <strong>✅ Phase 1 (Current):</strong> Basic UI and navigation - <span style="color: var(--success);">COMPLETE</span>
+                </li>
+                <li style="padding: 0.5rem 0;">
+                    <strong>🔄 Phase 2 (Next):</strong> API endpoints for CRUD operations - <span style="color: var(--warning);">IN PROGRESS</span>
+                </li>
+                <li style="padding: 0.5rem 0;">
+                    <strong>⏳ Phase 3:</strong> HTMX interactivity and live updates
+                </li>
+                <li style="padding: 0.5rem 0;">
+                    <strong>⏳ Phase 4:</strong> Advanced features and polish
+                </li>
+            </ul>
+        </div>
+
+        <div style="margin-top: 2rem;">
+            <p class="text-muted" style="margin-bottom: 1.5rem;">
+                For now, you can use the CLI to access this functionality:
+            </p>
+            <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; max-width: 600px; margin: 0 auto 2rem;">
+                <code style="font-family: 'Monaco', 'Courier New', monospace; color: var(--text); display: block; text-align: left;">
+                    # Use the CLI for now:<br>
+                    rustassistant --help
+                </code>
+            </div>
+        </div>
+
+        <div style="display: flex; gap: 1rem; justify-content: center; margin-top: 2rem;">
+            <a href="{{ back_url }}" class="btn btn-primary">
+                ← Go Back
+            </a>
+            <a href="/" class="btn btn-secondary">
+                Dashboard
+            </a>
+        </div>
+
+        <div style="margin-top: 3rem; padding-top: 2rem; border-top: 1px solid var(--border);">
+            <p class="text-muted" style="font-size: 0.875rem;">
+                Want to contribute? Check out the
+                <a href="https://github.com/jordanistan/rustassistant" style="color: var(--primary);">GitHub repository</a>
+                or read the <strong>WEB_UI_GUIDE.md</strong> documentation.
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}

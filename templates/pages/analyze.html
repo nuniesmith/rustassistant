@@ -1,0 +1,356 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}Analyze - Rustassistant{% endblock %}
+
+{% block content %}
+<div class="page-header mb-4">
+    <h1>AI-Powered Code Analysis</h1>
+    <p class="text-muted">Analyze your code with Grok AI for quality, security, and refactoring insights</p>
+</div>
+
+<!-- Analysis Type Selection -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h2 class="card-title">Select Analysis Type</h2>
+    </div>
+    <div class="grid grid-4" style="padding: 1rem;">
+        <button class="btn btn-primary" onclick="selectAnalysisType('review')">
+            🔍 Code Review
+        </button>
+        <button class="btn btn-primary" onclick="selectAnalysisType('refactor')">
+            🔧 Refactoring
+        </button>
+        <button class="btn btn-primary" onclick="selectAnalysisType('test')">
+            🧪 Test Generation
+        </button>
+        <button class="btn btn-primary" onclick="selectAnalysisType('quick')">
+            ⚡ Quick Analysis
+        </button>
+    </div>
+</div>
+
+<!-- Analysis Form -->
+<div class="grid grid-2">
+    <!-- Left: Configuration -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">Analysis Configuration</h2>
+        </div>
+        <div style="padding: 1.5rem;">
+            <form id="analysis-form">
+                <!-- Analysis Type -->
+                <div class="form-group">
+                    <label>Analysis Type</label>
+                    <select id="analysis-type" name="type">
+                        <option value="review">Code Review</option>
+                        <option value="refactor">Refactoring Analysis</option>
+                        <option value="test">Test Generation</option>
+                        <option value="quick">Quick Analysis</option>
+                    </select>
+                </div>
+
+                <!-- Repository Selection -->
+                <div class="form-group">
+                    <label>Repository</label>
+                    <select id="repo-select" name="repo">
+                        <option value="">Select a repository...</option>
+                        {% for repo in repos %}
+                        <option value="{{ repo.id }}">{{ repo.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- File/Directory Path -->
+                <div class="form-group">
+                    <label>File or Directory Path (relative to repo)</label>
+                    <input type="text" id="path-input" name="path" placeholder="src/" value="src/">
+                    <small class="text-muted">Leave empty to analyze entire repository</small>
+                </div>
+
+                <!-- File Pattern -->
+                <div class="form-group">
+                    <label>File Pattern (optional)</label>
+                    <input type="text" id="pattern-input" name="pattern" placeholder="*.rs">
+                    <small class="text-muted">e.g., *.rs, *.js, *.py</small>
+                </div>
+
+                <!-- Additional Options -->
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="batch-mode" name="batch" style="width: auto; margin-right: 0.5rem;">
+                        Use Batch Mode (more efficient)
+                    </label>
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="save-report" name="save" checked style="width: auto; margin-right: 0.5rem;">
+                        Save Report to File
+                    </label>
+                </div>
+
+                <!-- Refactoring Goal (only for refactor type) -->
+                <div class="form-group" id="refactor-goal-group" style="display: none;">
+                    <label>Refactoring Goal</label>
+                    <input type="text" id="refactor-goal" name="goal" placeholder="improve maintainability">
+                    <small class="text-muted">What do you want to improve?</small>
+                </div>
+
+                <!-- Action Buttons -->
+                <div style="display: flex; gap: 0.5rem; margin-top: 2rem;">
+                    <button type="submit" class="btn btn-primary" style="flex: 1;">
+                        🚀 Run Analysis
+                    </button>
+                    <button type="button" class="btn btn-secondary" onclick="resetForm()">
+                        Reset
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Right: Information & Examples -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">Analysis Information</h2>
+        </div>
+        <div style="padding: 1.5rem;">
+            <div id="analysis-info">
+                <h3 style="font-size: 1rem; margin-bottom: 0.75rem;">🔍 Code Review</h3>
+                <p style="margin-bottom: 1rem; line-height: 1.6;">
+                    Automatically reviews code changes and provides quality/security scores,
+                    issue detection, and actionable improvement suggestions.
+                </p>
+
+                <h4 style="font-size: 0.875rem; margin-bottom: 0.5rem; font-weight: 600;">What it analyzes:</h4>
+                <ul style="margin-left: 1.5rem; margin-bottom: 1rem;">
+                    <li>Code quality (0-100 score)</li>
+                    <li>Security vulnerabilities</li>
+                    <li>Best practice violations</li>
+                    <li>Potential bugs and issues</li>
+                </ul>
+
+                <h4 style="font-size: 0.875rem; margin-bottom: 0.5rem; font-weight: 600;">Example:</h4>
+                <code style="display: block; padding: 0.75rem; background: var(--bg); border-radius: 0.25rem; font-size: 0.75rem;">
+                    Repository: myproject<br>
+                    Path: src/api/<br>
+                    Pattern: *.rs
+                </code>
+            </div>
+        </div>
+
+        <!-- Cost Estimate -->
+        <div style="padding: 1.5rem; border-top: 1px solid var(--border);">
+            <h3 style="font-size: 1rem; margin-bottom: 0.75rem;">💰 Cost Estimate</h3>
+            <div class="alert alert-info">
+                <strong>Estimated Cost:</strong> $0.01 - $0.05 per analysis<br>
+                <small>Actual cost depends on file size. Cached results are free!</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Results Area (initially hidden) -->
+<div id="results-area" class="card mt-4" style="display: none;">
+    <div class="card-header">
+        <h2 class="card-title">Analysis Results</h2>
+        <button class="btn btn-sm btn-secondary" onclick="downloadReport()">📥 Download Report</button>
+    </div>
+    <div id="results-content" style="padding: 1.5rem;">
+        <!-- Results will be loaded here via HTMX or JavaScript -->
+        <div class="text-center" style="padding: 2rem;">
+            <div class="spinner"></div>
+            <p class="mt-2">Running analysis...</p>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="card mt-4">
+    <div class="card-header">
+        <h2 class="card-title">🚀 Quick Actions</h2>
+    </div>
+    <div class="grid grid-3" style="padding: 1rem;">
+        <button class="btn btn-secondary" onclick="analyzeCurrentRepo()">
+            Analyze Current Repo
+        </button>
+        <button class="btn btn-secondary" onclick="reviewLastChanges()">
+            Review Last Changes
+        </button>
+        <button class="btn btn-secondary" onclick="generateTests()">
+            Generate Tests
+        </button>
+    </div>
+</div>
+
+<!-- Recent Analyses -->
+<div class="card mt-4">
+    <div class="card-header">
+        <h2 class="card-title">Recent Analyses</h2>
+    </div>
+    <div style="padding: 1rem;">
+        <p class="text-muted text-center" style="padding: 2rem;">
+            No recent analyses. Run your first analysis to get started!
+        </p>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Analysis type descriptions
+    const analysisInfo = {
+        review: {
+            title: '🔍 Code Review',
+            description: 'Automatically reviews code changes and provides quality/security scores, issue detection, and actionable improvement suggestions.',
+            analyzes: [
+                'Code quality (0-100 score)',
+                'Security vulnerabilities',
+                'Best practice violations',
+                'Potential bugs and issues'
+            ],
+            example: 'Repository: myproject\nPath: src/api/\nPattern: *.rs'
+        },
+        refactor: {
+            title: '🔧 Refactoring Analysis',
+            description: 'Detects code smells, calculates complexity scores, and provides step-by-step refactoring suggestions to improve maintainability.',
+            analyzes: [
+                'Code smells (long functions, duplicates, etc.)',
+                'Complexity and maintainability scores',
+                'Refactoring opportunities',
+                'Prioritized improvement suggestions'
+            ],
+            example: 'Repository: myproject\nPath: src/legacy/\nGoal: improve testability'
+        },
+        test: {
+            title: '🧪 Test Generation',
+            description: 'AI-powered test generation that creates unit tests, identifies coverage gaps, and generates test fixtures.',
+            analyzes: [
+                'Test coverage gaps',
+                'Untested functions',
+                'Missing test types',
+                'Generated test cases'
+            ],
+            example: 'Repository: myproject\nPath: src/models.rs\nPattern: *.rs'
+        },
+        quick: {
+            title: '⚡ Quick Analysis',
+            description: 'Fast overview of code quality with basic metrics and recommendations. Best for initial assessments.',
+            analyzes: [
+                'File-level quality scores',
+                'High-priority issues only',
+                'Quick recommendations',
+                'Basic statistics'
+            ],
+            example: 'Repository: myproject\nPath: src/'
+        }
+    };
+
+    // Update info panel when analysis type changes
+    document.getElementById('analysis-type').addEventListener('change', function(e) {
+        const type = e.target.value;
+        updateAnalysisInfo(type);
+
+        // Show/hide refactoring goal
+        const goalGroup = document.getElementById('refactor-goal-group');
+        if (type === 'refactor') {
+            goalGroup.style.display = 'block';
+        } else {
+            goalGroup.style.display = 'none';
+        }
+    });
+
+    function updateAnalysisInfo(type) {
+        const info = analysisInfo[type];
+        const infoDiv = document.getElementById('analysis-info');
+
+        const analyzesList = info.analyzes.map(item => `<li>${item}</li>`).join('');
+
+        infoDiv.innerHTML = `
+            <h3 style="font-size: 1rem; margin-bottom: 0.75rem;">${info.title}</h3>
+            <p style="margin-bottom: 1rem; line-height: 1.6;">${info.description}</p>
+
+            <h4 style="font-size: 0.875rem; margin-bottom: 0.5rem; font-weight: 600;">What it analyzes:</h4>
+            <ul style="margin-left: 1.5rem; margin-bottom: 1rem;">${analyzesList}</ul>
+
+            <h4 style="font-size: 0.875rem; margin-bottom: 0.5rem; font-weight: 600;">Example:</h4>
+            <code style="display: block; padding: 0.75rem; background: var(--bg); border-radius: 0.25rem; font-size: 0.75rem; white-space: pre-wrap;">${info.example}</code>
+        `;
+    }
+
+    function selectAnalysisType(type) {
+        document.getElementById('analysis-type').value = type;
+        updateAnalysisInfo(type);
+
+        // Show/hide refactoring goal
+        const goalGroup = document.getElementById('refactor-goal-group');
+        if (type === 'refactor') {
+            goalGroup.style.display = 'block';
+        } else {
+            goalGroup.style.display = 'none';
+        }
+    }
+
+    function resetForm() {
+        document.getElementById('analysis-form').reset();
+        updateAnalysisInfo('review');
+        document.getElementById('refactor-goal-group').style.display = 'none';
+    }
+
+    // Form submission
+    document.getElementById('analysis-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        const formData = new FormData(e.target);
+        const data = Object.fromEntries(formData);
+
+        // Validate
+        if (!data.repo) {
+            alert('Please select a repository');
+            return;
+        }
+
+        // Show results area
+        const resultsArea = document.getElementById('results-area');
+        resultsArea.style.display = 'block';
+        resultsArea.scrollIntoView({ behavior: 'smooth' });
+
+        // TODO: Implement actual API call
+        alert('Analysis functionality coming soon!\n\nType: ' + data.type + '\nRepo: ' + data.repo + '\nPath: ' + data.path);
+    });
+
+    function analyzeCurrentRepo() {
+        const repoSelect = document.getElementById('repo-select');
+        if (repoSelect.options.length > 1) {
+            repoSelect.selectedIndex = 1;
+            document.getElementById('path-input').value = 'src/';
+            document.getElementById('analysis-type').value = 'review';
+            updateAnalysisInfo('review');
+        } else {
+            alert('No repositories available. Please add a repository first.');
+        }
+    }
+
+    function reviewLastChanges() {
+        alert('Review last changes functionality coming soon!');
+        // TODO: Implement git diff review
+    }
+
+    function generateTests() {
+        const repoSelect = document.getElementById('repo-select');
+        if (repoSelect.options.length > 1) {
+            repoSelect.selectedIndex = 1;
+            document.getElementById('analysis-type').value = 'test';
+            updateAnalysisInfo('test');
+        } else {
+            alert('No repositories available. Please add a repository first.');
+        }
+    }
+
+    function downloadReport() {
+        alert('Download report functionality coming soon!');
+        // TODO: Implement report download
+    }
+</script>
+{% endblock %}

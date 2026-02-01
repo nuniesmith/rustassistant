@@ -1,0 +1,229 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}Costs - Rustassistant{% endblock %}
+
+{% block content %}
+<div class="page-header mb-4">
+    <h1>LLM Cost Tracking</h1>
+    <p class="text-muted">Monitor your AI API usage and spending</p>
+</div>
+
+<!-- Cost Overview -->
+<div class="grid grid-4 mb-4">
+    <div class="card stat-card">
+        <div class="stat-value">${{ stats.cost_today }}</div>
+        <div class="stat-label">Today</div>
+    </div>
+    <div class="card stat-card">
+        <div class="stat-value">${{ stats.cost_7d }}</div>
+        <div class="stat-label">Last 7 Days</div>
+    </div>
+    <div class="card stat-card">
+        <div class="stat-value">${{ stats.cost_30d }}</div>
+        <div class="stat-label">Last 30 Days</div>
+    </div>
+    <div class="card stat-card">
+        <div class="stat-value">${{ stats.total_cost }}</div>
+        <div class="stat-label">Total All Time</div>
+    </div>
+</div>
+
+<!-- Cost Insights -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h2 class="card-title">💡 Cost Insights</h2>
+    </div>
+    <div style="padding: 1rem;">
+        <div class="grid grid-3">
+            <div class="stat-card">
+                <div class="stat-value">{{ stats.cache_hit_rate }}%</div>
+                <div class="stat-label">Cache Hit Rate</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">${{ stats.estimated_savings }}</div>
+                <div class="stat-label">Est. Monthly Savings</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">${{ stats.avg_daily_cost() }}</div>
+                <div class="stat-label">Avg. Daily Cost</div>
+            </div>
+        </div>
+
+        {% if stats.cost_30d > 0.0 %}
+        <div class="alert alert-success mt-2">
+            ✅ <strong>Great job!</strong> Your cache hit rate of {{ stats.cache_hit_rate }}% is saving you approximately ${{ stats.estimated_savings }}/month!
+            {% if stats.cost_30d < 50.0 %}
+            You're well within the $50/month budget target.
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {% if stats.cost_30d > 50.0 %}
+        <div class="alert alert-warning mt-2">
+            ⚠️ <strong>Budget Alert:</strong> Your monthly cost is ${{ stats.cost_30d }}, which exceeds the $50 target. Consider using more batch operations or reviewing your cache settings.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Cost Breakdown -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h2 class="card-title">Cost Breakdown</h2>
+    </div>
+    <div style="padding: 1rem;">
+        <div class="grid grid-2">
+            <div>
+                <h3 style="font-size: 1rem; margin-bottom: 1rem;">By Time Period</h3>
+                <table>
+                    <tbody>
+                        <tr>
+                            <td style="font-weight: 500;">Last 24 hours</td>
+                            <td class="text-right">${{ stats.cost_today }}</td>
+                        </tr>
+                        <tr>
+                            <td style="font-weight: 500;">Last 7 days</td>
+                            <td class="text-right">${{ stats.cost_7d }}</td>
+                        </tr>
+                        <tr>
+                            <td style="font-weight: 500;">Last 30 days</td>
+                            <td class="text-right">${{ stats.cost_30d }}</td>
+                        </tr>
+                        <tr style="border-top: 2px solid var(--border);">
+                            <td style="font-weight: 700;">Total All Time</td>
+                            <td class="text-right font-bold">${{ stats.total_cost }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div>
+                <h3 style="font-size: 1rem; margin-bottom: 1rem;">Projections</h3>
+                <table>
+                    <tbody>
+                        <tr>
+                            <td style="font-weight: 500;">Projected This Month</td>
+                            <td class="text-right">${{ stats.projected_monthly() }}</td>
+                        </tr>
+                        <tr>
+                            <td style="font-weight: 500;">Without Cache (30d)</td>
+                            <td class="text-right text-muted"><s>${{ stats.cost_without_cache() }}</s></td>
+                        </tr>
+                        <tr>
+                            <td style="font-weight: 500;">Savings This Month</td>
+                            <td class="text-right" style="color: var(--success);">-${{ stats.estimated_savings }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Operations -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Recent LLM Operations</h2>
+    </div>
+
+    {% if recent_operations.len() > 0 %}
+    <div style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Operation</th>
+                    <th>Model</th>
+                    <th>Tokens</th>
+                    <th>Cost</th>
+                    <th>Timestamp</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for op in recent_operations %}
+                <tr>
+                    <td>{{ op.operation }}</td>
+                    <td><span class="badge badge-primary">{{ op.model }}</span></td>
+                    <td>{{ op.tokens }}</td>
+                    <td>${{ op.cost }}</td>
+                    <td class="text-muted">{{ op.timestamp }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div style="text-align: center; padding: 3rem 2rem;">
+        <div style="font-size: 3rem; margin-bottom: 1rem;">💰</div>
+        <h3 style="margin-bottom: 0.5rem;">No Operations Yet</h3>
+        <p class="text-muted">Run some analyses to see cost tracking in action.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Tips for Cost Optimization -->
+<div class="card mt-4">
+    <div class="card-header">
+        <h2 class="card-title">💡 Tips for Cost Optimization</h2>
+    </div>
+    <div style="padding: 1rem;">
+        <ul style="list-style: none; padding: 0;">
+            <li style="padding: 0.75rem; border-bottom: 1px solid var(--border);">
+                <strong>✅ Use Batch Operations:</strong> Analyze multiple files at once to reduce API calls
+            </li>
+            <li style="padding: 0.75rem; border-bottom: 1px solid var(--border);">
+                <strong>🔄 Leverage Cache:</strong> Re-running the same analysis is nearly free with {{ stats.cache_hit_rate }}% hit rate
+            </li>
+            <li style="padding: 0.75rem; border-bottom: 1px solid var(--border);">
+                <strong>🎯 Be Selective:</strong> Only analyze files that need review instead of entire directories
+            </li>
+            <li style="padding: 0.75rem; border-bottom: 1px solid var(--border);">
+                <strong>📊 Use Templates:</strong> Pre-built query templates maximize cache hits
+            </li>
+            <li style="padding: 0.75rem;">
+                <strong>⏱️ Incremental Analysis:</strong> Only analyze changed files to minimize costs
+            </li>
+        </ul>
+    </div>
+</div>
+
+<!-- Cache Management -->
+<div class="card mt-4">
+    <div class="card-header">
+        <h2 class="card-title">Cache Management</h2>
+        <div style="display: flex; gap: 0.5rem;">
+            <button class="btn btn-sm btn-secondary" onclick="viewCacheStats()">View Stats</button>
+            <button class="btn btn-sm btn-secondary" onclick="pruneCache()">Prune Old Entries</button>
+            <button class="btn btn-sm btn-danger" onclick="clearCache()">Clear All</button>
+        </div>
+    </div>
+    <div style="padding: 1rem;">
+        <p class="text-muted">
+            The response cache stores AI analysis results to avoid redundant API calls.
+            With a {{ stats.cache_hit_rate }}% hit rate, you're saving significant costs on repeated analyses.
+        </p>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    function viewCacheStats() {
+        alert('Cache stats functionality coming soon!');
+        // TODO: Implement cache stats viewer with HTMX
+    }
+
+    function pruneCache() {
+        if (confirm('Remove expired cache entries? This is safe and recommended.')) {
+            alert('Prune functionality coming soon!');
+            // TODO: Implement cache prune API call
+        }
+    }
+
+    function clearCache() {
+        if (confirm('Clear ALL cached responses? This will increase costs temporarily as the cache rebuilds. Are you sure?')) {
+            alert('Clear cache functionality coming soon!');
+            // TODO: Implement cache clear API call
+        }
+    }
+</script>
+{% endblock %}

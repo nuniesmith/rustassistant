@@ -5,16 +5,13 @@
 //! CI/CD pipelines and for local development.
 
 use clap::{Parser, Subcommand};
-use devflow::formatter::{CodeFormatter, FormatMode, Formatter};
-use devflow::grok_reasoning::{FileForAnalysis, GrokReasoningClient};
-use devflow::llm::LlmClient;
-use devflow::prelude::*;
-use devflow::scoring::FileScorer;
-use devflow::tree_state::{FileCategory, TreeStateManager};
-use devflow::{
-    neuromorphic_mapper, research, GitManager, NeuromorphicMap, TagScanner, TaskGenerator,
-    TodoPriority, TodoScanner,
-};
+use rustassistant::formatter::{CodeFormatter, FormatMode, Formatter};
+use rustassistant::grok_reasoning::{FileForAnalysis, GrokReasoningClient};
+use rustassistant::llm::LlmClient;
+use rustassistant::prelude::*;
+use rustassistant::scoring::FileScorer;
+use rustassistant::tree_state::{FileCategory, TreeStateManager};
+use rustassistant::{research, GitManager, TagScanner, TaskGenerator, TodoPriority, TodoScanner};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::{info, warn};
@@ -1626,33 +1623,21 @@ fn run_visualization(
 
     let mermaid_code = match diagram_type {
         "neuromorphic" => {
-            // Generate neuromorphic brain architecture diagram
-            let mut map = NeuromorphicMap::new();
-            map.scan_directory(path)?;
-
-            let summary = map.summary();
+            // TODO: Implement neuromorphic brain architecture diagram when neuromorphic_mapper is added
             println!("\n{}", "=".repeat(80));
             println!("🧠 Neuromorphic Architecture Analysis");
             println!("{}", "=".repeat(80));
-            println!("Total Modules Detected: {}", summary.total_modules);
-            println!("Active Brain Regions: {}", summary.detected_regions);
-            println!("\nModules by Region:");
-            for (region, modules) in &summary.modules_by_region {
-                println!("\n  {}:", region);
-                for module in modules {
-                    println!("    - {}", module);
-                }
-            }
+            println!("Feature not yet implemented");
             println!("\n{}", "=".repeat(80));
 
-            map.generate_mermaid()
+            "graph TD\n    A[Neuromorphic] --> B[Not Implemented Yet]".to_string()
         }
         "component" => {
-            // Generate component-specific diagram
-            let comp = component.ok_or_else(|| {
+            // TODO: Implement component diagram generation when neuromorphic_mapper is added
+            let _comp = component.ok_or_else(|| {
                 anyhow::anyhow!("Component name required for component diagram type")
             })?;
-            neuromorphic_mapper::generate_component_diagram(path, &comp)?
+            "graph TD\n    A[Component] --> B[Not Implemented Yet]".to_string()
         }
         _ => {
             return Err(anyhow::anyhow!(
@@ -1705,7 +1690,7 @@ fn run_tree_visualization(
     with_tags: bool,
     output: Option<&PathBuf>,
 ) -> anyhow::Result<()> {
-    use devflow::directory_tree::DirectoryTreeBuilder;
+    use rustassistant::directory_tree::DirectoryTreeBuilder;
 
     println!("🌲 Building directory tree...");
 
@@ -1930,7 +1915,7 @@ async fn run_llm_audit(
     output: Option<PathBuf>,
     _config: &Config,
 ) -> Result<()> {
-    use devflow::llm_audit::{AuditMode, LlmAuditor};
+    use rustassistant::llm_audit::{AuditMode, LlmAuditor};
 
     let audit_mode = match mode.to_lowercase().as_str() {
         "full" => AuditMode::Full,
@@ -2095,9 +2080,9 @@ async fn run_grok_audit(
     format: OutputFormat,
     _config: &Config,
 ) -> Result<()> {
-    use devflow::cache::AuditCache;
-    use devflow::grok_reasoning::{analyze_all_batches, RetryConfig};
-    use devflow::llm_config::{CacheConfig, LlmConfig};
+    use rustassistant::cache::AuditCache;
+    use rustassistant::grok_reasoning::{analyze_all_batches, RetryConfig};
+    use rustassistant::llm_config::{CacheConfig, LlmConfig};
     use sha2::{Digest, Sha256};
 
     println!("\n{}", "=".repeat(70));
@@ -2147,7 +2132,7 @@ async fn run_grok_audit(
     let current_state = manager.build_current_state()?;
 
     // Determine which files to analyze
-    let files_to_analyze: Vec<&devflow::tree_state::FileState> = if changed_only {
+    let files_to_analyze: Vec<&rustassistant::tree_state::FileState> = if changed_only {
         if let Some(previous_state) = manager.load_previous_state()? {
             let diff = manager.diff(&previous_state, &current_state);
             let changed_paths: std::collections::HashSet<_> = diff
@@ -2310,7 +2295,7 @@ async fn run_grok_audit(
 
     // Check budget status
     match llm_config.check_budget(estimated_cost) {
-        devflow::llm_config::BudgetStatus::Warning {
+        rustassistant::llm_config::BudgetStatus::Warning {
             current,
             limit,
             usage_pct,
@@ -2320,7 +2305,7 @@ async fn run_grok_audit(
                 current, limit, usage_pct
             );
         }
-        devflow::llm_config::BudgetStatus::Exceeded { current, limit } => {
+        rustassistant::llm_config::BudgetStatus::Exceeded { current, limit } => {
             println!(
                 "\n🚫 BUDGET EXCEEDED: ${:.2}/${:.2} - consider increasing budget",
                 current, limit
@@ -2417,8 +2402,8 @@ async fn run_janus_audit(
     format: OutputFormat,
     _config: &Config,
 ) -> Result<()> {
-    use devflow::llm_audit::LlmAuditor;
-    use devflow::llm_config::claude_models;
+    use rustassistant::llm_audit::LlmAuditor;
+    use rustassistant::llm_config::claude_models;
 
     println!("\n{}", "=".repeat(70));
     println!("🧠 JANUS WHITEPAPER CONFORMITY AUDIT");

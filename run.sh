@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# Audit Service Quick Start Script
-# This script helps you get started with the audit service quickly
+# RustAssistant Quick Start Script
+# This script helps you get started with RustAssistant quickly
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
@@ -33,8 +33,8 @@ error() {
 # Print banner
 echo ""
 echo "╔═══════════════════════════════════════════╗"
-echo "║    Audit Service - Quick Start            ║"
-echo "║    Rust Code Audit & LLM Analysis         ║"
+echo "║    RustAssistant - Quick Start            ║"
+echo "║    Developer Workflow & LLM Analysis      ║"
 echo "╚═══════════════════════════════════════════╝"
 echo ""
 
@@ -68,21 +68,21 @@ COMMAND=${1:-help}
 
 case $COMMAND in
     build)
-        info "Building audit service..."
+        info "Building RustAssistant..."
         cargo build --release
         success "Build complete! Binaries in target/release/"
         ;;
 
     server)
-        info "Starting audit server..."
+        info "Starting RustAssistant server..."
         info "API will be available at http://localhost:8080"
-        cargo run --bin audit-server
+        cargo run --bin rustassistant-server
         ;;
 
     cli)
         shift
         info "Running CLI command: $*"
-        cargo run --bin audit-cli -- "$@"
+        cargo run --bin rustassistant -- "$@"
         ;;
 
     test)
@@ -93,7 +93,7 @@ case $COMMAND in
     audit)
         TARGET=${2:-.}
         info "Running quick audit on: $TARGET"
-        cargo run --bin audit-cli -- audit "$TARGET" --format text
+        cargo run --bin rustassistant -- analyze batch "$TARGET"
         ;;
 
     tags)
@@ -133,9 +133,9 @@ case $COMMAND in
 
     docker)
         info "Building Docker image..."
-        docker build -t audit-service -f ../../docker/Dockerfile .
-        success "Docker image built: audit-service"
-        info "Run with: docker run -p 8080:8080 -e XAI_API_KEY=your-key audit-service"
+        docker build -t rustassistant -f docker/Dockerfile .
+        success "Docker image built: rustassistant"
+        info "Run with: docker run -p 8080:8080 -e XAI_API_KEY=your-key rustassistant"
         ;;
 
     clean)
@@ -147,8 +147,8 @@ case $COMMAND in
 
     install)
         info "Installing CLI tool globally..."
-        cargo install --path . --bin audit-cli
-        success "Installed! Run 'audit-cli --help'"
+        cargo install --path . --bin rustassistant
+        success "Installed! Run 'rustassistant --help'"
         ;;
 
     check)
@@ -201,9 +201,9 @@ case $COMMAND in
         echo "Examples:"
         echo "  ./run.sh build                    # Build project"
         echo "  ./run.sh server                   # Start API server"
-        echo "  ./run.sh audit /path/to/repo      # Audit a repository"
-        echo "  ./run.sh cli audit --help         # See all CLI options"
-        echo "  ./run.sh tags . --format json     # Export tags as JSON"
+        echo "  ./run.sh audit /path/to/repo      # Analyze a repository"
+        echo "  ./run.sh cli note add \"text\"      # Add a note"
+        echo "  ./run.sh cli --help               # See all CLI options"
         echo "  ./run.sh dev                      # Development mode"
         echo ""
         echo "Environment:"
