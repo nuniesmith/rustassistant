@@ -54,6 +54,31 @@ impl DashboardStats {
             self.cost_30d
         }
     }
+
+    // Currency formatting helpers for templates
+    pub fn total_cost_fmt(&self) -> String {
+        format!("{:.2}", self.total_cost)
+    }
+
+    pub fn cost_today_fmt(&self) -> String {
+        format!("{:.2}", self.cost_today)
+    }
+
+    pub fn cost_7d_fmt(&self) -> String {
+        format!("{:.2}", self.cost_7d)
+    }
+
+    pub fn cost_30d_fmt(&self) -> String {
+        format!("{:.2}", self.cost_30d)
+    }
+
+    pub fn estimated_savings_fmt(&self) -> String {
+        format!("{:.2}", self.estimated_savings)
+    }
+
+    pub fn avg_daily_cost_fmt(&self) -> String {
+        format!("{:.2}", self.avg_daily_cost())
+    }
 }
 
 /// Recent note for dashboard
@@ -73,6 +98,15 @@ pub struct ActivityItem {
     pub description: String,
     pub timestamp: String,
     pub cost: Option<f64>,
+}
+
+impl ActivityItem {
+    pub fn cost_fmt(&self) -> String {
+        match self.cost {
+            Some(c) => format!("{:.4}", c),
+            None => "0.00".to_string(),
+        }
+    }
 }
 
 /// Next action recommendation
@@ -137,6 +171,12 @@ pub struct LlmOperation {
     pub tokens: i64,
     pub cost: f64,
     pub timestamp: String,
+}
+
+impl LlmOperation {
+    pub fn cost_fmt(&self) -> String {
+        format!("{:.4}", self.cost)
+    }
 }
 
 /// Analyze page template

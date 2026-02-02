@@ -43,8 +43,8 @@ use crate::repo_analysis::RepoAnalyzer;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-/// Maximum tokens for Grok context window (grok-3 limit is ~131K, use 100K to be safe)
-const MAX_CONTEXT_TOKENS: usize = 100_000;
+/// Maximum tokens for Grok context window (grok-4-1-fast has 2M limit, use 1.5M to be safe)
+const MAX_CONTEXT_TOKENS: usize = 1_500_000;
 
 /// Estimated tokens per character (conservative)
 const TOKENS_PER_CHAR: f64 = 0.3;

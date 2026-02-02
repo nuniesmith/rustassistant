@@ -19,7 +19,7 @@
         <div class="stat-label">Repositories</div>
     </div>
     <div class="card stat-card">
-        <div class="stat-value">${{ stats.total_cost }}</div>
+        <div class="stat-value">${{ stats.total_cost_fmt() }}</div>
         <div class="stat-label">Total Cost</div>
     </div>
     <div class="card stat-card">
@@ -111,9 +111,9 @@
                         <p style="margin-bottom: 0.25rem; font-weight: 500;">{{ activity.description }}</p>
                         <div class="text-muted" style="font-size: 0.75rem;">{{ activity.timestamp }}</div>
                     </div>
-                    {% if let Some(cost) = activity.cost %}
+                    {% if activity.cost.is_some() %}
                     <div class="text-muted" style="font-size: 0.75rem;">
-                        ${{ cost }}
+                        ${{ activity.cost_fmt() }}
                     </div>
                     {% endif %}
                 </div>
@@ -137,23 +137,23 @@
     <div style="padding: 1rem;">
         <div class="grid grid-3">
             <div class="stat-card">
-                <div class="stat-value" style="font-size: 1.5rem;">${{ stats.cost_today }}</div>
+                <div class="stat-value" style="font-size: 1.5rem;">${{ stats.cost_today_fmt() }}</div>
                 <div class="stat-label">Today</div>
             </div>
             <div class="stat-card">
-                <div class="stat-value" style="font-size: 1.5rem;">${{ stats.cost_7d }}</div>
+                <div class="stat-value" style="font-size: 1.5rem;">${{ stats.cost_7d_fmt() }}</div>
                 <div class="stat-label">Last 7 Days</div>
             </div>
             <div class="stat-card">
-                <div class="stat-value" style="font-size: 1.5rem;">${{ stats.cost_30d }}</div>
+                <div class="stat-value" style="font-size: 1.5rem;">${{ stats.cost_30d_fmt() }}</div>
                 <div class="stat-label">Last 30 Days</div>
             </div>
         </div>
 
         {% if stats.cost_30d > 0.0 %}
         <div class="alert alert-info mt-2">
-            💡 <strong>Tip:</strong> Your average daily cost is ${{ stats.avg_daily_cost() }}.
-            With a {{ stats.cache_hit_rate }}% cache hit rate, you're saving approximately ${{ stats.estimated_savings }}/month!
+            💡 <strong>Tip:</strong> Your average daily cost is ${{ stats.avg_daily_cost_fmt() }}.
+            With a {{ stats.cache_hit_rate }}% cache hit rate, you're saving approximately ${{ stats.estimated_savings_fmt() }}/month!
         </div>
         {% endif %}
     </div>

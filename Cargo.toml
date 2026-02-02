@@ -20,7 +20,7 @@ edition = "2021"
 authors = ["nuniesmith"]
 license = "MIT"
 description = "Developer workflow management system with LLM-powered code analysis"
-repository = "https://github.com/jordanistan/rustassistant"
+repository = "https://github.com/nuniesmith/rustassistant"
 keywords = ["developer-tools", "workflow", "llm", "code-analysis", "productivity"]
 categories = ["development-tools", "command-line-utilities"]
 

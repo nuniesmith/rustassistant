@@ -1,0 +1,108 @@
+# =============================================================================
+# RustAssistant - Production Docker Compose Configuration
+# =============================================================================
+# Optimized for Raspberry Pi ARM64 deployment
+#
+# This file is used by CI/CD pipeline for production deployments
+# Images are pulled from Docker Hub (multi-arch: amd64 + arm64)
+#
+# Usage:
+#   docker compose -f docker-compose.prod.yml up -d
+#   docker compose -f docker-compose.prod.yml down
+#   docker compose -f docker-compose.prod.yml logs -f
+# =============================================================================
+
+services:
+    # =========================================================================
+    # RustAssistant Web UI Server
+    # =========================================================================
+    rustassistant-web:
+        image: nuniesmith/rustassistant:latest
+        container_name: rustassistant-web
+        restart: unless-stopped
+        ports:
+            - "3001:3001"
+        environment:
+            - HOST=0.0.0.0
+            - PORT=3001
+            - RUST_LOG=info,rustassistant=info
+            - XAI_API_KEY=${XAI_API_KEY}
+            - XAI_BASE_URL=https://api.x.ai/v1
+            - DATABASE_PATH=/app/data/rustassistant.db
+            - CACHE_DB_PATH=/app/data/rustassistant_cache.db
+            - REDIS_URL=redis://redis:6379
+        volumes:
+            - ./data:/app/data
+            - ./templates:/app/templates:ro
+            - ./config:/app/config:ro
+        depends_on:
+            redis:
+                condition: service_healthy
+        networks:
+            - rustassistant
+        healthcheck:
+            test:
+                [
+                    "CMD",
+                    "wget",
+                    "--no-verbose",
+                    "--tries=1",
+                    "--spider",
+                    "http://localhost:3001/",
+                ]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            start_period: 40s
+        deploy:
+            resources:
+                limits:
+                    memory: 1G
+                    cpus: '2.0'
+                reservations:
+                    memory: 512M
+                    cpus: '1.0'
+
+    # =========================================================================
+    # Redis Cache - For LLM Response Caching
+    # =========================================================================
+    redis:
+        image: redis:7-alpine
+        container_name: rustassistant-redis
+        restart: unless-stopped
+        command: >
+            redis-server
+            --maxmemory 256mb
+            --maxmemory-policy allkeys-lru
+            --save 60 1
+            --appendonly yes
+            --appendfsync everysec
+        ports:
+            - "6379:6379"
+        volumes:
+            - redis_data:/data
+        networks:
+            - rustassistant
+        healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+        deploy:
+            resources:
+                limits:
+                    memory: 256M
+                    cpus: '0.5'
+                reservations:
+                    memory: 128M
+                    cpus: '0.25'
+
+volumes:
+    redis_data:
+        driver: local
+        name: rustassistant_redis_data
+
+networks:
+    rustassistant:
+        driver: bridge
+        name: rustassistant-network

@@ -49,7 +49,7 @@ async fn main() -> anyhow::Result<()> {
         .parse::<u16>()
         .unwrap_or(3001);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
 
     info!("✅ Rustassistant Web UI is running!");
     info!("🌐 Open your browser at: http://{}", addr);

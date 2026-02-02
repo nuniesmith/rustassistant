@@ -39,11 +39,12 @@ use tracing::{debug, error, info, warn};
 const GROK_API_BASE: &str = "https://api.x.ai/v1";
 
 /// Grok model for fast reasoning
-const GROK_MODEL: &str = "grok-3";
+const GROK_MODEL: &str = "grok-4-1-fast-reasoning";
 
-/// Pricing per million tokens (approximate)
-const COST_PER_MILLION_INPUT_TOKENS: f64 = 5.0;
-const COST_PER_MILLION_OUTPUT_TOKENS: f64 = 15.0;
+/// Pricing per million tokens for Grok 4.1 Fast
+const COST_PER_MILLION_INPUT_TOKENS: f64 = 0.20;
+const COST_PER_MILLION_OUTPUT_TOKENS: f64 = 0.50;
+const COST_PER_MILLION_CACHED_TOKENS: f64 = 0.05;
 
 /// Maximum retries for API calls
 const MAX_RETRIES: usize = 3;
@@ -86,6 +87,7 @@ struct Message {
 /// API response
 #[derive(Debug, Deserialize)]
 struct ChatCompletionResponse {
+    #[allow(dead_code)]
     id: String,
     choices: Vec<Choice>,
     usage: Usage,
@@ -95,6 +97,7 @@ struct ChatCompletionResponse {
 #[derive(Debug, Deserialize)]
 struct Choice {
     message: Message,
+    #[allow(dead_code)]
     finish_reason: String,
 }
 
