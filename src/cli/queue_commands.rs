@@ -910,6 +910,7 @@ fn find_local_repo(name_or_path: &str) -> Option<PathBuf> {
     let home = dirs::home_dir()?;
     let candidates = [
         PathBuf::from(name_or_path),
+        home.join("github").join(name_or_path),
         home.join("code").join(name_or_path),
         home.join("projects").join(name_or_path),
         home.join("dev").join(name_or_path),

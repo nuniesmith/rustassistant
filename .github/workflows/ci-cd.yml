@@ -356,6 +356,18 @@ jobs:
                         echo "✅ XAI_API_KEY configured"
                       fi
 
+                      # Update GITHUB_TOKEN in .env if secret is set
+                      if [ -f ".env" ] && [ -n "${{ secrets.REPO_API_KEY }}" ]; then
+                        if grep -q "^GITHUB_TOKEN=" .env; then
+                          echo "📝 Updating GITHUB_TOKEN in .env..."
+                          sed -i 's|^GITHUB_TOKEN=.*|GITHUB_TOKEN=${{ secrets.REPO_API_KEY }}|' .env
+                        else
+                          echo "📝 Adding GITHUB_TOKEN to .env..."
+                          echo "GITHUB_TOKEN=${{ secrets.REPO_API_KEY }}" >> .env
+                        fi
+                        echo "✅ GITHUB_TOKEN configured"
+                      fi
+
                       # Create required directories with proper permissions
                       echo "📁 Creating data and config directories..."
                       mkdir -p data config

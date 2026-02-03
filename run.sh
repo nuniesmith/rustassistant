@@ -96,7 +96,7 @@ setup_env() {
     else
         log_info "Creating new $ENV_FILE..."
 
-        # Get XAI API Key
+        # Get XAI API Key and GitHub Token
         if [ "$INTERACTIVE" = true ]; then
             echo ""
             echo "╔════════════════════════════════════════════════════════════════╗"
@@ -104,10 +104,12 @@ setup_env() {
             echo "╚════════════════════════════════════════════════════════════════╝"
             echo ""
             read -p "Enter your XAI API key (or press Enter to skip): " XAI_API_KEY
+            read -p "Enter your GitHub token (or press Enter to skip): " GITHUB_TOKEN
             echo ""
         else
             # In non-interactive mode, use environment variable or empty
             XAI_API_KEY="${XAI_API_KEY:-}"
+            GITHUB_TOKEN="${GITHUB_TOKEN:-}"
         fi
 
         # Generate secrets
@@ -128,6 +130,11 @@ setup_env() {
 # ----------------------------------------------------------------------------
 XAI_API_KEY=${XAI_API_KEY}
 XAI_BASE_URL=https://api.x.ai/v1
+
+# ----------------------------------------------------------------------------
+# GitHub Integration
+# ----------------------------------------------------------------------------
+GITHUB_TOKEN=${GITHUB_TOKEN}
 
 # ----------------------------------------------------------------------------
 # Database
