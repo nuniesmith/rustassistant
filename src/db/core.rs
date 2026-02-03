@@ -890,6 +890,32 @@ impl Database {
         Ok(0.0)
     }
 
+    /// Get cache hit rate from llm_costs table (last 30 days)
+    ///
+    /// Returns the percentage of queries that were cache hits (0-100).
+    /// Returns 0 if no data or if the llm_costs table doesn't exist.
+    pub async fn get_cache_hit_rate(&self) -> DbResult<i64> {
+        // Query cache hit stats from llm_costs table (created by CostTracker)
+        let result = sqlx::query_as::<_, (i64, i64)>(
+            r#"
+            SELECT
+                COUNT(*) as total,
+                COALESCE(SUM(CASE WHEN cache_hit = TRUE THEN 1 ELSE 0 END), 0) as hits
+            FROM llm_costs
+            WHERE timestamp >= datetime('now', '-30 days')
+            "#,
+        )
+        .fetch_optional(&self.pool)
+        .await;
+
+        match result {
+            Ok(Some((total, hits))) if total > 0 => {
+                Ok(((hits as f64 / total as f64) * 100.0) as i64)
+            }
+            _ => Ok(0), // No data or table doesn't exist
+        }
+    }
+
     /// Get cost by model (legacy API - returns empty map)
     pub async fn get_cost_by_model(&self) -> DbResult<std::collections::HashMap<String, f64>> {
         Ok(std::collections::HashMap::new())

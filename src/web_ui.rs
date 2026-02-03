@@ -199,11 +199,12 @@ pub async fn dashboard_handler(
     let cost_7d = state.db.get_llm_cost_by_period(7).await.unwrap_or(0.0);
     let cost_30d = state.db.get_llm_cost_by_period(30).await.unwrap_or(0.0);
 
-    // Estimate cache hit rate (simplified)
-    let cache_hit_rate = 70; // TODO: Get from actual cache stats
+    // Get actual cache hit rate from database
+    let cache_hit_rate = state.db.get_cache_hit_rate().await.unwrap_or(0);
 
-    // Calculate estimated savings
-    let estimated_savings = cost_30d * 0.7; // 70% cache hit rate
+    // Calculate estimated savings based on actual cache hit rate
+    let cache_rate_fraction = cache_hit_rate as f64 / 100.0;
+    let estimated_savings = cost_30d * cache_rate_fraction;
 
     let stats = DashboardStats {
         total_notes,
