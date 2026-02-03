@@ -343,6 +343,12 @@ jobs:
                         echo "✅ Using existing .env file"
                       fi
 
+                      # Create required directories with proper permissions
+                      echo "📁 Creating data and config directories..."
+                      mkdir -p data config
+                      chmod 755 data config
+                      echo "✅ Directories ready"
+
                   deploy-command: |
                       cd ~/rustassistant
 
