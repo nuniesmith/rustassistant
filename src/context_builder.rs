@@ -16,8 +16,8 @@
 //! ## Usage
 //!
 //! ```rust,no_run
-//! use devflow::context_builder::ContextBuilder;
-//! use devflow::db::Database;
+//! use rustassistant::context_builder::ContextBuilder;
+//! use rustassistant::db::Database;
 //!
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {

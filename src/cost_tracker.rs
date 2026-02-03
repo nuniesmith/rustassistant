@@ -17,6 +17,7 @@
 //!
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
+//!     # let pool = rustassistant::db::init_db("sqlite::memory:").await?;
 //!     let tracker = CostTracker::new(pool).await?;
 //!
 //!     // Log an API call

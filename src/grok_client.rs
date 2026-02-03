@@ -13,8 +13,8 @@
 //! ## Usage
 //!
 //! ```rust,no_run
-//! use devflow::grok_client::GrokClient;
-//! use devflow::db::Database;
+//! use rustassistant::grok_client::GrokClient;
+//! use rustassistant::db::Database;
 //!
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {

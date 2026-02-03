@@ -13,13 +13,11 @@
 //! ## Usage
 //!
 //! ```rust,no_run
-//! use devflow::response_cache::ResponseCache;
-//! use devflow::db::Database;
+//! use rustassistant::response_cache::ResponseCache;
 //!
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
-//!     let db = Database::new("data/rustassistant.db").await?;
-//!     let cache = ResponseCache::new(db);
+//!     let cache = ResponseCache::new("cache.db").await?;
 //!
 //!     // Check cache before API call
 //!     let prompt = "analyze this code...";
@@ -28,9 +26,9 @@
 //!         return Ok(());
 //!     }
 //!
-//!     // Make API call and cache result
-//!     let response = make_api_call(prompt).await?;
-//!     cache.set(prompt, "file_scoring", &response, None).await?;
+//!     // Make API call and cache result (example only)
+//!     let response = "API response here";
+//!     cache.set(prompt, "file_scoring", response, None).await?;
 //!
 //!     Ok(())
 //! }

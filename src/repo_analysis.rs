@@ -13,7 +13,7 @@
 //! ## Usage
 //!
 //! ```rust,no_run
-//! use devflow::repo_analysis::RepoAnalyzer;
+//! use rustassistant::repo_analysis::RepoAnalyzer;
 //!
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {

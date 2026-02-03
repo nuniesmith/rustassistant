@@ -12,13 +12,16 @@
 //! ## Usage
 //!
 //! ```rust,no_run
-//! use rustassistant::query_router::{QueryRouter, QueryIntent};
+//! use rustassistant::query_router::{QueryRouter, Action, UserContext};
 //!
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
-//!     let router = QueryRouter::new(pool, cache).await?;
+//!     # let pool = todo!();
+//!     # let cache_path = "cache.db";
+//!     let mut router = QueryRouter::new(pool, cache_path).await?;
+//!     let user_context = UserContext::default();
 //!
-//!     let action = router.route("What should I work on next?").await?;
+//!     let action = router.route("What should I work on next?", &user_context).await?;
 //!     match action {
 //!         Action::CallGrok(context) => {
 //!             // Make API call with context

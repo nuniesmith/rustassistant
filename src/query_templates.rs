@@ -13,7 +13,7 @@
 //! ## Usage
 //!
 //! ```rust,no_run
-//! use devflow::query_templates::{QueryTemplate, TemplateRegistry};
+//! use rustassistant::query_templates::{QueryTemplate, TemplateRegistry};
 //!
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
