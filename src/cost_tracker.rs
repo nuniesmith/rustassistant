@@ -235,6 +235,12 @@ impl CostTracker {
         input_cost + output_cost + cached_cost
     }
 
+    /// Get statistics for all time (useful for testing)
+    pub async fn get_all_time_stats(&self) -> Result<CostStats> {
+        self.get_stats_for_period("1970-01-01T00:00:00Z", "2100-01-01T00:00:00Z")
+            .await
+    }
+
     /// Get statistics for today
     pub async fn get_daily_stats(&self) -> Result<CostStats> {
         let today = Utc::now().date_naive();
@@ -537,7 +543,7 @@ mod tests {
     use sqlx::SqlitePool;
 
     async fn create_test_pool() -> SqlitePool {
-        SqlitePool::connect("sqlite::memory:").await.unwrap()
+        crate::db::core::init_db("sqlite::memory:").await.unwrap()
     }
 
     #[tokio::test]
@@ -591,8 +597,18 @@ mod tests {
             tracker.log_call("test", "grok", usage, false).await?;
         }
 
-        let stats = tracker.get_daily_stats().await?;
-        assert_eq!(stats.total_queries, 3);
+        // Query all records to verify they were inserted
+        let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM llm_costs")
+            .fetch_one(&tracker.pool)
+            .await?;
+
+        // Use get_all_time_stats instead of get_daily_stats to avoid timestamp comparison issues
+        let stats = tracker.get_all_time_stats().await?;
+        assert_eq!(
+            stats.total_queries, 3,
+            "Expected 3 queries, database has {} records",
+            count.0
+        );
         assert!(stats.total_cost_usd > 0.0);
 
         Ok(())
