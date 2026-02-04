@@ -665,7 +665,9 @@ async fn handle_refactor_action(
                         provider: "xai",    // TODO: get from config
                         model: "grok-beta", // TODO: get from config
                         result: result_json,
-                        tokens_used: None, // TODO: track tokens
+                        tokens_used: None,    // TODO: track tokens
+                        prompt_hash: None,    // Auto-computed from cache_type
+                        schema_version: None, // Defaults to 1
                     })?;
                     println!("💾 Analysis cached\n");
 
@@ -815,7 +817,9 @@ async fn handle_docs_action(pool: &sqlx::SqlitePool, action: DocsAction) -> anyh
                     provider: "xai",    // TODO: get from config
                     model: "grok-beta", // TODO: get from config
                     result: result_json,
-                    tokens_used: None, // TODO: track tokens
+                    tokens_used: None,    // TODO: track tokens
+                    prompt_hash: None,    // Auto-computed from cache_type
+                    schema_version: None, // Defaults to 1
                 })?;
                 println!("💾 Documentation cached\n");
 

@@ -42,6 +42,7 @@ pub mod llm;
 pub mod llm_audit;
 pub mod llm_config;
 pub mod parser;
+pub mod prompt_hashes;
 pub mod query_router;
 pub mod query_templates;
 pub mod queue;

@@ -125,6 +125,10 @@ pub struct RepoCacheEntry {
     /// SHA-256 hash of file content when analyzed
     pub file_hash: String,
 
+    /// Multi-factor cache key (includes file, model, prompt, schema)
+    #[serde(default)]
+    pub cache_key: String,
+
     /// Timestamp when analysis was performed (RFC3339)
     pub analyzed_at: String,
 
@@ -133,6 +137,14 @@ pub struct RepoCacheEntry {
 
     /// Model used
     pub model: String,
+
+    /// Prompt template hash (first 16 chars of SHA-256)
+    #[serde(default)]
+    pub prompt_hash: String,
+
+    /// Schema version for this analysis type
+    #[serde(default = "default_schema_version")]
+    pub schema_version: u32,
 
     /// Analysis result (JSON)
     pub result: serde_json::Value,
@@ -145,6 +157,11 @@ pub struct RepoCacheEntry {
 
     /// Cache type
     pub cache_type: String,
+}
+
+/// Default schema version
+fn default_schema_version() -> u32 {
+    1
 }
 
 /// Parameters for setting a cache entry
@@ -163,6 +180,10 @@ pub struct CacheSetParams<'a> {
     pub result: serde_json::Value,
     /// Token count (if available)
     pub tokens_used: Option<usize>,
+    /// Prompt hash (optional, will be computed if not provided)
+    pub prompt_hash: Option<&'a str>,
+    /// Schema version (optional, defaults to 1)
+    pub schema_version: Option<u32>,
 }
 
 /// Repository cache manager
@@ -320,11 +341,27 @@ Add to `.gitignore` if you prefer not to track cache files:
     }
 
     /// Calculate SHA-256 hash of content
-    /// Hash file content using SHA-256
     fn hash_content(&self, content: &str) -> String {
         let mut hasher = Sha256::new();
         hasher.update(content.as_bytes());
         format!("{:x}", hasher.finalize())
+    }
+
+    /// Compute multi-factor cache key
+    ///
+    /// Combines file hash, model ID, prompt hash, and schema version to create
+    /// a unique cache key that invalidates when any of these factors change.
+    fn compute_cache_key(
+        &self,
+        file_hash: &str,
+        model: &str,
+        prompt_hash: &str,
+        schema_version: u32,
+    ) -> String {
+        let combined = format!("{}:{}:{}:{}", file_hash, model, prompt_hash, schema_version);
+        let mut hasher = Sha256::new();
+        hasher.update(combined.as_bytes());
+        format!("{:x}", hasher.finalize())[..32].to_string()
     }
 
     /// Get cache file path for a file
@@ -339,15 +376,32 @@ Add to `.gitignore` if you prefer not to track cache files:
     }
 
     /// Get cached analysis result for a file
+    /// Get cached analysis result if available and valid
     ///
-    /// Returns `None` if:
+    /// Returns None if:
+    /// - Cache is disabled
     /// - No cache entry exists
     /// - Cache entry exists but content has changed (stale)
+    /// - Cache entry exists but model/prompt has changed (stale)
     pub fn get(
         &self,
         cache_type: CacheType,
         file_path: &str,
         current_content: &str,
+    ) -> anyhow::Result<Option<RepoCacheEntry>> {
+        self.get_with_validation(cache_type, file_path, current_content, None, None)
+    }
+
+    /// Get cached analysis with explicit model and prompt validation
+    ///
+    /// This validates that the cache entry was created with the same model and prompt.
+    pub fn get_with_validation(
+        &self,
+        cache_type: CacheType,
+        file_path: &str,
+        current_content: &str,
+        model: Option<&str>,
+        prompt_hash: Option<&str>,
     ) -> anyhow::Result<Option<RepoCacheEntry>> {
         if !self.enabled {
             return Ok(None);
@@ -378,6 +432,55 @@ Add to `.gitignore` if you prefer not to track cache files:
             return Ok(None);
         }
 
+        // Validate model if provided
+        if let Some(expected_model) = model {
+            if entry.model != expected_model {
+                debug!(
+                    "Cache STALE (model changed): {} / {} (cached: {}, current: {})",
+                    cache_type.subdirectory(),
+                    file_path,
+                    entry.model,
+                    expected_model
+                );
+                return Ok(None);
+            }
+        }
+
+        // Validate prompt hash if provided
+        if let Some(expected_prompt) = prompt_hash {
+            if !entry.prompt_hash.is_empty() && entry.prompt_hash != expected_prompt {
+                debug!(
+                    "Cache STALE (prompt changed): {} / {}",
+                    cache_type.subdirectory(),
+                    file_path
+                );
+                return Ok(None);
+            }
+        }
+
+        // Validate using multi-factor cache key if available
+        if !entry.cache_key.is_empty() {
+            let current_prompt = prompt_hash
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| crate::prompt_hashes::get_prompt_hash_for_type(cache_type));
+            let current_model = model.unwrap_or(&entry.model);
+            let expected_key = self.compute_cache_key(
+                &current_hash,
+                current_model,
+                &current_prompt,
+                entry.schema_version,
+            );
+
+            if entry.cache_key != expected_key {
+                debug!(
+                    "Cache STALE (key mismatch): {} / {}",
+                    cache_type.subdirectory(),
+                    file_path
+                );
+                return Ok(None);
+            }
+        }
+
         debug!("Cache HIT: {} / {}", cache_type.subdirectory(), file_path);
         Ok(Some(entry))
     }
@@ -388,12 +491,28 @@ Add to `.gitignore` if you prefer not to track cache files:
             return Ok(());
         }
 
+        // Compute prompt hash if not provided
+        let prompt_hash = params
+            .prompt_hash
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| crate::prompt_hashes::get_prompt_hash_for_type(params.cache_type));
+
+        let schema_version = params.schema_version.unwrap_or(1);
+
+        // Compute multi-factor cache key
+        let file_hash = self.hash_content(params.content);
+        let cache_key =
+            self.compute_cache_key(&file_hash, params.model, &prompt_hash, schema_version);
+
         let entry = RepoCacheEntry {
             file_path: params.file_path.to_string(),
-            file_hash: self.hash_content(params.content),
+            file_hash,
+            cache_key,
             analyzed_at: chrono::Utc::now().to_rfc3339(),
             provider: params.provider.to_string(),
             model: params.model.to_string(),
+            prompt_hash,
+            schema_version,
             result: params.result,
             tokens_used: params.tokens_used,
             file_size: params.content.len(),
@@ -571,7 +690,8 @@ mod tests {
     #[test]
     fn test_repo_cache_creation() {
         let temp = TempDir::new().unwrap();
-        let cache = RepoCache::new(temp.path()).unwrap();
+        // Test with local strategy since centralized would go to home dir
+        let cache = RepoCache::new_with_strategy(temp.path(), CacheStrategy::Local).unwrap();
         assert!(cache.is_enabled());
         assert!(cache.cache_dir().exists());
         assert!(cache.cache_dir().join("README.md").exists());
@@ -580,7 +700,7 @@ mod tests {
     #[test]
     fn test_cache_structure() {
         let temp = TempDir::new().unwrap();
-        let cache = RepoCache::new(temp.path()).unwrap();
+        let cache = RepoCache::new_with_strategy(temp.path(), CacheStrategy::Local).unwrap();
 
         // Check all subdirectories exist
         for cache_type in &[
@@ -600,7 +720,7 @@ mod tests {
     #[test]
     fn test_cache_get_set() {
         let temp = TempDir::new().unwrap();
-        let cache = RepoCache::new(temp.path()).unwrap();
+        let cache = RepoCache::new_with_strategy(temp.path(), CacheStrategy::Local).unwrap();
 
         let file_path = "src/main.rs";
         let content = "fn main() {}";
@@ -622,6 +742,8 @@ mod tests {
                 model: "grok-beta",
                 result: result.clone(),
                 tokens_used: Some(100),
+                prompt_hash: None,
+                schema_version: None,
             })
             .unwrap();
 
@@ -638,7 +760,7 @@ mod tests {
     #[test]
     fn test_cache_invalidation() {
         let temp = TempDir::new().unwrap();
-        let cache = RepoCache::new(temp.path()).unwrap();
+        let cache = RepoCache::new_with_strategy(temp.path(), CacheStrategy::Local).unwrap();
 
         let file_path = "src/main.rs";
         let content1 = "fn main() {}";
@@ -655,6 +777,8 @@ mod tests {
                 model: "grok-beta",
                 result: result.clone(),
                 tokens_used: Some(100),
+                prompt_hash: None,
+                schema_version: None,
             })
             .unwrap();
 
@@ -674,7 +798,7 @@ mod tests {
     #[test]
     fn test_clear_cache() {
         let temp = TempDir::new().unwrap();
-        let cache = RepoCache::new(temp.path()).unwrap();
+        let cache = RepoCache::new_with_strategy(temp.path(), CacheStrategy::Local).unwrap();
 
         // Add some entries
         cache
@@ -686,6 +810,8 @@ mod tests {
                 model: "grok-beta",
                 result: serde_json::json!({"score": 95}),
                 tokens_used: Some(100),
+                prompt_hash: None,
+                schema_version: None,
             })
             .unwrap();
 
@@ -698,6 +824,8 @@ mod tests {
                 model: "grok-beta",
                 result: serde_json::json!({"docs": "test"}),
                 tokens_used: Some(50),
+                prompt_hash: None,
+                schema_version: None,
             })
             .unwrap();
 
@@ -713,7 +841,7 @@ mod tests {
     #[test]
     fn test_cache_stats() {
         let temp = TempDir::new().unwrap();
-        let cache = RepoCache::new(temp.path()).unwrap();
+        let cache = RepoCache::new_with_strategy(temp.path(), CacheStrategy::Local).unwrap();
 
         // Initially empty
         let stats = cache.stats(CacheType::Refactor).unwrap();
@@ -729,6 +857,8 @@ mod tests {
                 model: "grok-beta",
                 result: serde_json::json!({"score": 95}),
                 tokens_used: Some(100),
+                prompt_hash: None,
+                schema_version: None,
             })
             .unwrap();
 
