@@ -236,6 +236,25 @@ enum CacheAction {
         #[arg(short, long)]
         all: bool,
     },
+
+    /// Migrate cache from JSON to SQLite
+    Migrate {
+        /// Source path (JSON cache directory)
+        #[arg(short, long)]
+        source: Option<String>,
+
+        /// Destination path (SQLite database file)
+        #[arg(short, long)]
+        destination: Option<String>,
+
+        /// Create backup before migration
+        #[arg(short, long)]
+        backup: bool,
+
+        /// Verify migration after completion
+        #[arg(short, long)]
+        verify: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -665,11 +684,16 @@ async fn handle_refactor_action(
                         provider: "xai",    // TODO: get from config
                         model: "grok-beta", // TODO: get from config
                         result: result_json,
-                        tokens_used: None,    // TODO: track tokens
+                        tokens_used: analysis.tokens_used,
                         prompt_hash: None,    // Auto-computed from cache_type
                         schema_version: None, // Defaults to 1
                     })?;
-                    println!("💾 Analysis cached\n");
+
+                    if let Some(tokens) = analysis.tokens_used {
+                        println!("💾 Analysis cached (tokens used: {})\n", tokens);
+                    } else {
+                        println!("💾 Analysis cached\n");
+                    }
 
                     analysis
                 };
@@ -877,7 +901,10 @@ async fn handle_cache_action(action: CacheAction) -> anyhow::Result<()> {
         CacheAction::Status { path } => {
             let repo_path = path.unwrap_or_else(|| ".".to_string());
             let cache = RepoCache::new(&repo_path)?;
-            cache.print_summary()?;
+
+            // Use default budget config ($3/month)
+            let budget_config = rustassistant::BudgetConfig::default();
+            cache.print_detailed_summary(Some(&budget_config))?;
         }
 
         CacheAction::Clear {
@@ -915,6 +942,99 @@ async fn handle_cache_action(action: CacheAction) -> anyhow::Result<()> {
                 );
             } else {
                 eprintln!("{} Specify --all or --cache-type", "✗".red());
+            }
+        }
+
+        CacheAction::Migrate {
+            source,
+            destination,
+            backup,
+            verify,
+        } => {
+            use rustassistant::CacheMigrator;
+
+            // Determine source and destination paths
+            let source_path = source.unwrap_or_else(|| {
+                let home = dirs::home_dir().expect("Could not find home directory");
+                home.join(".rustassistant/cache/repos")
+                    .to_string_lossy()
+                    .to_string()
+            });
+
+            let dest_path = destination.unwrap_or_else(|| {
+                let home = dirs::home_dir().expect("Could not find home directory");
+                home.join(".rustassistant/cache.db")
+                    .to_string_lossy()
+                    .to_string()
+            });
+
+            println!("{} Starting cache migration", "🔄".blue());
+            println!("  Source: {}", source_path);
+            println!("  Destination: {}", dest_path);
+            println!();
+
+            // Create migrator
+            let migrator = CacheMigrator::new(&source_path, &dest_path).await?;
+
+            // Create backup if requested
+            if backup {
+                let backup_path = format!("{}.backup", source_path);
+                println!("{} Creating backup at {}", "💾".blue(), backup_path);
+                migrator.backup(&backup_path)?;
+                println!("{} Backup created\n", "✓".green());
+            }
+
+            // Run migration with progress
+            println!("{} Migrating entries...", "🔄".blue());
+            let result = migrator
+                .migrate(|progress| {
+                    if progress.migrated % 10 == 0 || progress.migrated == progress.total {
+                        println!(
+                            "  Progress: {}/{} ({} failed)",
+                            progress.migrated, progress.total, progress.failed
+                        );
+                    }
+                })
+                .await?;
+
+            println!();
+            println!("{} Migration complete!", "✓".green());
+            println!("  Total entries: {}", result.total_entries);
+            println!("  Migrated: {}", result.total_migrated);
+            println!("  Failed: {}", result.total_failed);
+            println!("  Source size: {} bytes", result.source_size);
+            println!("  Destination size: {} bytes", result.destination_size);
+            println!(
+                "  Space saved: {} bytes ({:.1}%)",
+                result.space_saved,
+                if result.source_size > 0 {
+                    (result.space_saved as f64 / result.source_size as f64) * 100.0
+                } else {
+                    0.0
+                }
+            );
+
+            if !result.failures.is_empty() {
+                println!();
+                println!("{} Failed migrations:", "⚠️".yellow());
+                for failure in result.failures.iter().take(5) {
+                    println!("  - {}: {}", failure.file_path, failure.error);
+                }
+                if result.failures.len() > 5 {
+                    println!("  ... and {} more", result.failures.len() - 5);
+                }
+            }
+
+            // Verify if requested
+            if verify {
+                println!();
+                println!("{} Verifying migration...", "🔍".blue());
+                let valid = migrator.verify().await?;
+                if valid {
+                    println!("{} Verification passed!", "✓".green());
+                } else {
+                    println!("{} Verification failed - entry count mismatch", "✗".red());
+                }
             }
         }
     }

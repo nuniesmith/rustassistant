@@ -47,8 +47,8 @@ pub async fn enqueue(
 
     sqlx::query(
         r#"
-        INSERT INTO queue_items 
-        (id, content, stage, source, priority, repo_id, file_path, line_number, 
+        INSERT INTO queue_items
+        (id, content, stage, source, priority, repo_id, file_path, line_number,
          content_hash, retry_count, created_at, updated_at)
         VALUES (?, ?, 'inbox', ?, ?, ?, ?, ?, ?, 0, ?, ?)
     "#,
@@ -137,7 +137,7 @@ pub async fn update_analysis(pool: &SqlitePool, id: &str, analysis: &AnalysisRes
     let tags = analysis.tags.join(",");
 
     sqlx::query(r#"
-        UPDATE queue_items 
+        UPDATE queue_items
         SET analysis = ?, tags = ?, category = ?, score = ?, stage = 'pending_tagging', updated_at = ?
         WHERE id = ?
     "#)
@@ -316,6 +316,7 @@ pub struct FileAnalysisResult {
     pub exports: Vec<String>,
     pub tags: Vec<String>,
     pub needs_attention: bool,
+    pub tokens_used: Option<usize>,
 }
 
 impl QueueProcessor {

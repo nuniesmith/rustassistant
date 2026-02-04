@@ -667,6 +667,63 @@ Add to `.gitignore` if you prefer not to track cache files:
 
         Ok(())
     }
+
+    /// Print detailed summary with cost estimates and budget tracking
+    pub fn print_detailed_summary(
+        &self,
+        budget_config: Option<&crate::token_budget::BudgetConfig>,
+    ) -> anyhow::Result<()> {
+        use crate::token_budget::TokenPricing;
+
+        println!("\n📦 Repository Cache Summary");
+        println!("  Location: {}", self.cache_dir.display());
+        println!();
+
+        let all_stats = self.all_stats()?;
+        let total_entries: usize = all_stats.iter().map(|s| s.total_entries).sum();
+        let total_tokens: usize = all_stats.iter().map(|s| s.total_tokens).sum();
+
+        if total_entries == 0 {
+            println!("  No cache entries found");
+            return Ok(());
+        }
+
+        // Estimate provider/model distribution (we'll use default Grok pricing)
+        // In the future, we could read actual provider/model from cache entries
+        let pricing = TokenPricing::grok();
+        let estimated_cost = pricing.estimate_cost(total_tokens);
+
+        for stats in all_stats {
+            if stats.total_entries > 0 {
+                println!("  {} cache:", stats.cache_type);
+                println!("    Entries: {}", stats.total_entries);
+                println!("    Tokens: {}", stats.total_tokens);
+
+                let cache_cost = pricing.estimate_cost(stats.total_tokens);
+                println!("    Estimated cost: ${:.4}", cache_cost);
+                println!("    Total file size: {} bytes", stats.total_file_size);
+            }
+        }
+
+        println!();
+        println!("  Total entries: {}", total_entries);
+        println!("  Total tokens: {}", total_tokens);
+        println!("  Total estimated cost: ${:.4}", estimated_cost);
+
+        // Budget tracking
+        if let Some(budget) = budget_config {
+            println!();
+            println!("💰 Budget Status:");
+            let status = budget.check_spending(estimated_cost);
+            println!("  {} {}", status.emoji(), status.message());
+            println!("  Remaining: ${:.2}", budget.remaining(estimated_cost));
+
+            let tokens_left = budget.tokens_remaining(estimated_cost, &pricing);
+            println!("  Estimated tokens remaining: ~{}", tokens_left);
+        }
+
+        Ok(())
+    }
 }
 
 /// Cache statistics

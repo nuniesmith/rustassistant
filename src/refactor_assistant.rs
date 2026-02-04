@@ -57,6 +57,9 @@ pub struct RefactoringAnalysis {
     pub priorities: Vec<String>,
     /// Estimated effort
     pub estimated_effort: EffortEstimate,
+    /// Tokens used in the analysis
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tokens_used: Option<usize>,
 }
 
 /// Detected code smell
@@ -597,6 +600,7 @@ Suggest:
                     maintainability_score,
                     priorities,
                     estimated_effort,
+                    tokens_used: None,
                 })
             }
             Err(_) => {
@@ -609,6 +613,7 @@ Suggest:
                     maintainability_score: 50.0,
                     priorities: vec!["Review AI response for details".to_string()],
                     estimated_effort: EffortEstimate::Medium,
+                    tokens_used: None,
                 })
             }
         }

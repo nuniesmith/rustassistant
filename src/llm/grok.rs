@@ -54,7 +54,7 @@ impl GrokAnalyzer {
         system_prompt: &str,
         user_prompt: &str,
         json_mode: bool,
-    ) -> Result<String> {
+    ) -> Result<(String, Option<usize>)> {
         let mut payload = json!({
             "model": model,
             "messages": [
@@ -88,6 +88,7 @@ impl GrokAnalyzer {
         let result: GrokResponse = response.json().await?;
 
         // Track usage
+        let tokens = result.usage.as_ref().map(|u| u.total_tokens as usize);
         if let Some(usage) = result.usage {
             self.tokens_used.fetch_add(
                 usage.total_tokens as u64,
@@ -106,7 +107,7 @@ impl GrokAnalyzer {
             .map(|c| c.message.content.clone())
             .unwrap_or_default();
 
-        Ok(content)
+        Ok((content, tokens))
     }
 }
 
@@ -163,8 +164,8 @@ Guidelines:
             source, content
         );
 
-        let response = self
-            .call_grok(DEFAULT_MODEL, system_prompt, &user_prompt, true)
+        let (response, _tokens) = self
+            .call_grok(DEFAULT_MODEL, system_prompt, &user_prompt, false)
             .await?;
 
         // Parse JSON response
@@ -243,7 +244,7 @@ Guidelines:
         );
 
         // Use better model for file analysis
-        let response = self
+        let (response, tokens) = self
             .call_grok(ANALYSIS_MODEL, system_prompt, &user_prompt, true)
             .await?;
 
@@ -297,6 +298,7 @@ Guidelines:
                 })
                 .unwrap_or_default(),
             needs_attention: parsed["needs_attention"].as_bool().unwrap_or(false),
+            tokens_used: tokens,
         })
     }
 }
@@ -340,7 +342,7 @@ Priority guidelines:
             format!("File: {}\nTODO: {}", file_path, todo_content)
         };
 
-        let response = self
+        let (response, _tokens) = self
             .call_grok(DEFAULT_MODEL, system_prompt, &user_prompt, true)
             .await?;
         let parsed: serde_json::Value = serde_json::from_str(&response)?;
@@ -395,8 +397,8 @@ Be specific and actionable in recommendations."#;
             repo_name, file_structure, samples_text
         );
 
-        let response = self
-            .call_grok(ANALYSIS_MODEL, system_prompt, &user_prompt, true)
+        let (response, _tokens) = self
+            .call_grok(DEFAULT_MODEL, system_prompt, &user_prompt, true)
             .await?;
         let parsed: serde_json::Value = serde_json::from_str(&response)?;
 
@@ -479,8 +481,8 @@ Respond with JSON:
             project_name, notes_text, tasks_text
         );
 
-        let response = self
-            .call_grok(ANALYSIS_MODEL, system_prompt, &user_prompt, true)
+        let (response, _tokens) = self
+            .call_grok(DEFAULT_MODEL, system_prompt, &user_prompt, true)
             .await?;
         let parsed: serde_json::Value = serde_json::from_str(&response)?;
 

@@ -23,6 +23,7 @@
 //! - RESTful API and CLI interface
 
 pub mod cache;
+pub mod cache_migrate;
 pub mod cli;
 pub mod code_review;
 pub mod config;
@@ -49,6 +50,7 @@ pub mod queue;
 pub mod refactor_assistant;
 pub mod repo_analysis;
 pub mod repo_cache;
+pub mod repo_cache_sql;
 pub mod research;
 pub mod response_cache;
 pub mod scanner;
@@ -60,12 +62,14 @@ pub mod tasks;
 pub mod test_generator;
 pub mod tests_runner;
 pub mod todo_scanner;
+pub mod token_budget;
 pub mod tree_state;
 pub mod types;
 // Temporarily disabled - needs updates for new schema
 // pub mod web_ui;
 
 pub use cache::{AuditCache, CacheEntry, CacheStats};
+pub use cache_migrate::{CacheMigrator, MigrationFailure, MigrationProgress, MigrationResult};
 pub use cli::{
     handle_queue_command, handle_report_command, handle_scan_command, QueueCommands,
     ReportCommands, ScanCommands,
@@ -127,6 +131,10 @@ pub use repo_cache::{
     CacheSetParams, CacheStats as RepoCacheStats, CacheStrategy, CacheType, RepoCache,
     RepoCacheEntry,
 };
+pub use repo_cache_sql::{
+    CacheEntry as RepoCacheEntrySql, CacheStats as RepoCacheStatsSql, CacheTypeStats,
+    EvictionPolicy, ModelStats, RepoCacheSql,
+};
 pub use research::{ResearchBreakdown, ResearchTask};
 pub use response_cache::{CacheStats as ResponseCacheStats, CachedResponse, ResponseCache};
 pub use scanner::{
@@ -151,6 +159,7 @@ pub use test_generator::{
 };
 pub use tests_runner::{TestResults, TestRunner};
 pub use todo_scanner::{TodoItem, TodoPriority, TodoScanner, TodoSummary};
+pub use token_budget::{BudgetConfig, ModelTokenStats, MonthlyTracker, TokenPricing, TokenStats};
 pub use tree_state::{
     CategoryChangeSummary, ChangeType, DiffSummary, FileCategory, FileChange, FileState, TreeDiff,
     TreeState, TreeStateManager, TreeSummaryStats,

@@ -163,6 +163,14 @@ impl LlmClient {
         #[derive(Deserialize)]
         struct XaiResponse {
             choices: Vec<XaiChoice>,
+            usage: Option<XaiUsage>,
+        }
+
+        #[derive(Deserialize)]
+        struct XaiUsage {
+            prompt_tokens: Option<usize>,
+            completion_tokens: Option<usize>,
+            total_tokens: Option<usize>,
         }
 
         #[derive(Deserialize)]
@@ -221,6 +229,8 @@ impl LlmClient {
             .map(|c| c.message.content.clone())
             .unwrap_or_default();
 
+        let tokens_used = data.usage.and_then(|u| u.total_tokens);
+
         Ok(LlmAnalysisResult {
             summary: content.lines().take(3).collect::<Vec<_>>().join(" "),
             content,
@@ -232,6 +242,7 @@ impl LlmClient {
             missing_types: Vec::new(),
             security_concerns: Vec::new(),
             architecture_issues: Vec::new(),
+            tokens_used,
         })
     }
 
@@ -258,6 +269,18 @@ impl LlmClient {
         #[derive(Deserialize)]
         struct GeminiResponse {
             candidates: Vec<GeminiCandidate>,
+            #[serde(rename = "usageMetadata")]
+            usage_metadata: Option<GeminiUsage>,
+        }
+
+        #[derive(Deserialize)]
+        struct GeminiUsage {
+            #[serde(rename = "promptTokenCount")]
+            prompt_token_count: Option<usize>,
+            #[serde(rename = "candidatesTokenCount")]
+            candidates_token_count: Option<usize>,
+            #[serde(rename = "totalTokenCount")]
+            total_token_count: Option<usize>,
         }
 
         #[derive(Deserialize)]
@@ -316,6 +339,8 @@ impl LlmClient {
             .map(|p| p.text.clone())
             .unwrap_or_default();
 
+        let tokens_used = data.usage_metadata.and_then(|u| u.total_token_count);
+
         Ok(LlmAnalysisResult {
             summary: content.lines().take(3).collect::<Vec<_>>().join(" "),
             content,
@@ -327,6 +352,7 @@ impl LlmClient {
             missing_types: Vec::new(),
             security_concerns: Vec::new(),
             architecture_issues: Vec::new(),
+            tokens_used,
         })
     }
 
@@ -349,6 +375,13 @@ impl LlmClient {
         #[derive(Deserialize)]
         struct ClaudeResponse {
             content: Vec<ClaudeContent>,
+            usage: Option<ClaudeUsage>,
+        }
+
+        #[derive(Deserialize)]
+        struct ClaudeUsage {
+            input_tokens: Option<usize>,
+            output_tokens: Option<usize>,
         }
 
         #[derive(Deserialize)]
@@ -397,6 +430,10 @@ impl LlmClient {
             .map(|c| c.text.clone())
             .unwrap_or_default();
 
+        let tokens_used = data
+            .usage
+            .map(|u| u.input_tokens.unwrap_or(0) + u.output_tokens.unwrap_or(0));
+
         Ok(LlmAnalysisResult {
             summary: content.lines().take(3).collect::<Vec<_>>().join(" "),
             content,
@@ -408,6 +445,7 @@ impl LlmClient {
             missing_types: Vec::new(),
             security_concerns: Vec::new(),
             architecture_issues: Vec::new(),
+            tokens_used,
         })
     }
 
@@ -503,6 +541,7 @@ pub struct LlmAnalysisResult {
     pub missing_types: Vec<String>,
     pub security_concerns: Vec<String>,
     pub architecture_issues: Vec<String>,
+    pub tokens_used: Option<usize>,
 }
 
 /// File audit result (compatibility type)
