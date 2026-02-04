@@ -112,8 +112,17 @@ pub async fn init_db(database_url: &str) -> DbResult<SqlitePool> {
     // Create the database file directory if needed
     if database_url.starts_with("sqlite:") {
         let path = database_url.trim_start_matches("sqlite:");
-        if let Some(parent) = std::path::Path::new(path).parent() {
+        let file_path = std::path::Path::new(path);
+
+        // Create parent directory if needed
+        if let Some(parent) = file_path.parent() {
             std::fs::create_dir_all(parent).ok();
+        }
+
+        // Create empty database file if it doesn't exist
+        // This ensures SQLx can connect successfully
+        if !file_path.exists() {
+            std::fs::File::create(file_path).ok();
         }
     }
 
