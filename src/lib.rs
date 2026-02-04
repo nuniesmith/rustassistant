@@ -47,6 +47,7 @@ pub mod query_templates;
 pub mod queue;
 pub mod refactor_assistant;
 pub mod repo_analysis;
+pub mod repo_cache;
 pub mod research;
 pub mod response_cache;
 pub mod scanner;
@@ -121,6 +122,7 @@ pub use refactor_assistant::{
 pub use repo_analysis::{
     FileMetadata, LanguageStats, RepoAnalyzer, RepoNodeType, RepoTree, TreeNode,
 };
+pub use repo_cache::{CacheStats as RepoCacheStats, CacheType, RepoCache, RepoCacheEntry};
 pub use research::{ResearchBreakdown, ResearchTask};
 pub use response_cache::{CacheStats as ResponseCacheStats, CachedResponse, ResponseCache};
 pub use scanner::{
@@ -189,6 +191,9 @@ pub mod prelude {
     };
     pub use crate::repo_analysis::{
         FileMetadata, LanguageStats, RepoAnalyzer, RepoNodeType, RepoTree, TreeNode,
+    };
+    pub use crate::repo_cache::{
+        CacheStats as RepoCacheStats, CacheType, RepoCache, RepoCacheEntry,
     };
     pub use crate::response_cache::{
         CacheStats as ResponseCacheStats, CachedResponse, ResponseCache,

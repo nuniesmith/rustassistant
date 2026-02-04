@@ -14,6 +14,7 @@ use rustassistant::db::{
     self, create_note, get_next_task, get_stats, list_notes, list_repositories, list_tasks,
     search_notes, update_task_status,
 };
+use rustassistant::repo_cache::{CacheType, RepoCache};
 
 // ============================================================================
 // CLI Structure
@@ -85,6 +86,12 @@ enum Commands {
     Refactor {
         #[command(subcommand)]
         action: RefactorAction,
+    },
+
+    /// Manage repository cache
+    Cache {
+        #[command(subcommand)]
+        action: CacheAction,
     },
 }
 
@@ -200,6 +207,38 @@ enum RefactorAction {
 }
 
 #[derive(Subcommand)]
+enum CacheAction {
+    /// Initialize cache structure in a repository
+    Init {
+        /// Repository path (defaults to current directory)
+        #[arg(short, long)]
+        path: Option<String>,
+    },
+
+    /// Show cache status and statistics
+    Status {
+        /// Repository path (defaults to current directory)
+        #[arg(short, long)]
+        path: Option<String>,
+    },
+
+    /// Clear cache entries
+    Clear {
+        /// Repository path (defaults to current directory)
+        #[arg(short, long)]
+        path: Option<String>,
+
+        /// Cache type to clear (analysis, docs, refactor, todos)
+        #[arg(short = 't', long)]
+        cache_type: Option<String>,
+
+        /// Clear all cache types
+        #[arg(short, long)]
+        all: bool,
+    },
+}
+
+#[derive(Subcommand)]
 enum TaskAction {
     /// List tasks
     List {
@@ -259,6 +298,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::TestApi => handle_test_api().await?,
         Commands::Docs { action } => handle_docs_action(&pool, action).await?,
         Commands::Refactor { action } => handle_refactor_action(&pool, action).await?,
+        Commands::Cache { action } => handle_cache_action(action).await?,
     }
 
     Ok(())
@@ -600,9 +640,37 @@ async fn handle_refactor_action(
 
     match action {
         RefactorAction::Analyze { file } => {
-            println!("🔍 Analyzing {} for refactoring opportunities...\n", file);
+            // Try to get repository root (current directory for now)
+            let repo_path = std::env::current_dir()?;
+            let cache = RepoCache::new(&repo_path)?;
 
-            let analysis = assistant.analyze_file(&file).await?;
+            // Read file content for cache checking
+            let file_content = std::fs::read_to_string(&file)?;
+
+            // Check cache first
+            let analysis =
+                if let Some(cached) = cache.get(CacheType::Refactor, &file, &file_content)? {
+                    println!("📦 Using cached analysis for {}\n", file);
+                    serde_json::from_value(cached.result)?
+                } else {
+                    println!("🔍 Analyzing {} for refactoring opportunities...\n", file);
+                    let analysis = assistant.analyze_file(&file).await?;
+
+                    // Cache the result
+                    let result_json = serde_json::to_value(&analysis)?;
+                    cache.set(
+                        CacheType::Refactor,
+                        &file,
+                        &file_content,
+                        "xai",       // TODO: get from config
+                        "grok-beta", // TODO: get from config
+                        result_json,
+                        None, // TODO: track tokens
+                    )?;
+                    println!("💾 Analysis cached\n");
+
+                    analysis
+                };
 
             println!("📊 Refactoring Analysis:\n");
             println!("  {} {}", "File:".dimmed(), file);
@@ -723,9 +791,37 @@ async fn handle_docs_action(pool: &sqlx::SqlitePool, action: DocsAction) -> anyh
 
     match action {
         DocsAction::Module { file, output } => {
-            println!("📝 Generating documentation for {}...\n", file);
+            // Try to get repository root (current directory for now)
+            let repo_path = std::env::current_dir()?;
+            let cache = RepoCache::new(&repo_path)?;
 
-            let doc = generator.generate_module_docs(&file).await?;
+            // Read file content for cache checking
+            let file_content = std::fs::read_to_string(&file)?;
+
+            // Check cache first
+            let doc = if let Some(cached) = cache.get(CacheType::Docs, &file, &file_content)? {
+                println!("📦 Using cached documentation for {}\n", file);
+                serde_json::from_value(cached.result)?
+            } else {
+                println!("📝 Generating documentation for {}...\n", file);
+                let doc = generator.generate_module_docs(&file).await?;
+
+                // Cache the result
+                let result_json = serde_json::to_value(&doc)?;
+                cache.set(
+                    CacheType::Docs,
+                    &file,
+                    &file_content,
+                    "xai",       // TODO: get from config
+                    "grok-beta", // TODO: get from config
+                    result_json,
+                    None, // TODO: track tokens
+                )?;
+                println!("💾 Documentation cached\n");
+
+                doc
+            };
+
             let markdown = generator.format_module_doc(&doc);
 
             if let Some(output_path) = output {
@@ -747,6 +843,74 @@ async fn handle_docs_action(pool: &sqlx::SqlitePool, action: DocsAction) -> anyh
                 println!("{} README written to {}", "✓".green(), output_path);
             } else {
                 println!("{}", markdown);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+// ============================================================================
+// Cache Handlers
+// ============================================================================
+
+async fn handle_cache_action(action: CacheAction) -> anyhow::Result<()> {
+    match action {
+        CacheAction::Init { path } => {
+            let repo_path = path.unwrap_or_else(|| ".".to_string());
+            let cache = RepoCache::new(&repo_path)?;
+
+            println!("{} Cache initialized", "✓".green());
+            println!("  {} {}", "Location:".dimmed(), cache.cache_dir().display());
+            println!();
+            println!("Cache structure created:");
+            println!("  - cache/analysis/");
+            println!("  - cache/docs/");
+            println!("  - cache/refactor/");
+            println!("  - cache/todos/");
+        }
+
+        CacheAction::Status { path } => {
+            let repo_path = path.unwrap_or_else(|| ".".to_string());
+            let cache = RepoCache::new(&repo_path)?;
+            cache.print_summary()?;
+        }
+
+        CacheAction::Clear {
+            path,
+            cache_type,
+            all,
+        } => {
+            let repo_path = path.unwrap_or_else(|| ".".to_string());
+            let cache = RepoCache::new(&repo_path)?;
+
+            if all {
+                let removed = cache.clear_all()?;
+                println!("{} Cleared {} cache entries", "✓".green(), removed);
+            } else if let Some(type_str) = cache_type {
+                let cache_type = match type_str.as_str() {
+                    "analysis" => CacheType::Analysis,
+                    "docs" => CacheType::Docs,
+                    "refactor" => CacheType::Refactor,
+                    "todos" => CacheType::Todos,
+                    _ => {
+                        eprintln!(
+                            "{} Invalid cache type. Use: analysis, docs, refactor, or todos",
+                            "✗".red()
+                        );
+                        return Ok(());
+                    }
+                };
+
+                let removed = cache.clear_type(cache_type)?;
+                println!(
+                    "{} Cleared {} {} cache entries",
+                    "✓".green(),
+                    removed,
+                    type_str
+                );
+            } else {
+                eprintln!("{} Specify --all or --cache-type", "✗".red());
             }
         }
     }

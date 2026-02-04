@@ -1,0 +1,21 @@
+{
+  "file_path": "src/repo_cache.rs",
+  "file_hash": "393d5460ff5da13f3adbda4ebc3bfcfba063ca82bc1d8bba5ac22615f0f5bfef",
+  "analyzed_at": "2026-02-04T03:12:42.813401651+00:00",
+  "provider": "xai",
+  "model": "grok-beta",
+  "result": {
+    "code_smells": [],
+    "complexity_score": 50.0,
+    "estimated_effort": "Medium",
+    "maintainability_score": 50.0,
+    "path": "src/repo_cache.rs",
+    "priorities": [
+      "Review AI response for details"
+    ],
+    "suggestions": []
+  },
+  "tokens_used": null,
+  "file_size": 19079,
+  "cache_type": "refactor"
+}

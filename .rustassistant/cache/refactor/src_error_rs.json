@@ -1,0 +1,129 @@
+{
+  "file_path": "src/error.rs",
+  "file_hash": "f13893335dc53501e525a24eed8c429a2c9bfd4ebad0c88e08ab0ddc9d97ee96",
+  "analyzed_at": "2026-02-04T03:11:42.883810945+00:00",
+  "provider": "xai",
+  "model": "grok-beta",
+  "result": {
+    "code_smells": [
+      {
+        "description": "Factory methods `config`, `llm_api`, and `other` follow identical patterns: converting input to String and constructing the respective enum variant. This duplication spans three methods.",
+        "impact": "Minor maintenance overhead; changes to the pattern require updates in multiple places.",
+        "location": {
+          "file": "errors.rs",
+          "item_name": "impl AuditError",
+          "line_end": 60,
+          "line_start": 47
+        },
+        "severity": "Low",
+        "smell_type": "DuplicatedCode"
+      },
+      {
+        "description": "The `AuditError` enum defines 18 variants covering diverse domains (Git, IO, HTTP, config, API, file paths, repo, parse, etc.), making the module large and harder to navigate.",
+        "impact": "Reduces readability and increases cognitive load when adding or modifying error types.",
+        "location": {
+          "file": "errors.rs",
+          "item_name": "AuditError",
+          "line_end": 45,
+          "line_start": 8
+        },
+        "severity": "Medium",
+        "smell_type": "LargeModule"
+      },
+      {
+        "description": "Numerous variants (e.g., Config(String), LlmApi(String), RepositoryNotFound(String), InvalidTag(String), etc.) rely on raw String for payloads instead of structured types, losing type safety and expressiveness.",
+        "impact": "Limits compile-time checks and makes error handling less precise.",
+        "location": {
+          "file": "errors.rs",
+          "item_name": "AuditError",
+          "line_end": 45,
+          "line_start": 8
+        },
+        "severity": "Medium",
+        "smell_type": "PrimitiveObsession"
+      }
+    ],
+    "complexity_score": 20.0,
+    "estimated_effort": "Small",
+    "maintainability_score": 85.0,
+    "path": "src/error.rs",
+    "priorities": [
+      "Group related errors into sub-enums",
+      "Introduce macro for string-based error factories",
+      "Replace String payloads with structured types"
+    ],
+    "suggestions": [
+      {
+        "benefits": [
+          "Eliminates duplication",
+          "Easier to add new string-based factories",
+          "Reduces code size"
+        ],
+        "description": "Define a declarative macro to generate factory methods for string variants, eliminating duplication in `config`, `llm_api`, and `other`.",
+        "effort": "Small",
+        "example": {
+          "after": "macro_rules! str_error_factory {\n    ($name:ident, $variant:ident) => {\n        pub fn $name(msg: impl Into<String>) -> Self {\n            AuditError::$variant(msg.into())\n        }\n    };\n}\n\nimpl AuditError {\n    // ...\n    str_error_factory!(config, Config);\n    str_error_factory!(llm_api, LlmApi);\n    str_error_factory!(other, Other);\n}",
+          "before": "pub fn config(msg: impl Into<String>) -> Self {\n    AuditError::Config(msg.into())\n}\n\npub fn llm_api(msg: impl Into<String>) -> Self {\n    AuditError::LlmApi(msg.into())\n}\n\npub fn other(msg: impl Into<String>) -> Self {\n    AuditError::Other(msg.into())\n}",
+          "explanation": "Macro generates the methods on-demand, avoiding copy-paste while keeping public API intact."
+        },
+        "priority": "Medium",
+        "refactoring_type": "ConsolidateDuplicate",
+        "steps": [
+          "Add a macro_rules! definition before the impl block.",
+          "Replace each duplicated method body with a macro invocation.",
+          "Test error creation to ensure no breakage."
+        ],
+        "title": "Introduce macro for string-based error factories"
+      },
+      {
+        "benefits": [
+          "Shrinks main enum to core + grouped variants",
+          "Easier to extend domains independently",
+          "Better error type hierarchy"
+        ],
+        "description": "Extract domain-specific variants into nested enums (e.g., DomainError, ApiError) to shrink the main enum and improve organization.",
+        "effort": "Medium",
+        "example": {
+          "after": "/// Domain-specific errors\n#[derive(Error, Debug)]\npub enum DomainError {\n    #[error(\"Configuration error: {0}\")]\n    Config(String),\n    #[error(\"LLM API error: {0}\")]\n    LlmApi(String),\n    #[error(\"Parse error in {file}: {message}\")]\n    Parse { file: PathBuf, message: String },\n}\n\n// In AuditError:\n#[error(\"Domain error: {0}\")]\nDomain(#[from] DomainError),",
+          "before": "Config(String),\nLlmApi(String),\nParse { file: PathBuf, message: String },",
+          "explanation": "Groups variants under DomainError; AuditError now delegates with #[from] for conversion."
+        },
+        "priority": "High",
+        "refactoring_type": "ExtractModule",
+        "steps": [
+          "Define enums like `#[derive(Error, Debug)] pub enum DomainError { Config(String), Parse { file: PathBuf, message: String }, ... }`.",
+          "Replace individual variants in AuditError with `Domain(DomainError)`.",
+          "Update #[from] if needed and propagate changes to usages.",
+          "Adjust factory methods to target sub-enums."
+        ],
+        "title": "Group related errors into sub-enums"
+      },
+      {
+        "benefits": [
+          "Improves type safety",
+          "Allows richer error data",
+          "Reduces string parsing in handlers"
+        ],
+        "description": "For primitive-obsessed variants, introduce lightweight structs (e.g., ConfigError { msg: String, details: Option<String> }) to add fields without breaking changes.",
+        "effort": "Medium",
+        "example": {
+          "after": "struct ConfigDetails {\n    pub msg: String,\n    pub key: Option<String>,\n}\n\n#[error(\"Configuration error: {details.msg}\")]\nConfig(ConfigDetails),",
+          "before": "Config(String),",
+          "explanation": "Struct allows optional fields like 'key' for context, replacing plain String."
+        },
+        "priority": "Medium",
+        "refactoring_type": "IntroduceParameterObject",
+        "steps": [
+          "Define new structs for high-use variants like Config, LlmApi.",
+          "Update variant to use struct.",
+          "Modify factory methods to construct structs.",
+          "Update call sites incrementally."
+        ],
+        "title": "Replace String payloads with structured types"
+      }
+    ]
+  },
+  "tokens_used": null,
+  "file_size": 2995,
+  "cache_type": "refactor"
+}

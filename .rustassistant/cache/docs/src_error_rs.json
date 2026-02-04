@@ -1,0 +1,112 @@
+{
+  "file_path": "src/error.rs",
+  "file_hash": "f13893335dc53501e525a24eed8c429a2c9bfd4ebad0c88e08ab0ddc9d97ee96",
+  "analyzed_at": "2026-02-04T03:13:54.878744252+00:00",
+  "provider": "xai",
+  "model": "grok-beta",
+  "result": {
+    "examples": [
+      "use crate::error::{Result, AuditError, ResultExt};\n\npub fn example() -> Result<()> {\n    std::fs::read_to_string(\"config.toml\")\n        .map_err(AuditError::from)\n        .context(\"loading configuration\")?;\n    Ok(())\n}",
+      "let err = AuditError::llm_api(\"API quota hit\")\n    .context(\"generating audit tasks\")\n    .context(\"processing repo\");",
+      "fn handle_git() -> Result<()> {\n    // Git ops auto-convert via From\n    let repo = git2::Repository::open(\"./\")?;\n    Ok(())\n}"
+    ],
+    "functions": [
+      {
+        "description": "Wraps the existing error in a `WithContext` variant, prepending a contextual message for better diagnostics.",
+        "examples": [
+          "let err = AuditError::config(\"missing key\").context(\"while parsing config.toml\");"
+        ],
+        "name": "AuditError::context",
+        "parameters": [
+          {
+            "description": "The original error to contextualize",
+            "name": "self",
+            "param_type": "AuditError"
+          },
+          {
+            "description": "Human-readable context string to associate with the error",
+            "name": "context",
+            "param_type": "impl Into<String>"
+          }
+        ],
+        "returns": "A new `AuditError::WithContext` instance containing the context and boxed original error.",
+        "signature": "pub fn context(self, context: impl Into<String>) -> Self"
+      },
+      {
+        "description": "Creates a `Config` variant error for configuration-related issues.",
+        "examples": [
+          "let err = AuditError::config(\"Invalid format in settings.yaml\");"
+        ],
+        "name": "AuditError::config",
+        "parameters": [
+          {
+            "description": "Descriptive message for the configuration error",
+            "name": "msg",
+            "param_type": "impl Into<String>"
+          }
+        ],
+        "returns": "`AuditError::Config` with the provided message.",
+        "signature": "pub fn config(msg: impl Into<String>) -> Self"
+      },
+      {
+        "description": "Creates an `LlmApi` variant error for issues with LLM API interactions.",
+        "examples": [
+          "let err = AuditError::llm_api(\"Model unavailable\");"
+        ],
+        "name": "AuditError::llm_api",
+        "parameters": [
+          {
+            "description": "Details about the LLM API failure",
+            "name": "msg",
+            "param_type": "impl Into<String>"
+          }
+        ],
+        "returns": "`AuditError::LlmApi` with the provided message.",
+        "signature": "pub fn llm_api(msg: impl Into<String>) -> Self"
+      },
+      {
+        "description": "Creates a generic `Other` variant for uncategorized errors.",
+        "examples": [
+          "let err = AuditError::other(\"Unexpected condition\");"
+        ],
+        "name": "AuditError::other",
+        "parameters": [
+          {
+            "description": "Generic error message",
+            "name": "msg",
+            "param_type": "impl Into<String>"
+          }
+        ],
+        "returns": "`AuditError::Other` with the provided message.",
+        "signature": "pub fn other(msg: impl Into<String>) -> Self"
+      },
+      {
+        "description": "Extends `Result<T, AuditError>` to add context to errors non-destructively; returns unchanged `Ok` values.",
+        "examples": [
+          "let res: Result<String> = some_fallible_op().context(\"fetching data\");",
+          "res?;"
+        ],
+        "name": "ResultExt::context",
+        "parameters": [
+          {
+            "description": "The result potentially containing an error",
+            "name": "self",
+            "param_type": "Result<T>"
+          },
+          {
+            "description": "Context string to apply if an error is present",
+            "name": "context",
+            "param_type": "impl Into<String>"
+          }
+        ],
+        "returns": "Original `Ok(T)` or `Err` wrapped with context.",
+        "signature": "fn context(self, context: impl Into<String>) -> Result<T>"
+      }
+    ],
+    "module_name": "error",
+    "summary": "This module defines the `AuditError` enum and `Result<T>` type alias for comprehensive error handling in the audit service. It covers errors from Git, I/O, HTTP, JSON, configuration, LLM API, file paths, repositories, parsing, rate limits, and more, using `thiserror` for automatic `Display` and `From` impls. Utility methods and the `ResultExt` trait enable easy error creation and contextual wrapping."
+  },
+  "tokens_used": null,
+  "file_size": 2995,
+  "cache_type": "docs"
+}
