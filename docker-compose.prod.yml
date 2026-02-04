@@ -28,7 +28,7 @@ services:
             - RUST_LOG=info,rustassistant=info
             - XAI_API_KEY=${XAI_API_KEY}
             - XAI_BASE_URL=https://api.x.ai/v1
-            - DATABASE_PATH=/app/data/rustassistant.db
+            - DATABASE_URL=sqlite:/app/data/rustassistant.db
             - CACHE_DB_PATH=/app/data/rustassistant_cache.db
             - REDIS_URL=redis://redis:6379
         volumes:
