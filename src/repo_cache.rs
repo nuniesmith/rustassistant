@@ -56,12 +56,40 @@
 //! ```
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info};
 
 /// Directory name for repo-level cache
 pub const REPO_CACHE_DIR: &str = ".rustassistant";
+
+/// Cache storage strategy
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CacheStrategy {
+    /// Centralized cache in ~/.rustassistant/cache/repos/<hash>/
+    Centralized,
+    /// Local cache in <repo>/.rustassistant/cache/
+    Local,
+}
+
+impl Default for CacheStrategy {
+    fn default() -> Self {
+        Self::Centralized
+    }
+}
+
+/// Compute stable hash of repository path
+fn compute_repo_hash(path: &Path) -> String {
+    let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    let path_str = canonical.display().to_string();
+
+    // Use SHA256 for consistency with file hashing
+    let mut hasher = Sha256::new();
+    hasher.update(path_str.as_bytes());
+    let result = hasher.finalize();
+    format!("{:x}", result)[..8].to_string()
+}
 
 /// Cache types for different analysis results
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -147,11 +175,37 @@ pub struct RepoCache {
 }
 
 impl RepoCache {
-    /// Create a new repository cache
+    /// Create a new repository cache with specified strategy
     ///
-    /// This will create the `.rustassistant/cache/` structure if it doesn't exist.
-    pub fn new(repo_root: impl AsRef<Path>) -> anyhow::Result<Self> {
-        let cache_dir = repo_root.as_ref().join(REPO_CACHE_DIR);
+    /// This will create the cache structure if it doesn't exist.
+    pub fn new_with_strategy(
+        repo_root: impl AsRef<Path>,
+        strategy: CacheStrategy,
+    ) -> anyhow::Result<Self> {
+        let repo_path = repo_root.as_ref();
+
+        let cache_dir = match strategy {
+            CacheStrategy::Centralized => {
+                let repo_hash = compute_repo_hash(repo_path);
+                let base = dirs::home_dir()
+                    .ok_or_else(|| anyhow::anyhow!("No home directory"))?
+                    .join(".rustassistant/cache/repos")
+                    .join(&repo_hash);
+
+                // Create meta.json with repo info
+                fs::create_dir_all(&base)?;
+                let meta = serde_json::json!({
+                    "path": repo_path.display().to_string(),
+                    "hash": repo_hash,
+                    "schema_version": 1,
+                    "created_at": chrono::Utc::now().to_rfc3339(),
+                });
+                fs::write(base.join("meta.json"), serde_json::to_string_pretty(&meta)?)?;
+
+                base
+            }
+            CacheStrategy::Local => repo_path.join(REPO_CACHE_DIR),
+        };
 
         let cache = Self {
             cache_dir,
@@ -162,6 +216,13 @@ impl RepoCache {
         cache.ensure_cache_structure()?;
 
         Ok(cache)
+    }
+
+    /// Create a new repository cache (uses default centralized strategy)
+    ///
+    /// This will create the cache structure if it doesn't exist.
+    pub fn new(repo_root: impl AsRef<Path>) -> anyhow::Result<Self> {
+        Self::new_with_strategy(repo_root, CacheStrategy::default())
     }
 
     /// Create a disabled cache (no-op)
@@ -259,8 +320,8 @@ Add to `.gitignore` if you prefer not to track cache files:
     }
 
     /// Calculate SHA-256 hash of content
-    pub fn hash_content(&self, content: &str) -> String {
-        use sha2::{Digest, Sha256};
+    /// Hash file content using SHA-256
+    fn hash_content(&self, content: &str) -> String {
         let mut hasher = Sha256::new();
         hasher.update(content.as_bytes());
         format!("{:x}", hasher.finalize())

@@ -122,7 +122,10 @@ pub use refactor_assistant::{
 pub use repo_analysis::{
     FileMetadata, LanguageStats, RepoAnalyzer, RepoNodeType, RepoTree, TreeNode,
 };
-pub use repo_cache::{CacheStats as RepoCacheStats, CacheType, RepoCache, RepoCacheEntry};
+pub use repo_cache::{
+    CacheSetParams, CacheStats as RepoCacheStats, CacheStrategy, CacheType, RepoCache,
+    RepoCacheEntry,
+};
 pub use research::{ResearchBreakdown, ResearchTask};
 pub use response_cache::{CacheStats as ResponseCacheStats, CachedResponse, ResponseCache};
 pub use scanner::{
