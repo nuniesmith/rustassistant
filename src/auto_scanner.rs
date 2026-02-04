@@ -156,7 +156,7 @@ impl AutoScanner {
     /// Check if repo needs scanning and scan if necessary
     async fn check_and_scan_repo(&self, repo: &Repository) -> Result<()> {
         let now = chrono::Utc::now().timestamp();
-        let interval_secs = (repo.scan_interval_minutes as i64) * 60;
+        let interval_secs = repo.scan_interval_minutes * 60;
 
         // Check if enough time has passed since last scan
         if let Some(last_check) = repo.last_scan_check {
@@ -205,7 +205,7 @@ impl AutoScanner {
         use std::process::Command;
 
         let output = Command::new("git")
-            .args(&["status", "--porcelain"])
+            .args(["status", "--porcelain"])
             .current_dir(repo_path)
             .output()
             .context("Failed to run git status")?;
@@ -445,7 +445,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = AutoScannerConfig::default();
-        assert_eq!(config.enabled, true);
+        assert!(config.enabled);
         assert_eq!(config.default_interval_minutes, 60);
         assert_eq!(config.max_concurrent_scans, 2);
     }
