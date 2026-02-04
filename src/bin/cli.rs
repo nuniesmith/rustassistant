@@ -80,6 +80,12 @@ enum Commands {
         #[command(subcommand)]
         action: DocsAction,
     },
+
+    /// Refactoring assistant
+    Refactor {
+        #[command(subcommand)]
+        action: RefactorAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -175,6 +181,25 @@ enum DocsAction {
 }
 
 #[derive(Subcommand)]
+enum RefactorAction {
+    /// Analyze a file for refactoring opportunities
+    Analyze {
+        /// File path to analyze
+        file: String,
+    },
+
+    /// Generate refactoring plan for a file
+    Plan {
+        /// File path
+        file: String,
+
+        /// Specific smell ID to focus on (optional)
+        #[arg(short, long)]
+        smell: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
 enum TaskAction {
     /// List tasks
     List {
@@ -233,6 +258,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Stats => handle_stats(&pool).await?,
         Commands::TestApi => handle_test_api().await?,
         Commands::Docs { action } => handle_docs_action(&pool, action).await?,
+        Commands::Refactor { action } => handle_refactor_action(&pool, action).await?,
     }
 
     Ok(())
@@ -556,6 +582,132 @@ async fn handle_test_api() -> anyhow::Result<()> {
             println!(
                 "\n  Set it in your .env file or environment:\n  export XAI_API_KEY=xai-your-key-here"
             );
+        }
+    }
+
+    Ok(())
+}
+
+async fn handle_refactor_action(
+    pool: &sqlx::SqlitePool,
+    action: RefactorAction,
+) -> anyhow::Result<()> {
+    use rustassistant::db::Database;
+    use rustassistant::refactor_assistant::{RefactorAssistant, SmellSeverity};
+
+    let db = Database::from_pool(pool.clone());
+    let assistant = RefactorAssistant::new(db).await?;
+
+    match action {
+        RefactorAction::Analyze { file } => {
+            println!("🔍 Analyzing {} for refactoring opportunities...\n", file);
+
+            let analysis = assistant.analyze_file(&file).await?;
+
+            println!("📊 Refactoring Analysis:\n");
+            println!("  {} {}", "File:".dimmed(), file);
+            println!(
+                "  {} {}",
+                "Code Smells Found:".dimmed(),
+                analysis.code_smells.len()
+            );
+            println!();
+
+            if analysis.code_smells.is_empty() {
+                println!("{} No code smells detected! Code looks good.", "✓".green());
+            } else {
+                for smell in &analysis.code_smells {
+                    let severity_icon = match smell.severity {
+                        SmellSeverity::Critical => "🔴",
+                        SmellSeverity::High => "🟠",
+                        SmellSeverity::Medium => "🟡",
+                        SmellSeverity::Low => "🟢",
+                    };
+
+                    let location = if let Some(ref loc) = smell.location {
+                        if let Some(line) = loc.line_start {
+                            format!("Line {}", line)
+                        } else {
+                            "Unknown location".to_string()
+                        }
+                    } else {
+                        "Unknown location".to_string()
+                    };
+                    println!("  {} {:?} ({})", severity_icon, smell.smell_type, location);
+                    println!("     {}", smell.description);
+                    println!();
+                }
+            }
+
+            if !analysis.suggestions.is_empty() {
+                println!("💡 Refactoring Suggestions:");
+                for (i, suggestion) in analysis.suggestions.iter().enumerate() {
+                    println!(
+                        "  {}. {} ({:?})",
+                        i + 1,
+                        suggestion.title,
+                        suggestion.refactoring_type
+                    );
+                    println!("     {}", suggestion.description);
+                    println!();
+                }
+
+                println!(
+                    "\nGenerate a detailed plan with: {} refactor plan {}",
+                    "rustassistant".cyan(),
+                    file
+                );
+            }
+        }
+
+        RefactorAction::Plan { file, smell: _ } => {
+            println!("📋 Generating refactoring plan for {}...\n", file);
+
+            let analysis = assistant.analyze_file(&file).await?;
+
+            if analysis.code_smells.is_empty() {
+                println!("{} No code smells found. Nothing to refactor!", "✓".green());
+                return Ok(());
+            }
+
+            // For now, just use the file path to generate plan
+            // The generate_plan method will analyze and create a comprehensive plan
+            let plan = assistant.generate_plan(&file, "").await?;
+
+            println!("📋 Refactoring Plan:\n");
+            println!("  {} {}", "Title:".dimmed(), plan.title);
+            println!("  {} {}", "Goal:".dimmed(), plan.goal);
+            println!("  {} {:?}", "Estimated Effort:".dimmed(), plan.total_effort);
+            println!("  {} {}", "Files:".dimmed(), plan.files.join(", "));
+            println!();
+
+            if !plan.steps.is_empty() {
+                println!("Steps:");
+                for step in &plan.steps {
+                    println!("  {}. {}", step.step_number, step.description);
+                    println!("     Effort: {:?}", step.effort);
+                    if !step.affected_files.is_empty() {
+                        println!("     Files: {}", step.affected_files.join(", "));
+                    }
+                }
+                println!();
+            }
+
+            if !plan.risks.is_empty() {
+                println!("⚠️  Risks:");
+                for risk in &plan.risks {
+                    println!("  • {} ({})", risk.description, risk.mitigation);
+                }
+                println!();
+            }
+
+            if !plan.benefits.is_empty() {
+                println!("✨ Benefits:");
+                for benefit in &plan.benefits {
+                    println!("  • {}", benefit);
+                }
+                println!();
+            }
         }
     }
 
