@@ -787,7 +787,7 @@ async fn github_search(
     // Search all types and return combined results
     let repos_query = SearchQuery::new(&params.q)
         .with_type(SearchType::Repositories)
-        .limit(5);
+        .limit(params.limit.min(10));
     let repos = searcher
         .search(repos_query)
         .await
@@ -795,7 +795,7 @@ async fn github_search(
 
     let issues_query = SearchQuery::new(&params.q)
         .with_type(SearchType::Issues)
-        .limit(5);
+        .limit(params.limit.min(10));
     let issues = searcher
         .search(issues_query)
         .await
@@ -803,7 +803,7 @@ async fn github_search(
 
     let prs_query = SearchQuery::new(&params.q)
         .with_type(SearchType::PullRequests)
-        .limit(5);
+        .limit(params.limit.min(10));
     let prs = searcher
         .search(prs_query)
         .await

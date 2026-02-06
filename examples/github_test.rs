@@ -92,11 +92,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let repos = searcher.search(repo_query).await?;
     println!("   Found {} repositories:", repos.len());
     for repo in repos.iter().take(5) {
-        if let Some(repo_data) = repo.as_repository() {
-            println!(
-                "      - {} (⭐ {})",
-                repo_data.full_name, repo_data.stargazers_count
-            );
+        if let rustassistant::github::search::SearchResult::Repository(repo_data) = repo {
+            println!("      - {} (⭐ {})", repo_data.full_name, repo_data.stars);
         }
     }
 
@@ -109,7 +106,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let issues = searcher.search(issue_query).await?;
     println!("   Found {} open issues:", issues.len());
     for issue in issues.iter().take(5) {
-        if let Some(issue_data) = issue.as_issue() {
+        if let rustassistant::github::search::SearchResult::Issue(issue_data) = issue {
             println!("      - #{}: {}", issue_data.number, issue_data.title);
         }
     }
@@ -123,7 +120,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let prs = searcher.search(pr_query).await?;
     println!("   Found {} open pull requests:", prs.len());
     for pr in prs.iter().take(5) {
-        if let Some(pr_data) = pr.as_pull_request() {
+        if let rustassistant::github::search::SearchResult::PullRequest(pr_data) = pr {
             println!("      - #{}: {}", pr_data.number, pr_data.title);
         }
     }

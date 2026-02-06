@@ -517,9 +517,11 @@ fn render_queue_page(items: Vec<QueueItemDisplay>) -> String {
         .queue-id {{ font-family: monospace; color: #94a3b8; }}
         .queue-stage {{ padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.85rem; font-weight: 500; background: #334155; }}
         .queue-priority {{ padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.85rem; font-weight: 500; }}
+        .priority-critical {{ background: #dc2626; color: white; }}
         .priority-high {{ background: #ef4444; color: white; }}
-        .priority-medium {{ background: #f59e0b; color: white; }}
+        .priority-normal {{ background: #f59e0b; color: white; }}
         .priority-low {{ background: #64748b; color: white; }}
+        .priority-background {{ background: #475569; color: white; }}
         .queue-content {{ background: #0f172a; padding: 1rem; border-radius: 6px; margin-bottom: 1rem; }}
         .queue-content pre {{ color: #e2e8f0; white-space: pre-wrap; word-wrap: break-word; }}
         .error-message {{ background: #7f1d1d; color: #fecaca; padding: 0.75rem; border-radius: 6px; margin-bottom: 1rem; }}
@@ -714,26 +716,28 @@ async fn get_dashboard_stats(db: &Database) -> anyhow::Result<DashboardStats> {
     .unwrap_or(0);
 
     // Get queue stats
-    let queue_pending =
-        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM queue WHERE stage = 'pending'")
-            .fetch_one(&db.pool)
-            .await
-            .unwrap_or(0);
+    let queue_pending = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM queue_items WHERE stage = 'pending' OR stage = 'inbox'",
+    )
+    .fetch_one(&db.pool)
+    .await
+    .unwrap_or(0);
 
     let queue_processing =
-        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM queue WHERE stage = 'processing'")
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM queue_items WHERE stage = 'processing'")
             .fetch_one(&db.pool)
             .await
             .unwrap_or(0);
 
-    let queue_completed =
-        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM queue WHERE stage = 'completed'")
-            .fetch_one(&db.pool)
-            .await
-            .unwrap_or(0);
+    let queue_completed = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM queue_items WHERE stage = 'completed' OR stage = 'done'",
+    )
+    .fetch_one(&db.pool)
+    .await
+    .unwrap_or(0);
 
     let queue_failed =
-        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM queue WHERE stage = 'failed'")
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM queue_items WHERE stage = 'failed'")
             .fetch_one(&db.pool)
             .await
             .unwrap_or(0);
@@ -766,23 +770,17 @@ async fn get_queue_items(db: &Database) -> anyhow::Result<Vec<QueueItemDisplay>>
         id: String,
         source: String,
         stage: String,
-        priority: String,
+        priority: i32,
         content: String,
-        error_message: Option<String>,
+        last_error: Option<String>,
         created_at: i64,
-        processing_started_at: Option<i64>,
+        processed_at: Option<i64>,
     }
 
     let items = sqlx::query_as::<_, QueueItemRaw>(
-        "SELECT id, source, stage, priority, content, error_message, created_at, processing_started_at
-         FROM queue
-         ORDER BY
-           CASE priority
-             WHEN 'high' THEN 1
-             WHEN 'medium' THEN 2
-             ELSE 3
-           END,
-           created_at DESC
+        "SELECT id, source, stage, priority, content, last_error, created_at, processed_at
+         FROM queue_items
+         ORDER BY priority ASC, created_at DESC
          LIMIT 100",
     )
     .fetch_all(&db.pool)
@@ -790,27 +788,37 @@ async fn get_queue_items(db: &Database) -> anyhow::Result<Vec<QueueItemDisplay>>
 
     Ok(items
         .into_iter()
-        .map(|item| QueueItemDisplay {
-            id: item.id,
-            source: item.source,
-            stage: item.stage,
-            priority: item.priority,
-            content: item.content,
-            error_message: item.error_message,
-            created_at: chrono::DateTime::from_timestamp(item.created_at, 0)
-                .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
-                .unwrap_or_else(|| "unknown".to_string()),
-            processing_started_at: item.processing_started_at.map(|ts| {
-                chrono::DateTime::from_timestamp(ts, 0)
+        .map(|item| {
+            let priority_label = match item.priority {
+                1 => "Critical".to_string(),
+                2 => "High".to_string(),
+                3 => "Normal".to_string(),
+                4 => "Low".to_string(),
+                5 => "Background".to_string(),
+                other => format!("P{}", other),
+            };
+            QueueItemDisplay {
+                id: item.id,
+                source: item.source,
+                stage: item.stage,
+                priority: priority_label,
+                content: item.content,
+                error_message: item.last_error,
+                created_at: chrono::DateTime::from_timestamp(item.created_at, 0)
                     .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
-                    .unwrap_or_else(|| "unknown".to_string())
-            }),
+                    .unwrap_or_else(|| "unknown".to_string()),
+                processing_started_at: item.processed_at.map(|ts| {
+                    chrono::DateTime::from_timestamp(ts, 0)
+                        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+                        .unwrap_or_else(|| "unknown".to_string())
+                }),
+            }
         })
         .collect())
 }
 
 async fn delete_queue_item(db: &Database, id: &str) -> anyhow::Result<()> {
-    sqlx::query("DELETE FROM queue WHERE id = ?")
+    sqlx::query("DELETE FROM queue_items WHERE id = ?")
         .bind(id)
         .execute(&db.pool)
         .await?;
@@ -822,6 +830,222 @@ async fn delete_queue_item(db: &Database, id: &str) -> anyhow::Result<()> {
 // ============================================================================
 
 /// Create web UI router
+/// Scanner page data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ScannerRepoItem {
+    id: String,
+    name: String,
+    path: String,
+    auto_scan_enabled: bool,
+    scan_interval_minutes: i64,
+    last_scan_check: Option<String>,
+    last_commit_hash: Option<String>,
+    last_analyzed: Option<String>,
+}
+
+/// Scanner page handler
+pub async fn scanner_handler(State(state): State<Arc<WebAppState>>) -> impl IntoResponse {
+    match get_scanner_repos(&state.db).await {
+        Ok(repos) => Html(render_scanner_page(repos)),
+        Err(e) => {
+            error!("Failed to get scanner data: {}", e);
+            Html(format!("<h1>Error loading scanner: {}</h1>", e))
+        }
+    }
+}
+
+/// Force scan handler
+pub async fn force_scan_handler(
+    State(state): State<Arc<WebAppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    match sqlx::query("UPDATE repositories SET last_scan_check = NULL WHERE id = ?")
+        .bind(&id)
+        .execute(&state.db.pool)
+        .await
+    {
+        Ok(_) => {
+            info!("Forced scan for repo {}", id);
+            (StatusCode::SEE_OTHER, [("Location", "/scanner")], "OK")
+        }
+        Err(e) => {
+            error!("Failed to force scan: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                [("Location", "/scanner")],
+                "Error",
+            )
+        }
+    }
+}
+
+async fn get_scanner_repos(db: &Database) -> anyhow::Result<Vec<ScannerRepoItem>> {
+    let repos = db.list_repositories().await?;
+    Ok(repos
+        .into_iter()
+        .map(|r| ScannerRepoItem {
+            id: r.id,
+            name: r.name,
+            path: r.path,
+            auto_scan_enabled: r.auto_scan_enabled != 0,
+            scan_interval_minutes: r.scan_interval_minutes,
+            last_scan_check: r.last_scan_check.map(|ts| {
+                chrono::DateTime::from_timestamp(ts, 0)
+                    .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+                    .unwrap_or_else(|| "unknown".to_string())
+            }),
+            last_commit_hash: r.last_commit_hash.map(|h| {
+                if h.len() > 8 {
+                    h[..8].to_string()
+                } else {
+                    h
+                }
+            }),
+            last_analyzed: r.last_analyzed.map(|ts| {
+                chrono::DateTime::from_timestamp(ts, 0)
+                    .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+                    .unwrap_or_else(|| "unknown".to_string())
+            }),
+        })
+        .collect())
+}
+
+fn render_scanner_page(repos: Vec<ScannerRepoItem>) -> String {
+    let repos_html = if repos.is_empty() {
+        r#"<div style="text-align: center; padding: 3rem; color: #64748b;">
+            <p style="font-size: 1.2rem;">No repositories configured</p>
+            <a href="/repos/add" class="btn btn-primary" style="margin-top: 1rem;">+ Add Repository</a>
+        </div>"#
+            .to_string()
+    } else {
+        repos
+            .iter()
+            .map(|repo| {
+                let status_badge = if repo.auto_scan_enabled {
+                    r#"<span style="background: #22c55e; color: white; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.85rem;">Enabled</span>"#
+                } else {
+                    r#"<span style="background: #64748b; color: white; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.85rem;">Disabled</span>"#
+                };
+
+                let last_scan = repo
+                    .last_scan_check
+                    .as_deref()
+                    .unwrap_or("Never");
+
+                let last_hash = repo
+                    .last_commit_hash
+                    .as_deref()
+                    .unwrap_or("—");
+
+                let last_analyzed = repo
+                    .last_analyzed
+                    .as_deref()
+                    .unwrap_or("Never");
+
+                format!(
+                    r#"<div class="scanner-repo" style="background: #1e293b; padding: 1.5rem; border-radius: 8px; margin-bottom: 1rem; border-left: 4px solid {};">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+                        <div>
+                            <h3 style="color: #f8fafc; margin-bottom: 0.25rem;">{}</h3>
+                            <span style="color: #64748b; font-family: monospace; font-size: 0.85rem;">{}</span>
+                        </div>
+                        <div style="display: flex; gap: 0.5rem; align-items: center;">
+                            {}
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
+                        <div style="background: #0f172a; padding: 0.75rem; border-radius: 6px;">
+                            <div style="color: #94a3b8; font-size: 0.8rem; margin-bottom: 0.25rem;">Scan Interval</div>
+                            <div style="color: #e2e8f0; font-weight: 500;">{} minutes</div>
+                        </div>
+                        <div style="background: #0f172a; padding: 0.75rem; border-radius: 6px;">
+                            <div style="color: #94a3b8; font-size: 0.8rem; margin-bottom: 0.25rem;">Last Scan Check</div>
+                            <div style="color: #e2e8f0; font-weight: 500;">{}</div>
+                        </div>
+                        <div style="background: #0f172a; padding: 0.75rem; border-radius: 6px;">
+                            <div style="color: #94a3b8; font-size: 0.8rem; margin-bottom: 0.25rem;">Last Commit Hash</div>
+                            <div style="color: #e2e8f0; font-family: monospace; font-weight: 500;">{}</div>
+                        </div>
+                        <div style="background: #0f172a; padding: 0.75rem; border-radius: 6px;">
+                            <div style="color: #94a3b8; font-size: 0.8rem; margin-bottom: 0.25rem;">Last Analyzed</div>
+                            <div style="color: #e2e8f0; font-weight: 500;">{}</div>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                        <a href="/repos/{}/toggle-scan" class="btn-small {}">{}</a>
+                        <a href="/scanner/{}/force" class="btn-small btn-primary">🔄 Force Scan</a>
+                    </div>
+                </div>"#,
+                    if repo.auto_scan_enabled { "#22c55e" } else { "#64748b" },
+                    repo.name,
+                    repo.path,
+                    status_badge,
+                    repo.scan_interval_minutes,
+                    last_scan,
+                    last_hash,
+                    last_analyzed,
+                    repo.id,
+                    if repo.auto_scan_enabled { "btn-danger" } else { "btn-success" },
+                    if repo.auto_scan_enabled { "⏸ Disable Auto-Scan" } else { "▶ Enable Auto-Scan" },
+                    repo.id,
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    format!(
+        r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auto-Scanner - RustAssistant</title>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #e2e8f0; }}
+        .container {{ max-width: 1200px; margin: 0 auto; padding: 2rem; }}
+        header {{ background: #1e293b; padding: 1.5rem; margin-bottom: 2rem; border-radius: 8px; }}
+        h1 {{ color: #38bdf8; font-size: 2rem; margin-bottom: 0.5rem; }}
+        h2 {{ color: #e2e8f0; margin-bottom: 1.5rem; }}
+        nav {{ display: flex; gap: 1rem; margin-top: 1rem; flex-wrap: wrap; }}
+        nav a {{ background: #334155; color: #e2e8f0; padding: 0.5rem 1rem; border-radius: 6px; text-decoration: none; transition: all 0.3s; }}
+        nav a:hover {{ background: #475569; }}
+        nav a.active {{ background: #0ea5e9; color: white; }}
+        .btn, .btn-small {{ padding: 0.75rem 1.5rem; border-radius: 6px; border: none; cursor: pointer; font-size: 1rem; font-weight: 500; transition: all 0.3s; text-decoration: none; display: inline-block; }}
+        .btn-small {{ padding: 0.5rem 1rem; font-size: 0.9rem; }}
+        .btn-primary {{ background: #0ea5e9; color: white; }}
+        .btn-primary:hover {{ background: #0284c7; }}
+        .btn-success {{ background: #22c55e; color: white; }}
+        .btn-success:hover {{ background: #16a34a; }}
+        .btn-danger {{ background: #ef4444; color: white; }}
+        .btn-danger:hover {{ background: #dc2626; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🦀 RustAssistant</h1>
+            <nav>
+                <a href="/dashboard">Dashboard</a>
+                <a href="/repos">Repositories</a>
+                <a href="/queue">Queue</a>
+                <a href="/scanner" class="active">Auto-Scanner</a>
+            </nav>
+        </header>
+
+        <h2>🔍 Auto-Scanner Status</h2>
+
+        <div class="scanner-list">
+            {}
+        </div>
+    </div>
+</body>
+</html>"#,
+        repos_html
+    )
+}
+
 pub fn create_router(state: WebAppState) -> Router {
     let shared_state = Arc::new(state);
 
@@ -835,5 +1059,7 @@ pub fn create_router(state: WebAppState) -> Router {
         .route("/repos/:id/delete", get(delete_repo_handler))
         .route("/queue", get(queue_handler))
         .route("/queue/:id/delete", get(delete_queue_item_handler))
+        .route("/scanner", get(scanner_handler))
+        .route("/scanner/:id/force", get(force_scan_handler))
         .with_state(shared_state)
 }

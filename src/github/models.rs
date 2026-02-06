@@ -6,6 +6,21 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+// Helper module for deserializing Unix timestamps
+mod serde_helpers {
+    use chrono::{DateTime, Utc};
+    use serde::{Deserialize, Deserializer};
+
+    pub fn deserialize_timestamp<'de, D>(deserializer: D) -> Result<DateTime<Utc>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let timestamp = i64::deserialize(deserializer)?;
+        DateTime::from_timestamp(timestamp, 0)
+            .ok_or_else(|| serde::de::Error::custom("invalid timestamp"))
+    }
+}
+
 // ============================================================================
 // User & Organization
 // ============================================================================
@@ -26,11 +41,11 @@ pub struct User {
     pub location: Option<String>,
     pub blog: Option<String>,
     pub twitter_username: Option<String>,
-    pub public_repos: i32,
-    pub followers: i32,
-    pub following: i32,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub public_repos: Option<i32>,
+    pub followers: Option<i32>,
+    pub following: Option<i32>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -476,9 +491,11 @@ pub enum EventType {
 pub struct RateLimit {
     pub limit: i32,
     pub remaining: i32,
+    #[serde(deserialize_with = "serde_helpers::deserialize_timestamp")]
     pub reset: DateTime<Utc>,
     pub used: i32,
-    pub resource: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -643,11 +660,11 @@ mod tests {
             location: None,
             blog: None,
             twitter_username: None,
-            public_repos: 10,
-            followers: 5,
-            following: 3,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
+            public_repos: Some(10),
+            followers: Some(5),
+            following: Some(3),
+            created_at: Some(Utc::now()),
+            updated_at: Some(Utc::now()),
         }
     }
 

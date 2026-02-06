@@ -155,6 +155,10 @@ path = "src/bin/server.rs"
 name = "rustassistant"
 path = "src/bin/cli.rs"
 
+[[bin]]
+name = "github-sync-daemon"
+path = "src/bin/github-sync-daemon.rs"
+
 # [[bin]]
 # name = "audit-cli"
 # path = "src/bin/cli.rs"

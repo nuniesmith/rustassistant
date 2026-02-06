@@ -512,35 +512,75 @@ impl SyncEngine {
     ) -> Result<()> {
         info!("Syncing repositories from GitHub");
 
-        let repos = self.client.list_my_repos().await?;
-        info!("Fetched {} repositories from GitHub", repos.len());
+        // If specific repos are specified, fetch them directly instead of listing all
+        if let Some(ref filter) = options.repo_filter {
+            info!("Fetching {} specific repositories", filter.len());
 
-        for repo in repos {
-            // Apply filter if specified
-            if let Some(ref filter) = options.repo_filter {
-                if !filter.contains(&repo.full_name) {
+            for full_name in filter {
+                let parts: Vec<&str> = full_name.split('/').collect();
+                if parts.len() != 2 {
+                    warn!("Invalid repo format: {}, expected owner/repo", full_name);
+                    result.add_warning(format!("Invalid repo format: {}", full_name));
                     continue;
                 }
-            }
 
-            // Skip archived repos unless force_full
-            if repo.archived && !options.force_full {
-                debug!("Skipping archived repo: {}", repo.full_name);
-                continue;
-            }
+                let (owner, repo_name) = (parts[0], parts[1]);
 
-            match self.upsert_repository(&repo).await {
-                Ok(created) => {
-                    result.repos_synced += 1;
-                    if created {
-                        result.items_created += 1;
-                    } else {
-                        result.items_updated += 1;
+                match self.client.get_repo(owner, repo_name).await {
+                    Ok(repo) => {
+                        // Skip archived repos unless force_full
+                        if repo.archived && !options.force_full {
+                            debug!("Skipping archived repo: {}", repo.full_name);
+                            continue;
+                        }
+
+                        match self.upsert_repository(&repo).await {
+                            Ok(created) => {
+                                result.repos_synced += 1;
+                                if created {
+                                    result.items_created += 1;
+                                } else {
+                                    result.items_updated += 1;
+                                }
+                            }
+                            Err(e) => {
+                                error!("Failed to upsert repository {}: {}", repo.full_name, e);
+                                result
+                                    .add_error(format!("Failed to save {}: {}", repo.full_name, e));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to fetch repository {}: {}", full_name, e);
+                        result.add_error(format!("Failed to fetch {}: {}", full_name, e));
                     }
                 }
-                Err(e) => {
-                    error!("Failed to upsert repository {}: {}", repo.full_name, e);
-                    result.add_error(format!("Failed to save {}: {}", repo.full_name, e));
+            }
+        } else {
+            // No filter - list all repos for authenticated user
+            let repos = self.client.list_my_repos().await?;
+            info!("Fetched {} repositories from GitHub", repos.len());
+
+            for repo in repos {
+                // Skip archived repos unless force_full
+                if repo.archived && !options.force_full {
+                    debug!("Skipping archived repo: {}", repo.full_name);
+                    continue;
+                }
+
+                match self.upsert_repository(&repo).await {
+                    Ok(created) => {
+                        result.repos_synced += 1;
+                        if created {
+                            result.items_created += 1;
+                        } else {
+                            result.items_updated += 1;
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to upsert repository {}: {}", repo.full_name, e);
+                        result.add_error(format!("Failed to save {}: {}", repo.full_name, e));
+                    }
                 }
             }
         }
@@ -563,11 +603,11 @@ impl SyncEngine {
         sqlx::query(
             r#"
             INSERT INTO github_repositories (
-                id, node_id, name, full_name, owner_login, description,
+                id, node_id, name, full_name, owner_login, owner_id, description,
                 html_url, clone_url, ssh_url, language, private, fork, archived,
                 stargazers_count, watchers_count, forks_count, open_issues_count,
                 topics, default_branch, created_at, updated_at, pushed_at, last_synced_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 description = excluded.description,
@@ -588,6 +628,7 @@ impl SyncEngine {
         .bind(&repo.name)
         .bind(&repo.full_name)
         .bind(&repo.owner.login)
+        .bind(repo.owner.id)
         .bind(&repo.description)
         .bind(&repo.html_url)
         .bind(&repo.clone_url)
@@ -623,6 +664,9 @@ impl SyncEngine {
             query.push_str(&format!(" AND full_name IN ({})", placeholders));
         }
 
+        debug!("Query for synced repos: {}", query);
+        debug!("Repo filter: {:?}", options.repo_filter);
+
         let mut query_builder = sqlx::query(&query);
 
         if let Some(ref filter) = options.repo_filter {
@@ -633,7 +677,7 @@ impl SyncEngine {
 
         let rows = query_builder.fetch_all(&self.pool).await?;
 
-        let repos = rows
+        let repos: Vec<(String, String, i64)> = rows
             .into_iter()
             .map(|row| {
                 let owner: String = row.get(0);
@@ -642,6 +686,8 @@ impl SyncEngine {
                 (owner, name, id)
             })
             .collect();
+
+        info!("Found {} repositories to sync: {:?}", repos.len(), repos);
 
         Ok(repos)
     }
@@ -844,9 +890,9 @@ impl SyncEngine {
             r#"
             INSERT INTO github_commits (
                 sha, node_id, repo_id, author_name, author_email, author_date,
-                committer_name, committer_email, message, additions, deletions,
+                committer_name, committer_email, committer_date, message, additions, deletions,
                 total_changes, html_url, created_at, last_synced_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(sha) DO UPDATE SET
                 last_synced_at = excluded.last_synced_at
             "#,
@@ -859,6 +905,7 @@ impl SyncEngine {
         .bind(commit.commit.author.date.timestamp())
         .bind(&commit.commit.committer.name)
         .bind(&commit.commit.committer.email)
+        .bind(commit.commit.committer.date.timestamp())
         .bind(&commit.commit.message)
         .bind(commit.stats.as_ref().map(|s| s.additions))
         .bind(commit.stats.as_ref().map(|s| s.deletions))

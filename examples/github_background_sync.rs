@@ -9,7 +9,6 @@
 
 use rustassistant::github::{
     start_background_sync_with_config, BackgroundSyncConfig, BackgroundSyncManager, GitHubClient,
-    SyncOptions,
 };
 use sqlx::SqlitePool;
 use std::env;

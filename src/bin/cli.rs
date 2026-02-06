@@ -327,6 +327,9 @@ async fn main() -> anyhow::Result<()> {
     // Load environment
     dotenvy::dotenv().ok();
 
+    // Initialize tracing for debug logging
+    tracing_subscriber::fmt::init();
+
     let cli = Cli::parse();
 
     // Get database URL

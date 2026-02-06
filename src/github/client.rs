@@ -340,6 +340,7 @@ impl GitHubClient {
     }
 
     /// Make GraphQL query
+    #[allow(dead_code)]
     async fn graphql<T: for<'de> Deserialize<'de>>(
         &self,
         query: &str,
@@ -471,11 +472,38 @@ impl GitHubClient {
         state: Option<&str>,
     ) -> Result<Vec<Issue>> {
         let state_param = state.unwrap_or("open");
-        self.get_paginated(
-            &format!("/repos/{}/{}/issues?state={}", owner, repo, state_param),
-            None,
-        )
-        .await
+        let per_page = DEFAULT_PER_PAGE.min(MAX_PER_PAGE);
+        let mut all_items = Vec::new();
+        let mut page = 1;
+
+        loop {
+            let url = format!(
+                "{}/repos/{}/{}/issues?state={}&per_page={}&page={}",
+                self.config.base_url, owner, repo, state_param, per_page, page
+            );
+            debug!(
+                "GET /repos/{}/{}/issues (page {}, state={})",
+                owner, repo, page, state_param
+            );
+
+            let response = self.client.get(&url).send().await?;
+            self.update_rate_limit(response.headers()).await;
+
+            let status = response.status();
+            if !status.is_success() {
+                return Err(self.handle_error_response(status, response).await);
+            }
+
+            let items: Vec<Issue> = response.json().await?;
+            if items.is_empty() {
+                break;
+            }
+
+            all_items.extend(items);
+            page += 1;
+        }
+
+        Ok(all_items)
     }
 
     /// Get a specific issue
@@ -523,11 +551,38 @@ impl GitHubClient {
         state: Option<&str>,
     ) -> Result<Vec<PullRequest>> {
         let state_param = state.unwrap_or("open");
-        self.get_paginated(
-            &format!("/repos/{}/{}/pulls?state={}", owner, repo, state_param),
-            None,
-        )
-        .await
+        let per_page = DEFAULT_PER_PAGE.min(MAX_PER_PAGE);
+        let mut all_items = Vec::new();
+        let mut page = 1;
+
+        loop {
+            let url = format!(
+                "{}/repos/{}/{}/pulls?state={}&per_page={}&page={}",
+                self.config.base_url, owner, repo, state_param, per_page, page
+            );
+            debug!(
+                "GET /repos/{}/{}/pulls (page {}, state={})",
+                owner, repo, page, state_param
+            );
+
+            let response = self.client.get(&url).send().await?;
+            self.update_rate_limit(response.headers()).await;
+
+            let status = response.status();
+            if !status.is_success() {
+                return Err(self.handle_error_response(status, response).await);
+            }
+
+            let items: Vec<PullRequest> = response.json().await?;
+            if items.is_empty() {
+                break;
+            }
+
+            all_items.extend(items);
+            page += 1;
+        }
+
+        Ok(all_items)
     }
 
     /// Get a specific pull request

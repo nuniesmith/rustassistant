@@ -1,0 +1,41 @@
+[Unit]
+Description=Rustassistant GitHub Background Sync Daemon
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rustassistant
+Group=rustassistant
+WorkingDirectory=/opt/rustassistant
+ExecStart=/opt/rustassistant/target/release/github-sync-daemon
+
+# Environment variables
+Environment="RUST_LOG=info,rustassistant=debug"
+EnvironmentFile=/opt/rustassistant/.env
+
+# Restart policy
+Restart=on-failure
+RestartSec=10s
+StartLimitInterval=5min
+StartLimitBurst=3
+
+# Resource limits
+LimitNOFILE=65536
+MemoryLimit=512M
+CPUQuota=50%
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/rustassistant/data
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=github-sync-daemon
+
+[Install]
+WantedBy=multi-user.target

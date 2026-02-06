@@ -142,7 +142,7 @@ impl AutoScanner {
             r#"
             SELECT id, path, name, status, last_analyzed, metadata,
                    auto_scan_enabled, scan_interval_minutes, last_scan_check,
-                   created_at, updated_at
+                   last_commit_hash, created_at, updated_at
             FROM repositories
             WHERE auto_scan_enabled = 1 AND status = 'active'
             "#,
@@ -175,12 +175,23 @@ impl AutoScanner {
         // Update last_scan_check
         self.update_last_scan_check(&repo.id, now).await?;
 
-        // Check git status
+        // Check for changes (both committed and uncommitted)
         let repo_path = PathBuf::from(&repo.path);
-        let changed_files = self.get_changed_files(&repo_path).await?;
+        let current_head = self.get_head_hash(&repo_path)?;
+        let changed_files = self
+            .get_changed_files(
+                &repo_path,
+                repo.last_commit_hash.as_deref(),
+                current_head.as_deref(),
+            )
+            .await?;
 
         if changed_files.is_empty() {
             debug!("No changes detected in {}", repo.name);
+            // Still update the commit hash so we don't re-diff the same range
+            if let Some(ref hash) = current_head {
+                self.update_last_commit_hash(&repo.id, hash).await?;
+            }
             return Ok(());
         }
 
@@ -194,55 +205,184 @@ impl AutoScanner {
         self.analyze_changed_files(&repo_path, &changed_files)
             .await?;
 
-        // Update last_analyzed
+        // Update last_analyzed and commit hash
         self.update_last_analyzed(&repo.id, now).await?;
+        if let Some(ref hash) = current_head {
+            self.update_last_commit_hash(&repo.id, hash).await?;
+        }
 
         Ok(())
     }
 
-    /// Get list of modified files using git status
-    async fn get_changed_files(&self, repo_path: &Path) -> Result<Vec<PathBuf>> {
+    /// Get the current HEAD commit hash for a repository
+    fn get_head_hash(&self, repo_path: &Path) -> Result<Option<String>> {
         use std::process::Command;
 
+        let output = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(repo_path)
+            .output()
+            .context("Failed to run git rev-parse HEAD")?;
+
+        if !output.status.success() {
+            warn!("git rev-parse HEAD failed for {}", repo_path.display());
+            return Ok(None);
+        }
+
+        let hash = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if hash.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(hash))
+        }
+    }
+
+    /// Get list of modified files from both committed and uncommitted changes
+    async fn get_changed_files(
+        &self,
+        repo_path: &Path,
+        last_commit_hash: Option<&str>,
+        current_head: Option<&str>,
+    ) -> Result<Vec<PathBuf>> {
+        use std::collections::HashSet;
+        use std::process::Command;
+
+        let mut changed_set: HashSet<PathBuf> = HashSet::new();
+
+        // 1. Check for committed changes since last known hash
+        if let (Some(old_hash), Some(new_hash)) = (last_commit_hash, current_head) {
+            if old_hash != new_hash {
+                let output = Command::new("git")
+                    .args(["diff", "--name-status", old_hash, new_hash])
+                    .current_dir(repo_path)
+                    .output();
+
+                match output {
+                    Ok(out) if out.status.success() => {
+                        let stdout = String::from_utf8_lossy(&out.stdout);
+                        for line in stdout.lines() {
+                            let parts: Vec<&str> = line.split('\t').collect();
+                            if parts.len() < 2 {
+                                continue;
+                            }
+                            let status = parts[0];
+                            // Skip deleted files
+                            if status.starts_with('D') {
+                                continue;
+                            }
+                            // For renames (R100), the new path is the last element
+                            let file_path = parts.last().unwrap().trim();
+                            if Self::is_analyzable_file(file_path) {
+                                changed_set.insert(repo_path.join(file_path));
+                            }
+                        }
+                        info!(
+                            "Found {} files changed between commits {}..{}",
+                            changed_set.len(),
+                            &old_hash[..8.min(old_hash.len())],
+                            &new_hash[..8.min(new_hash.len())]
+                        );
+                    }
+                    Ok(out) => {
+                        // git diff failed - old hash may no longer exist (force push, etc.)
+                        // Fall back to listing all files in the latest commit
+                        warn!(
+                            "git diff failed for {}..{} ({}), falling back to HEAD diff",
+                            &old_hash[..8.min(old_hash.len())],
+                            &new_hash[..8.min(new_hash.len())],
+                            String::from_utf8_lossy(&out.stderr).trim()
+                        );
+                        self.get_files_from_recent_commits(repo_path, &mut changed_set)?;
+                    }
+                    Err(e) => {
+                        warn!("Failed to run git diff: {}", e);
+                    }
+                }
+            }
+        } else if last_commit_hash.is_none() && current_head.is_some() {
+            // First scan - no stored hash yet. Check recent commits to seed initial analysis.
+            info!(
+                "First scan for {} - checking recent commits",
+                repo_path.display()
+            );
+            self.get_files_from_recent_commits(repo_path, &mut changed_set)?;
+        }
+
+        // 2. Also check for uncommitted changes (working tree + staged)
         let output = Command::new("git")
             .args(["status", "--porcelain"])
             .current_dir(repo_path)
             .output()
             .context("Failed to run git status")?;
 
-        if !output.status.success() {
-            warn!("Git status failed for {}", repo_path.display());
-            return Ok(vec![]);
-        }
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                if line.len() < 3 {
+                    continue;
+                }
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let mut changed_files = Vec::new();
+                let status = &line[0..2];
+                let file_path = line[3..].trim();
 
-        for line in stdout.lines() {
-            if line.len() < 3 {
-                continue;
-            }
+                // Skip deleted files
+                if status.contains('D') {
+                    continue;
+                }
 
-            let status = &line[0..2];
-            let file_path = line[3..].trim();
-
-            // Skip deleted files and non-Rust files for now
-            if status.contains('D') {
-                continue;
-            }
-
-            // Only analyze Rust, Python, JavaScript/TypeScript files for now
-            if file_path.ends_with(".rs")
-                || file_path.ends_with(".py")
-                || file_path.ends_with(".js")
-                || file_path.ends_with(".ts")
-                || file_path.ends_with(".tsx")
-            {
-                changed_files.push(repo_path.join(file_path));
+                if Self::is_analyzable_file(file_path) {
+                    changed_set.insert(repo_path.join(file_path));
+                }
             }
         }
 
-        Ok(changed_files)
+        Ok(changed_set.into_iter().collect())
+    }
+
+    /// Get changed files from recent commits (used for first scan or fallback)
+    fn get_files_from_recent_commits(
+        &self,
+        repo_path: &Path,
+        changed_set: &mut std::collections::HashSet<PathBuf>,
+    ) -> Result<()> {
+        use std::process::Command;
+
+        // Look at files changed in the last 5 commits
+        let output = Command::new("git")
+            .args(["diff", "--name-only", "HEAD~5", "HEAD"])
+            .current_dir(repo_path)
+            .output();
+
+        match output {
+            Ok(out) if out.status.success() => {
+                let stdout = String::from_utf8_lossy(&out.stdout);
+                for line in stdout.lines() {
+                    let file_path = line.trim();
+                    if !file_path.is_empty() && Self::is_analyzable_file(file_path) {
+                        changed_set.insert(repo_path.join(file_path));
+                    }
+                }
+            }
+            _ => {
+                debug!("Could not get recent commits for {}", repo_path.display());
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Check if a file extension is one we should analyze
+    fn is_analyzable_file(file_path: &str) -> bool {
+        file_path.ends_with(".rs")
+            || file_path.ends_with(".py")
+            || file_path.ends_with(".js")
+            || file_path.ends_with(".ts")
+            || file_path.ends_with(".tsx")
+            || file_path.ends_with(".sh")
+            || file_path.ends_with(".kt")
+            || file_path.ends_with(".java")
+            || file_path.ends_with(".go")
+            || file_path.ends_with(".rb")
     }
 
     /// Analyze a list of changed files
@@ -357,6 +497,23 @@ impl AutoScanner {
             "#,
         )
         .bind(timestamp)
+        .bind(repo_id)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Update last_commit_hash for a repository
+    async fn update_last_commit_hash(&self, repo_id: &str, hash: &str) -> Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE repositories
+            SET last_commit_hash = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(hash)
         .bind(repo_id)
         .execute(&self.pool)
         .await?;

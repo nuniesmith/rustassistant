@@ -76,6 +76,7 @@ pub struct Repository {
     pub auto_scan_enabled: i64,
     pub scan_interval_minutes: i64,
     pub last_scan_check: Option<i64>,
+    pub last_commit_hash: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -175,6 +176,7 @@ async fn create_tables(pool: &SqlitePool) -> DbResult<()> {
             auto_scan_enabled INTEGER NOT NULL DEFAULT 0,
             scan_interval_minutes INTEGER NOT NULL DEFAULT 60,
             last_scan_check INTEGER,
+            last_commit_hash TEXT,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         )
@@ -182,6 +184,11 @@ async fn create_tables(pool: &SqlitePool) -> DbResult<()> {
     )
     .execute(pool)
     .await?;
+
+    // Add last_commit_hash column to existing repositories tables (safe to run repeatedly)
+    let _ = sqlx::query("ALTER TABLE repositories ADD COLUMN last_commit_hash TEXT")
+        .execute(pool)
+        .await;
 
     // Tasks table
     sqlx::query(
@@ -397,6 +404,7 @@ pub async fn add_repository(pool: &SqlitePool, path: &str, name: &str) -> DbResu
         auto_scan_enabled: 0,
         scan_interval_minutes: 60,
         last_scan_check: None,
+        last_commit_hash: None,
         created_at: now,
         updated_at: now,
     })

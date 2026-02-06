@@ -46,6 +46,7 @@ RUN rm -rf src target/release/rustassistant* target/release/.fingerprint/rustass
 COPY src ./src
 COPY askama.toml ./askama.toml
 COPY static ./static
+COPY migrations ./migrations
 
 # Build the actual binary with optimizations
 RUN cargo build --release --bin rustassistant-server && \
