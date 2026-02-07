@@ -533,6 +533,7 @@ pub async fn index_document(
     State(state): State<Arc<ApiState>>,
     Json(req): Json<IndexDocumentRequest>,
 ) -> impl IntoResponse {
+    let doc_id = req.document_id.clone();
     let job_id = state
         .job_queue
         .submit_job(vec![req.document_id], req.force_reindex)
@@ -540,7 +541,7 @@ pub async fn index_document(
 
     let response = IndexJobResponse {
         job_id,
-        document_ids: vec![req.document_id],
+        document_ids: vec![doc_id],
         status: "queued".to_string(),
         queued_at: chrono::Utc::now(),
     };
