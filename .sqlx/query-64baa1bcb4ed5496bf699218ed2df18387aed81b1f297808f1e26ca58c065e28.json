@@ -1,0 +1,104 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id, title, content, content_type, source_type, source_url, doc_type,\n                tags, repo_id, file_path, word_count, char_count,\n                created_at, updated_at, indexed_at\n         FROM documents\n         WHERE indexed_at IS NULL OR updated_at > indexed_at\n         ORDER BY updated_at DESC\n         LIMIT ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "title",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "content",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "content_type",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "source_type",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "source_url",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "doc_type",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "tags",
+        "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "repo_id",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "file_path",
+        "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "word_count",
+        "ordinal": 10,
+        "type_info": "Integer"
+      },
+      {
+        "name": "char_count",
+        "ordinal": 11,
+        "type_info": "Integer"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 12,
+        "type_info": "Integer"
+      },
+      {
+        "name": "updated_at",
+        "ordinal": 13,
+        "type_info": "Integer"
+      },
+      {
+        "name": "indexed_at",
+        "ordinal": 14,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "64baa1bcb4ed5496bf699218ed2df18387aed81b1f297808f1e26ca58c065e28"
+}

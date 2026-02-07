@@ -1,0 +1,128 @@
+# ============================================================================
+# RustAssistant - Docker Compose (Development & Production)
+# ============================================================================
+# Zero bind mounts - everything is baked into the image or uses named volumes.
+# Repos are cloned at runtime via git, not mounted from host.
+#
+# Usage:
+#   docker compose up -d --build
+#   open http://localhost:3001
+# ============================================================================
+
+services:
+  # --------------------------------------------------------------------------
+  # RustAssistant - Unified Web UI + API + Scanner
+  # --------------------------------------------------------------------------
+  rustassistant:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: rustassistant
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      # Server
+      HOST: "0.0.0.0"
+      PORT: "3001"
+      RUST_LOG: "info,rustassistant=debug"
+
+      # Database (inside named volume)
+      DATABASE_PATH: "/app/data/rustassistant.db"
+      CACHE_DB_PATH: "/app/data/rustassistant_cache.db"
+
+      # Repos are cloned here at runtime (inside named volume)
+      REPOS_PATH: "/app/repos"
+
+      # Redis
+      REDIS_URL: "redis://redis:6379"
+
+      # LLM API
+      XAI_API_KEY: "${XAI_API_KEY}"
+      XAI_BASE_URL: "${XAI_BASE_URL:-https://api.x.ai/v1}"
+
+      # Auto-Scanner
+      AUTO_SCAN_ENABLED: "${AUTO_SCAN_ENABLED:-true}"
+      AUTO_SCAN_INTERVAL: "${AUTO_SCAN_INTERVAL:-60}"
+      AUTO_SCAN_MAX_CONCURRENT: "${AUTO_SCAN_MAX_CONCURRENT:-2}"
+
+      # GitHub (for cloning repos)
+      GITHUB_TOKEN: "${GITHUB_TOKEN:-}"
+      GITHUB_USER: "${GITHUB_USER:-nuniesmith}"
+    volumes:
+      # Named volumes only - no bind mounts
+      - rustassistant-data:/app/data
+      - rustassistant-repos:/app/repos
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - rustassistant-network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "2.0"
+        reservations:
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # --------------------------------------------------------------------------
+  # Redis - LLM Response Cache
+  # --------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: rustassistant-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --save 60 1
+      --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - rustassistant-redis:/data
+    networks:
+      - rustassistant-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+# Named volumes (Docker-managed, no host paths)
+volumes:
+  rustassistant-data:
+    name: rustassistant-data
+  rustassistant-repos:
+    name: rustassistant-repos
+  rustassistant-redis:
+    name: rustassistant-redis
+
+# Isolated network
+networks:
+  rustassistant-network:
+    name: rustassistant-network
+    driver: bridge

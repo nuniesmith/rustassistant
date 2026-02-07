@@ -816,6 +816,139 @@ pub async fn toggle_scan_handler(
     }
 }
 
+/// Repository settings update request
+#[derive(Debug, Deserialize)]
+pub struct UpdateRepoSettingsRequest {
+    pub scan_interval_minutes: Option<i64>,
+    pub auto_scan_enabled: Option<bool>,
+}
+
+/// Update repository settings handler (API endpoint)
+pub async fn update_repo_settings_handler(
+    State(state): State<Arc<WebAppState>>,
+    Path(id): Path<String>,
+    Form(settings): Form<UpdateRepoSettingsRequest>,
+) -> impl IntoResponse {
+    // Validate scan interval
+    if let Some(interval) = settings.scan_interval_minutes {
+        if interval < 5 || interval > 1440 {
+            return (
+                StatusCode::BAD_REQUEST,
+                [("HX-Trigger", r#"{"showToast": {"message": "Scan interval must be between 5 and 1440 minutes", "type": "error"}}"#)],
+                "Invalid scan interval"
+            ).into_response();
+        }
+    }
+
+    match update_repo_settings(&state.db, &id, settings).await {
+        Ok(_) => {
+            info!("Updated settings for repo {}", id);
+            (
+                StatusCode::OK,
+                [
+                    ("HX-Trigger", r#"{"showToast": {"message": "Settings updated successfully", "type": "success"}}"#),
+                    ("HX-Refresh", "true")
+                ],
+                "OK"
+            ).into_response()
+        }
+        Err(e) => {
+            error!("Failed to update repo settings: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                [(
+                    "HX-Trigger",
+                    r#"{"showToast": {"message": "Failed to update settings", "type": "error"}}"#,
+                )],
+                "Error",
+            )
+                .into_response()
+        }
+    }
+}
+
+/// Get repository scan progress (for HTMX polling)
+pub async fn get_repo_progress_handler(
+    State(state): State<Arc<WebAppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    match crate::db::core::get_repository(&state.db.pool, &id).await {
+        Ok(repo) => {
+            let progress_html = format!(
+                r#"<div id="progress-{}" hx-get="/repos/{}/progress" hx-trigger="every 3s" hx-swap="outerHTML">
+                    {}
+                </div>"#,
+                id,
+                id,
+                render_progress_bar(&repo)
+            );
+            Html(progress_html).into_response()
+        }
+        Err(e) => {
+            error!("Failed to get repo progress: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Error").into_response()
+        }
+    }
+}
+
+/// Render progress bar HTML for a repository
+fn render_progress_bar(repo: &Repository) -> String {
+    let status = repo.scan_status.as_deref().unwrap_or("idle");
+
+    match status {
+        "scanning" => {
+            let percentage = repo.progress_percentage();
+            let processed = repo.scan_files_processed.unwrap_or(0);
+            let total = repo.scan_files_total.unwrap_or(0);
+            let current_file = repo.scan_current_file.as_deref().unwrap_or("...");
+
+            format!(
+                r#"<div style="margin-top: 0.5rem;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem; font-size: 0.75rem;">
+                        <span>🔄 Scanning... ({}/{})</span>
+                        <span>{}%</span>
+                    </div>
+                    <div style="width: 100%; background: var(--bg); border-radius: 0.25rem; height: 1rem; overflow: hidden;">
+                        <div style="height: 100%; background: linear-gradient(90deg, #3b82f6, #8b5cf6); width: {}%; transition: width 0.3s;"></div>
+                    </div>
+                    <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.25rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                        {}</div>
+                </div>"#,
+                processed, total, percentage, percentage, current_file
+            )
+        }
+        "error" => {
+            let error_msg = repo.last_error.as_deref().unwrap_or("Unknown error");
+            format!(
+                r#"<div style="margin-top: 0.5rem; padding: 0.5rem; background: rgba(239, 68, 68, 0.1); border-left: 3px solid #ef4444; border-radius: 0.25rem;">
+                    <div style="font-size: 0.75rem; color: #ef4444;">❌ Scan failed</div>
+                    <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.25rem;">{}</div>
+                </div>"#,
+                error_msg
+            )
+        }
+        _ => {
+            // Idle state - show last scan metrics if available
+            if let (Some(duration), Some(files), Some(issues)) = (
+                repo.last_scan_duration_ms,
+                repo.last_scan_files_found,
+                repo.last_scan_issues_found,
+            ) {
+                format!(
+                    r#"<div style="margin-top: 0.5rem; font-size: 0.75rem; color: var(--text-muted);">
+                        ✅ Last scan: {} files, {} issues in {}ms
+                    </div>"#,
+                    files, issues, duration
+                )
+            } else {
+                String::from(
+                    r#"<div style="margin-top: 0.5rem; font-size: 0.75rem; color: var(--text-muted);">No scan data available</div>"#,
+                )
+            }
+        }
+    }
+}
+
 /// Delete repository handler — also removes cloned repo from disk
 pub async fn delete_repo_handler(
     State(state): State<Arc<WebAppState>>,
@@ -946,6 +1079,38 @@ async fn toggle_repo_autoscan(db: &Database, id: &str) -> anyhow::Result<()> {
     .bind(id)
     .execute(&db.pool)
     .await?;
+
+    Ok(())
+}
+
+/// Update repository settings
+async fn update_repo_settings(
+    db: &Database,
+    id: &str,
+    settings: UpdateRepoSettingsRequest,
+) -> anyhow::Result<()> {
+    let mut query_parts = vec!["UPDATE repositories SET updated_at = ?".to_string()];
+    let mut bindings: Vec<i64> = vec![chrono::Utc::now().timestamp()];
+
+    if let Some(interval) = settings.scan_interval_minutes {
+        query_parts.push("scan_interval_minutes = ?".to_string());
+        bindings.push(interval);
+    }
+
+    if let Some(enabled) = settings.auto_scan_enabled {
+        query_parts.push("auto_scan_enabled = ?".to_string());
+        bindings.push(if enabled { 1 } else { 0 });
+    }
+
+    let query_str = format!("{} WHERE id = ?", query_parts.join(", "));
+
+    let mut query = sqlx::query(&query_str);
+    for binding in bindings {
+        query = query.bind(binding);
+    }
+    query = query.bind(id);
+
+    query.execute(&db.pool).await?;
 
     Ok(())
 }
@@ -1242,6 +1407,260 @@ fn render_scanner_page(repos: Vec<ScannerRepoItem>) -> String {
     )
 }
 
+// ============================================================================
+// Notes Handlers
+// ============================================================================
+
+/// Notes page handler - display all notes with filtering
+pub async fn notes_handler(State(state): State<Arc<WebAppState>>) -> impl IntoResponse {
+    let notes = match crate::db::core::list_notes(&state.db.pool, 100, None, None, None).await {
+        Ok(notes) => notes,
+        Err(e) => {
+            error!("Failed to fetch notes: {}", e);
+            vec![]
+        }
+    };
+
+    let total = notes.len();
+    let tz_selector = timezone_selector_html();
+    let tz_js = timezone_js();
+
+    let notes_html = if notes.is_empty() {
+        r#"<div class="card">
+    <div style="text-align: center; padding: 4rem 2rem;">
+        <div style="font-size: 4rem; margin-bottom: 1rem;">📝</div>
+        <h2 style="margin-bottom: 1rem;">No Notes Yet</h2>
+        <p class="text-muted" style="margin-bottom: 2rem;">
+            Start capturing your ideas, tasks, and thoughts with Rustassistant notes.
+        </p>
+        <button onclick="document.getElementById('note-capture-modal').style.display='flex'" class="btn btn-primary">Create Your First Note</button>
+    </div>
+</div>"#.to_string()
+    } else {
+        format!(
+            r#"<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">All Notes ({})</h2>
+    </div>
+    <div class="notes-grid">
+        {}
+    </div>
+</div>"#,
+            total,
+            notes
+                .iter()
+                .map(|note| {
+                    let tags_html = note
+                        .tags
+                        .as_ref()
+                        .map(|t| {
+                            t.split(',')
+                                .map(|tag| format!(r#"<span class="badge badge-primary">{}</span>"#, tag.trim()))
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                        })
+                        .unwrap_or_default();
+
+                    let status_class = match note.status.as_str() {
+                        "inbox" => "badge-warning",
+                        "active" => "badge-primary",
+                        "done" => "badge-success",
+                        _ => "badge-secondary",
+                    };
+
+                    format!(
+                        r#"<div class="note-card" style="padding: 1.5rem; border-bottom: 1px solid var(--border);">
+    <div style="display: flex; justify-content: space-between; gap: 1rem; margin-bottom: 1rem;">
+        <div style="flex: 1;">
+            <p style="margin-bottom: 0.75rem; font-size: 1rem; line-height: 1.6;">
+                {}
+            </p>
+            {}
+            <div class="text-muted" style="font-size: 0.75rem;">
+                Created: {}
+            </div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-end;">
+            <span class="badge {}">
+                {}
+            </span>
+            <div style="display: flex; gap: 0.25rem;">
+                <a href="/notes/{}/edit" class="btn btn-sm btn-secondary">Edit</a>
+                <button class="btn btn-sm btn-danger" onclick="deleteNote('{}')">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>"#,
+                        note.content,
+                        if !tags_html.is_empty() {
+                            format!(r#"<div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem;">{}</div>"#, tags_html)
+                        } else {
+                            String::new()
+                        },
+                        note.created_at_formatted(),
+                        status_class,
+                        note.status,
+                        note.id,
+                        note.id
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    };
+
+    Html(format!(
+        r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notes - Rustassistant</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🦀 Rustassistant</h1>
+            <nav>
+                <a href="/dashboard">Dashboard</a>
+                <a href="/repos">Repositories</a>
+                <a href="/queue">Queue</a>
+                <a href="/scanner">Scanner</a>
+                <a href="/notes" class="active">Notes</a>
+                {tz_selector}
+            </nav>
+        </header>
+
+        <div class="page-header mb-4">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h1>Notes</h1>
+                    <p class="text-muted">Capture ideas, tasks, and thoughts</p>
+                </div>
+                <button onclick="document.getElementById('note-capture-modal').style.display='flex'" class="btn btn-primary">+ Quick Note</button>
+            </div>
+        </div>
+
+        <!-- Quick Capture Modal -->
+        <div id="note-capture-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; z-index: 1000;">
+            <div style="background: var(--card-bg); padding: 2rem; border-radius: 0.5rem; max-width: 600px; width: 90%;">
+                <h2 style="margin-bottom: 1rem;">Quick Note</h2>
+                <form id="note-form" hx-post="/api/notes" hx-swap="none" onsubmit="return false;">
+                    <textarea name="content" placeholder="Write your note... Use #tags for categorization" style="width: 100%; min-height: 120px; margin-bottom: 1rem; padding: 0.75rem; border-radius: 0.25rem;" required></textarea>
+                    <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                        <button type="button" class="btn btn-secondary" onclick="document.getElementById('note-capture-modal').style.display='none'">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save Note</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        {notes_html}
+    </div>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script>
+        // Handle note form submission
+        document.getElementById('note-form').addEventListener('submit', async function(e) {{
+            e.preventDefault();
+            const formData = new FormData(this);
+            const response = await fetch('/api/notes', {{
+                method: 'POST',
+                body: formData
+            }});
+            if (response.ok) {{
+                document.getElementById('note-capture-modal').style.display = 'none';
+                this.reset();
+                window.location.reload();
+            }}
+        }});
+
+        function deleteNote(id) {{
+            if (confirm('Are you sure you want to delete this note?')) {{
+                fetch('/api/notes/' + id, {{ method: 'DELETE' }})
+                    .then(r => r.ok ? window.location.reload() : alert('Failed to delete'));
+            }}
+        }}
+    </script>
+    {tz_js}
+</body>
+</html>"#,
+        tz_selector = tz_selector,
+        notes_html = notes_html,
+        tz_js = tz_js
+    ))
+}
+
+/// Create note API endpoint
+#[derive(Debug, Deserialize)]
+pub struct CreateNoteRequest {
+    pub content: String,
+    pub repo_id: Option<String>,
+}
+
+pub async fn create_note_handler(
+    State(state): State<Arc<WebAppState>>,
+    Form(request): Form<CreateNoteRequest>,
+) -> impl IntoResponse {
+    // Extract tags from content (anything starting with #)
+    let tags: Vec<&str> = request
+        .content
+        .split_whitespace()
+        .filter(|word| word.starts_with('#'))
+        .map(|tag| &tag[1..]) // Remove the # prefix
+        .collect();
+
+    match crate::db::core::create_note_with_tags(
+        &state.db.pool,
+        &request.content,
+        &tags,
+        None,
+        request.repo_id.as_deref(),
+    )
+    .await
+    {
+        Ok(_) => (
+            StatusCode::OK,
+            [(
+                "HX-Trigger",
+                r#"{"showToast": {"message": "Note created", "type": "success"}}"#,
+            )],
+            "OK",
+        )
+            .into_response(),
+        Err(e) => {
+            error!("Failed to create note: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                [(
+                    "HX-Trigger",
+                    r#"{"showToast": {"message": "Failed to create note", "type": "error"}}"#,
+                )],
+                "Error",
+            )
+                .into_response()
+        }
+    }
+}
+
+/// Delete note API endpoint
+pub async fn delete_note_handler(
+    State(state): State<Arc<WebAppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    match crate::db::core::delete_note(&state.db.pool, &id).await {
+        Ok(_) => (StatusCode::OK, "OK").into_response(),
+        Err(e) => {
+            error!("Failed to delete note: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Error").into_response()
+        }
+    }
+}
+
+// ============================================================================
+// Router
+// ============================================================================
+
 pub fn create_router(state: WebAppState) -> Router {
     let shared_state = Arc::new(state);
 
@@ -1252,7 +1671,12 @@ pub fn create_router(state: WebAppState) -> Router {
         .route("/repos/add", get(add_repo_form_handler))
         .route("/repos/add", post(add_repo_handler))
         .route("/repos/:id/toggle-scan", get(toggle_scan_handler))
+        .route("/repos/:id/settings", post(update_repo_settings_handler))
+        .route("/repos/:id/progress", get(get_repo_progress_handler))
         .route("/repos/:id/delete", get(delete_repo_handler))
+        .route("/notes", get(notes_handler))
+        .route("/api/notes", post(create_note_handler))
+        .route("/api/notes/:id", axum::routing::delete(delete_note_handler))
         .route("/queue", get(queue_handler))
         .route("/queue/:id/delete", get(delete_queue_item_handler))
         .route("/scanner", get(scanner_handler))

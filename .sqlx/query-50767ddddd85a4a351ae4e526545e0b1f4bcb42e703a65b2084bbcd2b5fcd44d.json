@@ -1,0 +1,68 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id, document_id, chunk_index, content, char_start, char_end,\n                word_count, heading, created_at\n         FROM document_chunks\n         WHERE document_id = ?\n         ORDER BY chunk_index",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "document_id",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "chunk_index",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "content",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "char_start",
+        "ordinal": 4,
+        "type_info": "Integer"
+      },
+      {
+        "name": "char_end",
+        "ordinal": 5,
+        "type_info": "Integer"
+      },
+      {
+        "name": "word_count",
+        "ordinal": 6,
+        "type_info": "Integer"
+      },
+      {
+        "name": "heading",
+        "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 8,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "50767ddddd85a4a351ae4e526545e0b1f4bcb42e703a65b2084bbcd2b5fcd44d"
+}

@@ -22,10 +22,13 @@
 //! - Vector storage for RAG system
 //! - RESTful API and CLI interface
 
+pub mod api;
 pub mod auto_scanner;
 pub mod backup;
 pub mod cache;
+pub mod cache_layer;
 pub mod cache_migrate;
+pub mod chunking;
 pub mod cli;
 pub mod code_review;
 pub mod config;
@@ -35,6 +38,7 @@ pub mod cost_tracker;
 pub mod db;
 pub mod directory_tree;
 pub mod doc_generator;
+pub mod embeddings;
 pub mod enhanced_scanner;
 pub mod error;
 pub mod formatter;
@@ -42,11 +46,15 @@ pub mod git;
 pub mod github;
 pub mod grok_client;
 pub mod grok_reasoning;
+pub mod indexing;
 pub mod llm;
 pub mod llm_audit;
 pub mod llm_config;
+pub mod metrics;
+pub mod multi_tenant;
 pub mod parser;
 pub mod prompt_hashes;
+pub mod query_analytics;
 pub mod query_router;
 pub mod query_templates;
 pub mod queue;
@@ -54,25 +62,40 @@ pub mod refactor_assistant;
 pub mod repo_analysis;
 pub mod repo_cache;
 pub mod repo_cache_sql;
+pub mod repo_manager;
 pub mod research;
 pub mod response_cache;
 pub mod scanner;
 pub mod scoring;
+pub mod search;
 pub mod server;
 pub mod tag_schema;
 pub mod tags;
 pub mod task;
 pub mod tasks;
+pub mod telemetry;
 pub mod test_generator;
 pub mod tests_runner;
 pub mod todo_scanner;
 pub mod token_budget;
 pub mod tree_state;
 pub mod types;
+pub mod vector_index;
 pub mod web_ui;
+pub mod webhooks;
 
+pub use api::{
+    create_api_router, create_default_api_router, generate_api_key, ApiConfig, ApiResponse,
+    ApiState, AuthConfig, AuthResult, IndexJobResponse, IndexJobStatus, IndexStatusResponse,
+    JobQueue, JobQueueConfig, JobStatus, PaginatedResponse, RateLimitConfig, RateLimiter,
+    SearchRequest, SearchResponse, SearchType, UploadDocumentRequest, UploadDocumentResponse,
+};
 pub use cache::{AuditCache, CacheEntry, CacheStats};
+pub use cache_layer::{
+    CacheConfig as CacheLayerConfig, CacheKey, CacheLayer, CacheStats as CacheLayerStats,
+};
 pub use cache_migrate::{CacheMigrator, MigrationFailure, MigrationProgress, MigrationResult};
+pub use chunking::{chunk_document, ChunkConfig, ChunkData};
 pub use cli::{
     handle_queue_command, handle_report_command, handle_scan_command, handle_task_command,
     QueueCommands, ReportCommands, ScanCommands, TaskCommands,
@@ -92,6 +115,9 @@ pub use db::{
 };
 pub use directory_tree::{DirectoryTreeBuilder, Hotspot, TreeSummary};
 pub use doc_generator::{DocGenerator, FunctionDoc, ModuleDoc, ParameterDoc, ReadmeContent};
+pub use embeddings::{
+    Embedding, EmbeddingConfig, EmbeddingGenerator, EmbeddingModelType, EmbeddingStats,
+};
 pub use enhanced_scanner::EnhancedScanner;
 pub use error::{AuditError, Result};
 pub use formatter::{BatchFormatResult, CodeFormatter, FormatMode, FormatResult, Formatter};
@@ -100,6 +126,9 @@ pub use grok_client::{FileScoreResult, GrokClient, QuickAnalysisResult};
 pub use grok_reasoning::{
     analyze_all_batches, BatchAnalysisResult, FileAnalysisResult as GrokFileAnalysisResult,
     FileBatch, FileForAnalysis, GrokReasoningClient, IdentifiedIssue, Improvement, RetryConfig,
+};
+pub use indexing::{
+    BatchIndexer, DocumentIndexer, IndexingConfig, IndexingProgress, IndexingResult, IndexingStage,
 };
 pub use llm::{
     GrokAnalyzer, ProjectPhase, ProjectPlan, StandardizationIssue, StandardizationReport,
@@ -139,6 +168,15 @@ pub use repo_cache_sql::{
     EvictionPolicy, ModelStats, RepoCacheSql,
 };
 
+pub use metrics::{
+    global_registry, track_cache_hit, track_cache_miss, track_indexing_job, track_request,
+    track_search, Counter, Gauge, Histogram, HistogramSummary, MetricsRegistry, MetricsStats,
+    RequestTimer,
+};
+pub use multi_tenant::{QuotaType, Tenant, TenantManager, TenantQuota, TenantUsage, UsageMetric};
+pub use query_analytics::{
+    AnalyticsConfig, AnalyticsStats, QueryAnalytics, QueryPattern, SearchAnalytics,
+};
 pub use response_cache::{CacheStats as ResponseCacheStats, CachedResponse, ResponseCache};
 pub use scanner::{
     build_dir_tree, fetch_user_repos, get_dir_tree, get_unanalyzed_files, save_dir_tree,
@@ -149,6 +187,10 @@ pub use scoring::{
     CodebaseScore, ComplexityIndicators, FileScore, FileScorer, ScoreBreakdown, ScoringWeights,
     TodoBreakdown,
 };
+pub use search::{
+    SearchConfig, SearchFilters, SearchQuery, SearchResult, SearchResultMetadata, SearchStats,
+    SemanticSearcher,
+};
 pub use server::run_server;
 pub use tag_schema::{
     CodeAge, CodeStatus, Complexity, DirectoryNode, IssuesSummary, NodeStats, NodeType, Priority,
@@ -156,6 +198,7 @@ pub use tag_schema::{
 };
 pub use tags::TagScanner;
 pub use tasks::TaskGenerator;
+pub use telemetry::{init_telemetry, shutdown_telemetry, TelemetryConfig};
 pub use test_generator::{
     Fixture, GeneratedTests, TestCase, TestFramework, TestGapAnalysis, TestGenerator, TestType,
     UntestFunction,
@@ -168,9 +211,22 @@ pub use tree_state::{
     TreeState, TreeStateManager, TreeSummaryStats,
 };
 pub use types::*;
+pub use vector_index::{
+    DistanceMetric, IndexConfig as VectorIndexConfig, SearchResult as VectorSearchResult,
+    VectorIndex,
+};
+pub use webhooks::{
+    DeliveryStatus, WebhookConfig, WebhookDelivery, WebhookEndpoint, WebhookEvent, WebhookManager,
+    WebhookPayload,
+};
 
 /// Re-export commonly used types
 pub mod prelude {
+    pub use crate::api::{
+        create_api_router, create_default_api_router, ApiConfig, ApiResponse, ApiState, AuthConfig,
+        RateLimitConfig, SearchRequest, SearchType,
+    };
+    pub use crate::chunking::{chunk_document, ChunkConfig, ChunkData};
     pub use crate::config::Config;
     pub use crate::context::{ContextBuilder as OldContextBuilder, GlobalContextBundle};
     pub use crate::context_builder::{Context, ContextBuilder, ContextFile, QueryBuilder};
@@ -185,6 +241,9 @@ pub mod prelude {
         Repository, Task,
     };
     pub use crate::directory_tree::{DirectoryTreeBuilder, Hotspot, TreeSummary};
+    pub use crate::embeddings::{
+        Embedding, EmbeddingConfig, EmbeddingGenerator, EmbeddingModelType, EmbeddingStats,
+    };
     pub use crate::enhanced_scanner::EnhancedScanner;
     pub use crate::error::{AuditError, Result};
     pub use crate::git::GitManager;
@@ -192,6 +251,10 @@ pub mod prelude {
     pub use crate::grok_reasoning::{
         analyze_all_batches, BatchAnalysisResult, FileAnalysisResult as GrokFileAnalysisResult,
         FileBatch, FileForAnalysis, GrokReasoningClient, IdentifiedIssue, Improvement, RetryConfig,
+    };
+    pub use crate::indexing::{
+        BatchIndexer, DocumentIndexer, IndexingConfig, IndexingProgress, IndexingResult,
+        IndexingStage,
     };
     pub use crate::llm::{
         GrokAnalyzer, ProjectPhase, ProjectPlan, StandardizationIssue, StandardizationReport,
@@ -218,6 +281,10 @@ pub mod prelude {
         build_dir_tree, fetch_user_repos, get_dir_tree, get_unanalyzed_files, save_dir_tree,
         save_file_analysis, scan_directory_for_todos, scan_repo_for_todos, sync_repos_to_db,
         DetectedTodo, GitHubRepo, ScanResult, Scanner, TreeNode as ScannerTreeNode,
+    };
+    pub use crate::search::{
+        SearchConfig, SearchFilters, SearchQuery, SearchResult, SearchResultMetadata, SearchStats,
+        SemanticSearcher,
     };
 
     pub use crate::tag_schema::{

@@ -39,6 +39,8 @@ pub struct Note {
     pub tags: Option<String>,
     pub project: Option<String>,
     pub status: String,
+    #[sqlx(default)]
+    pub repo_id: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -64,6 +66,34 @@ impl Note {
     }
 }
 
+/// A tag for categorizing notes
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct Tag {
+    pub name: String,
+    pub color: String,
+    pub description: Option<String>,
+    pub usage_count: i64,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+impl Tag {
+    /// Get formatted created_at timestamp
+    pub fn created_at_formatted(&self) -> String {
+        chrono::DateTime::from_timestamp(self.created_at, 0)
+            .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+            .unwrap_or_else(|| "unknown".to_string())
+    }
+}
+
+/// Note-Tag relationship
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct NoteTag {
+    pub note_id: String,
+    pub tag: String,
+    pub created_at: i64,
+}
+
 /// A tracked repository
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Repository {
@@ -80,6 +110,25 @@ pub struct Repository {
     pub git_url: Option<String>, // GitHub clone URL
     pub created_at: i64,
     pub updated_at: i64,
+    // Scan progress tracking
+    #[sqlx(default)]
+    pub scan_status: Option<String>, // idle/scanning/error
+    #[sqlx(default)]
+    pub scan_progress: Option<String>,
+    #[sqlx(default)]
+    pub scan_current_file: Option<String>,
+    #[sqlx(default)]
+    pub scan_files_total: Option<i64>,
+    #[sqlx(default)]
+    pub scan_files_processed: Option<i64>,
+    #[sqlx(default)]
+    pub last_scan_duration_ms: Option<i64>,
+    #[sqlx(default)]
+    pub last_scan_files_found: Option<i64>,
+    #[sqlx(default)]
+    pub last_scan_issues_found: Option<i64>,
+    #[sqlx(default)]
+    pub last_error: Option<String>,
 }
 
 impl Repository {
@@ -88,6 +137,28 @@ impl Repository {
         chrono::DateTime::from_timestamp(self.created_at, 0)
             .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
             .unwrap_or_else(|| "unknown".to_string())
+    }
+
+    /// Get scan status display string
+    pub fn scan_status_display(&self) -> String {
+        match self.scan_status.as_deref() {
+            Some("scanning") => "🔄 Scanning".to_string(),
+            Some("error") => "❌ Error".to_string(),
+            _ => "✅ Idle".to_string(),
+        }
+    }
+
+    /// Get progress percentage (0-100)
+    pub fn progress_percentage(&self) -> i64 {
+        match (self.scan_files_processed, self.scan_files_total) {
+            (Some(processed), Some(total)) if total > 0 => ((processed * 100) / total).min(100),
+            _ => 0,
+        }
+    }
+
+    /// Check if auto-scan is enabled
+    pub fn is_auto_scan_enabled(&self) -> bool {
+        self.auto_scan_enabled != 0
     }
 }
 
@@ -108,8 +179,112 @@ pub struct Task {
     pub updated_at: i64,
 }
 
-// ============================================================================
-// Database Initialization
+/// Document model for RAG system
+#[derive(Debug, Clone)]
+pub struct Document {
+    pub id: String,
+    pub title: String,
+    pub content: String,
+    pub content_type: String, // markdown, text, code, html
+    pub source_type: String,  // manual, url, file, repo
+    pub source_url: Option<String>,
+    pub doc_type: String, // reference, research, tutorial, architecture, note, snippet
+    pub tags: Option<String>, // Comma-separated for backward compat
+    pub repo_id: Option<String>,
+    pub file_path: Option<String>,
+    pub word_count: i64,
+    pub char_count: i64,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub indexed_at: Option<i64>,
+}
+
+impl Document {
+    /// Format created_at timestamp
+    pub fn created_at_formatted(&self) -> String {
+        chrono::DateTime::from_timestamp(self.created_at, 0)
+            .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+            .unwrap_or_default()
+    }
+
+    /// Format updated_at timestamp
+    pub fn updated_at_formatted(&self) -> String {
+        chrono::DateTime::from_timestamp(self.updated_at, 0)
+            .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+            .unwrap_or_default()
+    }
+
+    /// Get indexing status
+    pub fn index_status(&self) -> &str {
+        match self.indexed_at {
+            None => "not_indexed",
+            Some(indexed) if self.updated_at > indexed => "needs_reindex",
+            Some(_) => "indexed",
+        }
+    }
+
+    /// Parse tags into Vec
+    pub fn tag_list(&self) -> Vec<String> {
+        self.tags
+            .as_ref()
+            .map(|t| t.split(',').map(|s| s.trim().to_string()).collect())
+            .unwrap_or_default()
+    }
+}
+
+/// Document chunk for embeddings
+#[derive(Debug, Clone)]
+pub struct DocumentChunk {
+    pub id: String,
+    pub document_id: String,
+    pub chunk_index: i64,
+    pub content: String,
+    pub char_start: i64,
+    pub char_end: i64,
+    pub word_count: i64,
+    pub heading: Option<String>,
+    pub created_at: i64,
+}
+
+/// Document embedding
+#[derive(Debug, Clone)]
+pub struct DocumentEmbedding {
+    pub id: String,
+    pub chunk_id: String,
+    pub embedding: String, // JSON array of floats
+    pub model: String,
+    pub dimension: i64,
+    pub created_at: i64,
+}
+
+impl DocumentEmbedding {
+    /// Parse embedding from JSON string
+    pub fn parse_embedding(&self) -> Result<Vec<f32>, serde_json::Error> {
+        serde_json::from_str(&self.embedding)
+    }
+
+    /// Create from vector
+    pub fn from_vector(chunk_id: String, vector: &[f32], model: String) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            chunk_id,
+            embedding: serde_json::to_string(vector).unwrap_or_default(),
+            model,
+            dimension: vector.len() as i64,
+            created_at: chrono::Utc::now().timestamp(),
+        }
+    }
+}
+
+/// Document tag
+#[derive(Debug, Clone)]
+pub struct DocumentTag {
+    pub document_id: String,
+    pub tag: String,
+    pub created_at: i64,
+}
+
+/// Database initialization
 // ============================================================================
 
 /// Initialize the database connection pool and create tables
@@ -244,40 +419,71 @@ async fn create_tables(pool: &SqlitePool) -> DbResult<()> {
 // Note Operations
 // ============================================================================
 
-/// Create a new note
+/// Create a new note with optional tags and repo linking
+pub async fn create_note_with_tags(
+    pool: &SqlitePool,
+    content: &str,
+    tags: &[&str],
+    project: Option<&str>,
+    repo_id: Option<&str>,
+) -> DbResult<Note> {
+    let id = uuid::Uuid::new_v4().to_string();
+    let now = chrono::Utc::now().timestamp();
+
+    // Insert the note
+    sqlx::query(
+        r#"
+        INSERT INTO notes (id, content, tags, project, status, repo_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'inbox', ?, ?, ?)
+        "#,
+    )
+    .bind(&id)
+    .bind(content)
+    .bind(if tags.is_empty() {
+        None
+    } else {
+        Some(tags.join(","))
+    })
+    .bind(project)
+    .bind(repo_id)
+    .bind(now)
+    .bind(now)
+    .execute(pool)
+    .await?;
+
+    // Add tags to note_tags table
+    if !tags.is_empty() {
+        set_note_tags(pool, &id, tags).await?;
+    }
+
+    Ok(Note {
+        id,
+        content: content.to_string(),
+        tags: if tags.is_empty() {
+            None
+        } else {
+            Some(tags.join(","))
+        },
+        project: project.map(|s| s.to_string()),
+        status: "inbox".to_string(),
+        repo_id: repo_id.map(|s| s.to_string()),
+        created_at: now,
+        updated_at: now,
+    })
+}
+
+/// Create a new note (legacy API - backward compatible)
 pub async fn create_note(
     pool: &SqlitePool,
     content: &str,
     tags: Option<&str>,
     project: Option<&str>,
 ) -> DbResult<Note> {
-    let id = uuid::Uuid::new_v4().to_string();
-    let now = chrono::Utc::now().timestamp();
+    let tag_vec: Vec<&str> = tags
+        .map(|t| t.split(',').map(|s| s.trim()).collect())
+        .unwrap_or_default();
 
-    sqlx::query(
-        r#"
-        INSERT INTO notes (id, content, tags, project, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'inbox', ?, ?)
-        "#,
-    )
-    .bind(&id)
-    .bind(content)
-    .bind(tags)
-    .bind(project)
-    .bind(now)
-    .bind(now)
-    .execute(pool)
-    .await?;
-
-    Ok(Note {
-        id,
-        content: content.to_string(),
-        tags: tags.map(|s| s.to_string()),
-        project: project.map(|s| s.to_string()),
-        status: "inbox".to_string(),
-        created_at: now,
-        updated_at: now,
-    })
+    create_note_with_tags(pool, content, &tag_vec, project, None).await
 }
 
 /// Get a note by ID
@@ -379,6 +585,232 @@ pub async fn delete_note(pool: &SqlitePool, id: &str) -> DbResult<()> {
 }
 
 // ============================================================================
+// Tag Operations
+// ============================================================================
+
+/// Get all tags ordered by usage count
+pub async fn list_tags(pool: &SqlitePool) -> DbResult<Vec<Tag>> {
+    Ok(
+        sqlx::query_as::<_, Tag>("SELECT * FROM tags ORDER BY usage_count DESC, name ASC")
+            .fetch_all(pool)
+            .await?,
+    )
+}
+
+/// Get a specific tag by name
+pub async fn get_tag(pool: &SqlitePool, name: &str) -> DbResult<Option<Tag>> {
+    Ok(
+        sqlx::query_as::<_, Tag>("SELECT * FROM tags WHERE name = ?")
+            .bind(name)
+            .fetch_optional(pool)
+            .await?,
+    )
+}
+
+/// Create or update a tag
+pub async fn upsert_tag(
+    pool: &SqlitePool,
+    name: &str,
+    color: Option<&str>,
+    description: Option<&str>,
+) -> DbResult<Tag> {
+    let now = chrono::Utc::now().timestamp();
+
+    sqlx::query(
+        r#"
+        INSERT INTO tags (name, color, description, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(name) DO UPDATE SET
+            color = COALESCE(?, color),
+            description = COALESCE(?, description),
+            updated_at = ?
+        "#,
+    )
+    .bind(name)
+    .bind(color.unwrap_or("#3b82f6"))
+    .bind(description)
+    .bind(now)
+    .bind(now)
+    .bind(color)
+    .bind(description)
+    .bind(now)
+    .execute(pool)
+    .await?;
+
+    get_tag(pool, name)
+        .await?
+        .ok_or_else(|| DbError::NotFound(format!("Tag not found after upsert: {}", name)))
+}
+
+/// Delete a tag (will cascade delete note_tags relationships)
+pub async fn delete_tag(pool: &SqlitePool, name: &str) -> DbResult<()> {
+    let result = sqlx::query("DELETE FROM tags WHERE name = ?")
+        .bind(name)
+        .execute(pool)
+        .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(DbError::NotFound(format!("Tag not found: {}", name)));
+    }
+
+    Ok(())
+}
+
+/// Add a tag to a note
+pub async fn add_tag_to_note(pool: &SqlitePool, note_id: &str, tag: &str) -> DbResult<()> {
+    let now = chrono::Utc::now().timestamp();
+
+    sqlx::query(
+        r#"
+        INSERT OR IGNORE INTO note_tags (note_id, tag, created_at)
+        VALUES (?, ?, ?)
+        "#,
+    )
+    .bind(note_id)
+    .bind(tag)
+    .bind(now)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Remove a tag from a note
+pub async fn remove_tag_from_note(pool: &SqlitePool, note_id: &str, tag: &str) -> DbResult<()> {
+    sqlx::query("DELETE FROM note_tags WHERE note_id = ? AND tag = ?")
+        .bind(note_id)
+        .bind(tag)
+        .execute(pool)
+        .await?;
+
+    Ok(())
+}
+
+/// Get all tags for a note
+pub async fn get_note_tags(pool: &SqlitePool, note_id: &str) -> DbResult<Vec<String>> {
+    let tags = sqlx::query_scalar::<_, String>("SELECT tag FROM note_tags WHERE note_id = ?")
+        .bind(note_id)
+        .fetch_all(pool)
+        .await?;
+
+    Ok(tags)
+}
+
+/// Set tags for a note (replaces existing tags)
+pub async fn set_note_tags(pool: &SqlitePool, note_id: &str, tags: &[&str]) -> DbResult<()> {
+    // Start a transaction
+    let mut tx = pool.begin().await?;
+
+    // Remove existing tags
+    sqlx::query("DELETE FROM note_tags WHERE note_id = ?")
+        .bind(note_id)
+        .execute(&mut *tx)
+        .await?;
+
+    // Add new tags
+    let now = chrono::Utc::now().timestamp();
+    for tag in tags {
+        sqlx::query(
+            r#"
+            INSERT OR IGNORE INTO note_tags (note_id, tag, created_at)
+            VALUES (?, ?, ?)
+            "#,
+        )
+        .bind(note_id)
+        .bind(tag)
+        .bind(now)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Search notes by tags (AND logic - note must have all specified tags)
+pub async fn search_notes_by_tags(
+    pool: &SqlitePool,
+    tags: &[&str],
+    limit: i64,
+) -> DbResult<Vec<Note>> {
+    if tags.is_empty() {
+        return list_notes(pool, limit, None, None, None).await;
+    }
+
+    // Build query with multiple tag filters
+    let tag_count = tags.len();
+    let query = format!(
+        r#"
+        SELECT DISTINCT n.*
+        FROM notes n
+        INNER JOIN note_tags nt ON n.id = nt.note_id
+        WHERE nt.tag IN ({})
+        GROUP BY n.id
+        HAVING COUNT(DISTINCT nt.tag) = ?
+        ORDER BY n.created_at DESC
+        LIMIT ?
+        "#,
+        (0..tag_count).map(|_| "?").collect::<Vec<_>>().join(",")
+    );
+
+    let mut q = sqlx::query_as::<_, Note>(&query);
+    for tag in tags {
+        q = q.bind(tag);
+    }
+    q = q.bind(tag_count as i64).bind(limit);
+
+    Ok(q.fetch_all(pool).await?)
+}
+
+/// Update note with repo_id
+pub async fn update_note_repo(
+    pool: &SqlitePool,
+    note_id: &str,
+    repo_id: Option<&str>,
+) -> DbResult<()> {
+    let now = chrono::Utc::now().timestamp();
+
+    let result = sqlx::query("UPDATE notes SET repo_id = ?, updated_at = ? WHERE id = ?")
+        .bind(repo_id)
+        .bind(now)
+        .bind(note_id)
+        .execute(pool)
+        .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(DbError::NotFound(format!("Note not found: {}", note_id)));
+    }
+
+    Ok(())
+}
+
+/// Get notes for a repository
+pub async fn get_repo_notes(pool: &SqlitePool, repo_id: &str, limit: i64) -> DbResult<Vec<Note>> {
+    Ok(sqlx::query_as::<_, Note>(
+        r#"
+            SELECT * FROM notes
+            WHERE repo_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            "#,
+    )
+    .bind(repo_id)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?)
+}
+
+/// Count notes for a repository
+pub async fn count_repo_notes(pool: &SqlitePool, repo_id: &str) -> DbResult<i64> {
+    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM notes WHERE repo_id = ?")
+        .bind(repo_id)
+        .fetch_one(pool)
+        .await?;
+
+    Ok(count.0)
+}
+
+// ============================================================================
 // Repository Operations
 // ============================================================================
 
@@ -421,6 +853,16 @@ pub async fn add_repository(
         git_url: git_url.map(|s| s.to_string()),
         created_at: now,
         updated_at: now,
+        // Scan progress tracking defaults
+        scan_status: Some("idle".to_string()),
+        scan_progress: None,
+        scan_current_file: None,
+        scan_files_total: Some(0),
+        scan_files_processed: Some(0),
+        last_scan_duration_ms: None,
+        last_scan_files_found: Some(0),
+        last_scan_issues_found: Some(0),
+        last_error: None,
     })
 }
 
@@ -489,6 +931,296 @@ pub async fn remove_repository(pool: &SqlitePool, id: &str) -> DbResult<()> {
     }
 
     Ok(())
+}
+
+// ============================================================================
+// Scan Progress Operations
+// ============================================================================
+
+/// Start a scan - set status to 'scanning' and initialize progress tracking
+pub async fn start_scan(pool: &SqlitePool, repo_id: &str, total_files: i64) -> DbResult<()> {
+    let now = chrono::Utc::now().timestamp();
+
+    let result = sqlx::query(
+        r#"
+        UPDATE repositories
+        SET scan_status = 'scanning',
+            scan_files_total = ?,
+            scan_files_processed = 0,
+            scan_progress = 'Starting scan...',
+            scan_current_file = NULL,
+            last_scan_check = ?,
+            last_error = NULL,
+            updated_at = ?
+        WHERE id = ?
+        "#,
+    )
+    .bind(total_files)
+    .bind(now)
+    .bind(now)
+    .bind(repo_id)
+    .execute(pool)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(DbError::NotFound(format!(
+            "Repository not found: {}",
+            repo_id
+        )));
+    }
+
+    // Log scan started event
+    log_scan_event(
+        pool,
+        repo_id,
+        "scan_started",
+        &format!("Scan started with {} files to process", total_files),
+        None,
+    )
+    .await?;
+
+    Ok(())
+}
+
+/// Update scan progress during scanning
+pub async fn update_scan_progress(
+    pool: &SqlitePool,
+    repo_id: &str,
+    files_processed: i64,
+    current_file: Option<&str>,
+) -> DbResult<()> {
+    let now = chrono::Utc::now().timestamp();
+    let progress_msg = if let Some(file) = current_file {
+        format!("Processing file {}", file)
+    } else {
+        format!("Processed {} files", files_processed)
+    };
+
+    let result = sqlx::query(
+        r#"
+        UPDATE repositories
+        SET scan_files_processed = ?,
+            scan_current_file = ?,
+            scan_progress = ?,
+            updated_at = ?
+        WHERE id = ?
+        "#,
+    )
+    .bind(files_processed)
+    .bind(current_file)
+    .bind(&progress_msg)
+    .bind(now)
+    .bind(repo_id)
+    .execute(pool)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(DbError::NotFound(format!(
+            "Repository not found: {}",
+            repo_id
+        )));
+    }
+
+    Ok(())
+}
+
+/// Complete a scan - set status to 'idle' and record metrics
+pub async fn complete_scan(
+    pool: &SqlitePool,
+    repo_id: &str,
+    duration_ms: i64,
+    files_found: i64,
+    issues_found: i64,
+) -> DbResult<()> {
+    let now = chrono::Utc::now().timestamp();
+
+    let result = sqlx::query(
+        r#"
+        UPDATE repositories
+        SET scan_status = 'idle',
+            scan_progress = 'Scan complete',
+            scan_current_file = NULL,
+            last_scan_duration_ms = ?,
+            last_scan_files_found = ?,
+            last_scan_issues_found = ?,
+            last_analyzed = ?,
+            updated_at = ?
+        WHERE id = ?
+        "#,
+    )
+    .bind(duration_ms)
+    .bind(files_found)
+    .bind(issues_found)
+    .bind(now)
+    .bind(now)
+    .bind(repo_id)
+    .execute(pool)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(DbError::NotFound(format!(
+            "Repository not found: {}",
+            repo_id
+        )));
+    }
+
+    // Log scan completed event
+    log_scan_event(
+        pool,
+        repo_id,
+        "scan_completed",
+        &format!(
+            "Scan completed in {}ms: {} files, {} issues",
+            duration_ms, files_found, issues_found
+        ),
+        Some(
+            &serde_json::json!({
+                "duration_ms": duration_ms,
+                "files_found": files_found,
+                "issues_found": issues_found
+            })
+            .to_string(),
+        ),
+    )
+    .await?;
+
+    Ok(())
+}
+
+/// Mark a scan as failed with error
+pub async fn fail_scan(pool: &SqlitePool, repo_id: &str, error_message: &str) -> DbResult<()> {
+    let now = chrono::Utc::now().timestamp();
+
+    let result = sqlx::query(
+        r#"
+        UPDATE repositories
+        SET scan_status = 'error',
+            scan_progress = 'Scan failed',
+            scan_current_file = NULL,
+            last_error = ?,
+            updated_at = ?
+        WHERE id = ?
+        "#,
+    )
+    .bind(error_message)
+    .bind(now)
+    .bind(repo_id)
+    .execute(pool)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(DbError::NotFound(format!(
+            "Repository not found: {}",
+            repo_id
+        )));
+    }
+
+    // Log scan error event
+    log_scan_event(pool, repo_id, "scan_error", error_message, None).await?;
+
+    Ok(())
+}
+
+// ============================================================================
+// Scan Event Logging
+// ============================================================================
+
+/// Log a scan event to the scan_events table
+pub async fn log_scan_event(
+    pool: &SqlitePool,
+    repo_id: &str,
+    event_type: &str,
+    message: &str,
+    metadata: Option<&str>,
+) -> DbResult<()> {
+    let now = chrono::Utc::now().timestamp();
+
+    sqlx::query(
+        r#"
+        INSERT INTO scan_events (repo_id, event_type, message, metadata, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        "#,
+    )
+    .bind(repo_id)
+    .bind(event_type)
+    .bind(message)
+    .bind(metadata)
+    .bind(now)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Get recent scan events for a repository
+pub async fn get_scan_events(
+    pool: &SqlitePool,
+    repo_id: Option<&str>,
+    limit: i64,
+) -> DbResult<Vec<ScanEvent>> {
+    let events = if let Some(rid) = repo_id {
+        sqlx::query_as::<_, ScanEvent>(
+            r#"
+            SELECT * FROM scan_events
+            WHERE repo_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            "#,
+        )
+        .bind(rid)
+        .bind(limit)
+        .fetch_all(pool)
+        .await?
+    } else {
+        sqlx::query_as::<_, ScanEvent>(
+            r#"
+            SELECT * FROM scan_events
+            ORDER BY created_at DESC
+            LIMIT ?
+            "#,
+        )
+        .bind(limit)
+        .fetch_all(pool)
+        .await?
+    };
+
+    Ok(events)
+}
+
+/// Scan event model
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct ScanEvent {
+    pub id: i64,
+    pub repo_id: String,
+    pub event_type: String,
+    pub message: String,
+    pub metadata: Option<String>,
+    pub created_at: i64,
+}
+
+impl ScanEvent {
+    /// Get formatted created_at timestamp
+    pub fn created_at_formatted(&self) -> String {
+        chrono::DateTime::from_timestamp(self.created_at, 0)
+            .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+            .unwrap_or_else(|| "unknown".to_string())
+    }
+
+    /// Get a human-readable relative time (e.g., "2 minutes ago")
+    pub fn created_at_relative(&self) -> String {
+        let now = chrono::Utc::now().timestamp();
+        let diff = now - self.created_at;
+
+        if diff < 60 {
+            "just now".to_string()
+        } else if diff < 3600 {
+            format!("{} minutes ago", diff / 60)
+        } else if diff < 86400 {
+            format!("{} hours ago", diff / 3600)
+        } else {
+            format!("{} days ago", diff / 86400)
+        }
+    }
 }
 
 // ============================================================================

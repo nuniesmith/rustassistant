@@ -453,12 +453,7 @@ fn create_api_router(state: AppState) -> Router {
         .route("/health", get(health_check))
         .route("/api/stats", get(get_statistics))
         // Notes
-        .route("/api/notes", post(create_note_handler))
-        .route("/api/notes", get(list_notes_handler))
-        .route("/api/notes/search", get(search_notes_handler))
-        .route("/api/notes/:id", get(get_note_handler))
-        .route("/api/notes/:id", put(update_note_handler))
-        .route("/api/notes/:id", delete(delete_note_handler))
+        // Notes routes moved to web_ui module to avoid conflicts
         // Repositories
         .route("/api/repos", post(add_repo_handler))
         .route("/api/repos", get(list_repos_handler))
@@ -500,9 +495,14 @@ async fn main() -> anyhow::Result<()> {
     // Ensure repos directory exists
     std::fs::create_dir_all(&repos_dir).expect("Failed to create repos directory");
 
-    // Initialize database
+    // Initialize database with migrations
     info!("Initializing database at {}", database_url);
-    let db = db::init_db(&database_url).await?;
+    let mut config = db::DatabaseConfig::from_env();
+    // Override path from DATABASE_URL if it's a sqlite URL
+    if database_url.starts_with("sqlite:") {
+        config.path = std::path::PathBuf::from(database_url.trim_start_matches("sqlite:"));
+    }
+    let db = db::init_pool(&config).await?;
 
     // Create app state for API
     let api_state = AppState { db: db.clone() };

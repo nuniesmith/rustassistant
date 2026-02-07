@@ -1,0 +1,634 @@
+{% extends "../layouts/base.html" %}
+
+{% block title %}Documents - Rustassistant{% endblock %}
+
+{% block extra_head %}
+<style>
+    .documents-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 2rem;
+    }
+
+    .upload-section {
+        background: var(--surface);
+        border: 2px dashed var(--border);
+        border-radius: 0.5rem;
+        padding: 2rem;
+        margin-bottom: 2rem;
+        transition: all 0.2s;
+    }
+
+    .upload-section:hover {
+        border-color: #3b82f6;
+        background: var(--bg);
+    }
+
+    .upload-section.dragover {
+        border-color: #3b82f6;
+        background: var(--bg);
+        transform: scale(1.02);
+    }
+
+    .upload-form {
+        display: grid;
+        gap: 1rem;
+    }
+
+    .upload-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+    }
+
+    .file-input-wrapper {
+        position: relative;
+    }
+
+    .file-input-label {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        padding: 2rem;
+        background: var(--bg);
+        border: 2px dashed var(--border);
+        border-radius: 0.5rem;
+        cursor: pointer;
+        transition: all 0.2s;
+        text-align: center;
+    }
+
+    .file-input-label:hover {
+        border-color: #3b82f6;
+        background: var(--surface);
+    }
+
+    input[type="file"] {
+        position: absolute;
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
+
+    .documents-list {
+        display: grid;
+        gap: 1rem;
+    }
+
+    .document-item {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 0.5rem;
+        padding: 1.5rem;
+        transition: all 0.2s;
+    }
+
+    .document-item:hover {
+        border-color: #3b82f6;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    }
+
+    .document-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: start;
+        margin-bottom: 1rem;
+    }
+
+    .document-title {
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: var(--primary);
+        margin-bottom: 0.5rem;
+    }
+
+    .document-meta {
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+        font-size: 0.875rem;
+        color: var(--text-light);
+        margin-bottom: 0.75rem;
+    }
+
+    .document-meta-item {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+    }
+
+    .document-actions {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+
+    .document-content-preview {
+        background: var(--bg);
+        border-left: 3px solid #3b82f6;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        border-radius: 0.25rem;
+        font-size: 0.875rem;
+        color: var(--text-light);
+        max-height: 100px;
+        overflow: hidden;
+        position: relative;
+    }
+
+    .document-content-preview::after {
+        content: '';
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 30px;
+        background: linear-gradient(to bottom, transparent, var(--bg));
+    }
+
+    .document-tags {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        margin-bottom: 1rem;
+    }
+
+    .document-tag {
+        padding: 0.25rem 0.75rem;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 0.25rem;
+        font-size: 0.75rem;
+        color: var(--text-light);
+    }
+
+    .status-indicator {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .status-indicator.indexed {
+        background: #10b981;
+        color: white;
+    }
+
+    .status-indicator.pending {
+        background: #f59e0b;
+        color: white;
+    }
+
+    .status-indicator.failed {
+        background: #ef4444;
+        color: white;
+    }
+
+    .status-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: currentColor;
+        animation: pulse-dot 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse-dot {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+
+    .filter-bar {
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+        margin-bottom: 2rem;
+        padding: 1rem;
+        background: var(--surface);
+        border-radius: 0.5rem;
+        border: 1px solid var(--border);
+    }
+
+    .filter-item {
+        flex: 1;
+        min-width: 150px;
+    }
+
+    .pagination {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 0.5rem;
+        margin-top: 2rem;
+    }
+
+    .page-btn {
+        padding: 0.5rem 1rem;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 0.375rem;
+        cursor: pointer;
+        transition: all 0.2s;
+        color: var(--text);
+    }
+
+    .page-btn:hover:not(:disabled) {
+        background: #3b82f6;
+        border-color: #3b82f6;
+        color: white;
+    }
+
+    .page-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .page-btn.active {
+        background: #3b82f6;
+        border-color: #3b82f6;
+        color: white;
+    }
+
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-bottom: 2rem;
+    }
+
+    .stat-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 0.5rem;
+        padding: 1.5rem;
+        text-align: center;
+    }
+
+    .stat-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #3b82f6;
+    }
+
+    .stat-label {
+        font-size: 0.875rem;
+        color: var(--text-light);
+        margin-top: 0.5rem;
+    }
+
+    .modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.8);
+        z-index: 2000;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .modal.active {
+        display: flex;
+    }
+
+    .modal-content {
+        background: var(--surface);
+        border-radius: 0.5rem;
+        padding: 2rem;
+        max-width: 600px;
+        width: 90%;
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+
+    .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .modal-close {
+        font-size: 1.5rem;
+        cursor: pointer;
+        color: var(--text-light);
+        transition: color 0.2s;
+    }
+
+    .modal-close:hover {
+        color: var(--danger);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="documents-header">
+    <h1>📄 Documents</h1>
+    <button class="btn btn-primary" onclick="toggleUploadSection()">
+        ➕ Upload Document
+    </button>
+</div>
+
+<!-- Stats -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-value">{{ total_documents | default(value="0") }}</div>
+        <div class="stat-label">Total Documents</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ indexed_documents | default(value="0") }}</div>
+        <div class="stat-label">Indexed</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ pending_documents | default(value="0") }}</div>
+        <div class="stat-label">Pending</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ total_chunks | default(value="0") }}</div>
+        <div class="stat-label">Total Chunks</div>
+    </div>
+</div>
+
+<!-- Upload Section -->
+<div id="upload-section" class="upload-section" style="display: none;">
+    <h2 class="card-title mb-2">Upload New Document</h2>
+    <form
+        hx-post="/api/documents"
+        hx-target="#documents-list"
+        hx-swap="afterbegin"
+        hx-on="htmx:afterRequest: resetUploadForm()"
+        class="upload-form"
+    >
+        <div class="upload-grid">
+            <div class="form-group">
+                <label for="title">Title *</label>
+                <input type="text" id="title" name="title" required placeholder="Document title" />
+            </div>
+            <div class="form-group">
+                <label for="doc_type">Type *</label>
+                <select id="doc_type" name="doc_type" required>
+                    <option value="markdown">Markdown</option>
+                    <option value="code">Code</option>
+                    <option value="documentation">Documentation</option>
+                    <option value="note">Note</option>
+                    <option value="reference">Reference</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="content">Content *</label>
+            <textarea id="content" name="content" required rows="10" placeholder="Document content..."></textarea>
+        </div>
+
+        <div class="upload-grid">
+            <div class="form-group">
+                <label for="tags">Tags (comma-separated)</label>
+                <input type="text" id="tags" name="tags" placeholder="rust, api, tutorial" />
+            </div>
+            <div class="form-group">
+                <label for="source_url">Source URL</label>
+                <input type="text" id="source_url" name="source_url" placeholder="https://..." />
+            </div>
+        </div>
+
+        <div class="document-actions">
+            <button type="submit" class="btn btn-primary">📤 Upload & Index</button>
+            <button type="button" class="btn btn-secondary" onclick="toggleUploadSection()">Cancel</button>
+        </div>
+    </form>
+</div>
+
+<!-- Filters -->
+<div class="filter-bar">
+    <div class="filter-item">
+        <label>Filter by Type</label>
+        <select
+            name="doc_type"
+            hx-get="/api/documents"
+            hx-target="#documents-list"
+            hx-include="[name='indexed_only']"
+        >
+            <option value="">All Types</option>
+            <option value="code">Code</option>
+            <option value="documentation">Documentation</option>
+            <option value="note">Note</option>
+            <option value="markdown">Markdown</option>
+        </select>
+    </div>
+    <div class="filter-item">
+        <label>Status</label>
+        <select
+            name="indexed_only"
+            hx-get="/api/documents"
+            hx-target="#documents-list"
+            hx-include="[name='doc_type']"
+        >
+            <option value="">All Documents</option>
+            <option value="true">Indexed Only</option>
+            <option value="false">Pending Only</option>
+        </select>
+    </div>
+    <div class="filter-item" style="display: flex; align-items: flex-end;">
+        <button
+            class="btn btn-success"
+            hx-post="/api/index/batch"
+            hx-vals='{"force_reindex": false}'
+            hx-confirm="Index all pending documents?"
+        >
+            ⚡ Index All Pending
+        </button>
+    </div>
+</div>
+
+<!-- Documents List -->
+<div id="documents-list" class="documents-list">
+    {% if documents %}
+        {% for doc in documents %}
+        <div class="document-item">
+            <div class="document-header">
+                <div></div>
+                    <div class="document-title">{{ doc.title }}</div>
+                    <div class="document-meta">
+                        <span class="document-meta-item">
+                            📁 {{ doc.doc_type }}
+                        </span>
+                        <span class="document-meta-item">
+                            📊 {{ doc.chunk_count | default(value="0") }} chunks
+                        </span>
+                        <span class="document-meta-item">
+                            🕒 {{ doc.created_at }}
+                        </span>
+                    </div>
+                </div>
+                <div></div>
+                    {% if doc.is_indexed %}
+                    <span class="status-indicator indexed">
+                        <span class="status-dot"></span>
+                        Indexed
+                    </span>
+                    {% else %}
+                    <span class="status-indicator pending">
+                        <span class="status-dot"></span>
+                        Pending
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+
+            {% if doc.content %}
+            <div class="document-content-preview">
+                {{ doc.content | truncate(length=200) }}
+            </div>
+            {% endif %}
+
+            {% if doc.tags %}
+            <div class="document-tags">
+                {% for tag in doc.tags %}
+                <span class="document-tag">🏷️ {{ tag }}</span>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <div class="document-actions">
+                <button
+                    class="btn btn-sm btn-primary"
+                    hx-get="/api/documents/{{ doc.id }}"
+                    hx-target="#document-modal-content"
+                    onclick="showModal('document-modal')"
+                >
+                    👁️ View
+                </button>
+                {% if not doc.is_indexed %}
+                <button
+                    class="btn btn-sm btn-success"
+                    hx-post="/api/index"
+                    hx-vals='{"document_id": {{ doc.id }}, "force_reindex": false}'
+                    hx-swap="none"
+                >
+                    ⚡ Index Now
+                </button>
+                {% else %}
+                <button
+                    class="btn btn-sm btn-secondary"
+                    hx-post="/api/index"
+                    hx-vals='{"document_id": {{ doc.id }}, "force_reindex": true}'
+                    hx-swap="none"
+                >
+                    🔄 Re-index
+                </button>
+                {% endif %}
+                <button
+                    class="btn btn-sm btn-danger"
+                    hx-delete="/api/documents/{{ doc.id }}"
+                    hx-target="closest .document-item"
+                    hx-swap="outerHTML swap:1s"
+                    hx-confirm="Delete this document and all its chunks?"
+                >
+                    🗑️ Delete
+                </button>
+            </div>
+        </div>
+        {% endfor %}
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">📄</div>
+        <h3>No Documents Yet</h3>
+        <p class="mt-1">Upload your first document to get started with semantic search.</p>
+        <button class="btn btn-primary mt-2" onclick="toggleUploadSection()">
+            ➕ Upload Document
+        </button>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Pagination -->
+{% if total_pages > 1 %}
+<div class="pagination">
+    <button class="page-btn" {% if current_page == 1 %}disabled{% endif %}>‹ Previous</button>
+
+    {% for page in 1..=total_pages %}
+    <button class="page-btn {% if page == current_page %}active{% endif %}">
+        {{ page }}
+    </button>
+    {% endfor %}
+
+    <button class="page-btn" {% if current_page == total_pages %}disabled{% endif %}>Next ›</button>
+</div>
+{% endif %}
+
+<!-- Document Detail Modal -->
+<div id="document-modal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Document Details</h2>
+            <span class="modal-close" onclick="hideModal('document-modal')">✕</span>
+        </div>
+        <div id="document-modal-content">
+            <!-- Dynamic content loaded here -->
+        </div>
+    </div>
+</div>
+
+<script>
+    function toggleUploadSection() {
+        const section = document.getElementById('upload-section');
+        section.style.display = section.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function resetUploadForm() {
+        document.querySelector('.upload-form').reset();
+        toggleUploadSection();
+    }
+
+    function showModal(id) {
+        document.getElementById(id).classList.add('active');
+    }
+
+    function hideModal(id) {
+        document.getElementById(id).classList.remove('active');
+    }
+
+    // Close modal on outside click
+    document.querySelectorAll('.modal').forEach(modal => {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                hideModal(modal.id);
+            }
+        });
+    });
+
+    // Drag and drop for file upload
+    const uploadSection = document.getElementById('upload-section');
+    if (uploadSection) {
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            uploadSection.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            uploadSection.addEventListener(eventName, () => {
+                uploadSection.classList.add('dragover');
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            uploadSection.addEventListener(eventName, () => {
+                uploadSection.classList.remove('dragover');
+            }, false);
+        });
+    }
+</script>
+{% endblock %}

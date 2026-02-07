@@ -37,6 +37,7 @@ RUN mkdir -p src/bin src/templates/layouts src/templates/pages && \
     touch src/templates/layouts/base.html src/templates/pages/dashboard.html
 
 # Build dependencies only (this layer will be cached)
+ENV SQLX_OFFLINE=true
 RUN cargo build --release --bin rustassistant-server
 
 # Remove dummy files and rustassistant build artifacts to force rebuild
@@ -47,8 +48,10 @@ COPY src ./src
 COPY askama.toml ./askama.toml
 COPY static ./static
 COPY migrations ./migrations
+COPY .sqlx ./.sqlx
 
 # Build the actual binary with optimizations
+ENV SQLX_OFFLINE=true
 RUN cargo build --release --bin rustassistant-server && \
     strip /build/target/release/rustassistant-server
 

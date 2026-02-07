@@ -1,0 +1,422 @@
+# Docker Compose for RustAssistant with Advanced Features
+# Includes: PostgreSQL, Redis, Jaeger, Grafana, Prometheus, Tempo
+
+version: "3.8"
+
+services:
+    # ==========================================================================
+    # Database - PostgreSQL with Replication
+    # ==========================================================================
+
+    postgres-primary:
+        image: postgres:15-alpine
+        container_name: rustassistant-postgres-primary
+        environment:
+            - POSTGRES_DB=rustassistant
+            - POSTGRES_USER=rustassistant
+            - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme123}
+            - POSTGRES_REPLICATION_MODE=master
+            - POSTGRES_REPLICATION_USER=replicator
+            - POSTGRES_REPLICATION_PASSWORD=${REPLICATION_PASSWORD:-replicator123}
+        volumes:
+            - postgres_primary_data:/var/lib/postgresql/data
+            - ./scripts/init-replication.sh:/docker-entrypoint-initdb.d/init-replication.sh
+        ports:
+            - "5432:5432"
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U rustassistant"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+        networks:
+            - rustassistant-network
+
+    postgres-replica:
+        image: postgres:15-alpine
+        container_name: rustassistant-postgres-replica
+        environment:
+            - POSTGRES_DB=rustassistant
+            - POSTGRES_USER=rustassistant
+            - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme123}
+            - POSTGRES_REPLICATION_MODE=slave
+            - POSTGRES_MASTER_HOST=postgres-primary
+            - POSTGRES_MASTER_PORT=5432
+            - POSTGRES_REPLICATION_USER=replicator
+            - POSTGRES_REPLICATION_PASSWORD=${REPLICATION_PASSWORD:-replicator123}
+        volumes:
+            - postgres_replica_data:/var/lib/postgresql/data
+        ports:
+            - "5433:5432"
+        depends_on:
+            - postgres-primary
+        networks:
+            - rustassistant-network
+
+    # ==========================================================================
+    # Cache - Redis with Sentinel
+    # ==========================================================================
+
+    redis-master:
+        image: redis:7-alpine
+        container_name: rustassistant-redis-master
+        command: >
+            redis-server
+            --appendonly yes
+            --maxmemory 512mb
+            --maxmemory-policy allkeys-lru
+            --requirepass ${REDIS_PASSWORD:-redis123}
+        volumes:
+            - redis_master_data:/data
+        ports:
+            - "6379:6379"
+        healthcheck:
+            test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+            interval: 10s
+            timeout: 3s
+            retries: 5
+        networks:
+            - rustassistant-network
+
+    redis-replica:
+        image: redis:7-alpine
+        container_name: rustassistant-redis-replica
+        command: >
+            redis-server
+            --appendonly yes
+            --maxmemory 512mb
+            --maxmemory-policy allkeys-lru
+            --requirepass ${REDIS_PASSWORD:-redis123}
+            --slaveof redis-master 6379
+            --masterauth ${REDIS_PASSWORD:-redis123}
+        volumes:
+            - redis_replica_data:/data
+        ports:
+            - "6380:6379"
+        depends_on:
+            - redis-master
+        networks:
+            - rustassistant-network
+
+    redis-sentinel:
+        image: redis:7-alpine
+        container_name: rustassistant-redis-sentinel
+        command: >
+            redis-sentinel /etc/redis/sentinel.conf
+        volumes:
+            - ./config/redis-sentinel.conf:/etc/redis/sentinel.conf
+            - redis_sentinel_data:/data
+        ports:
+            - "26379:26379"
+        depends_on:
+            - redis-master
+            - redis-replica
+        networks:
+            - rustassistant-network
+
+    # ==========================================================================
+    # Observability - Jaeger (Tracing)
+    # ==========================================================================
+
+    jaeger:
+        image: jaegertracing/all-in-one:latest
+        container_name: rustassistant-jaeger
+        environment:
+            - COLLECTOR_OTLP_ENABLED=true
+            - SPAN_STORAGE_TYPE=badger
+            - BADGER_EPHEMERAL=false
+            - BADGER_DIRECTORY_VALUE=/badger/data
+            - BADGER_DIRECTORY_KEY=/badger/key
+        volumes:
+            - jaeger_data:/badger
+        ports:
+            - "16686:16686" # Jaeger UI
+            - "4317:4317" # OTLP gRPC
+            - "4318:4318" # OTLP HTTP
+            - "14268:14268" # Jaeger collector
+        networks:
+            - rustassistant-network
+
+    # ==========================================================================
+    # Observability - Grafana Tempo (Alternative Tracing Backend)
+    # ==========================================================================
+
+    tempo:
+        image: grafana/tempo:latest
+        container_name: rustassistant-tempo
+        command: ["-config.file=/etc/tempo.yaml"]
+        volumes:
+            - ./config/tempo.yaml:/etc/tempo.yaml
+            - tempo_data:/tmp/tempo
+        ports:
+            - "3200:3200" # Tempo
+            - "4319:4317" # OTLP gRPC (alternative port)
+        networks:
+            - rustassistant-network
+
+    # ==========================================================================
+    # Observability - Prometheus (Metrics)
+    # ==========================================================================
+
+    prometheus:
+        image: prom/prometheus:latest
+        container_name: rustassistant-prometheus
+        command:
+            - "--config.file=/etc/prometheus/prometheus.yml"
+            - "--storage.tsdb.path=/prometheus"
+            - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+            - "--web.console.templates=/usr/share/prometheus/consoles"
+            - "--web.enable-lifecycle"
+        volumes:
+            - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
+            - prometheus_data:/prometheus
+        ports:
+            - "9090:9090"
+        networks:
+            - rustassistant-network
+
+    # ==========================================================================
+    # Observability - Grafana (Dashboards)
+    # ==========================================================================
+
+    grafana:
+        image: grafana/grafana:latest
+        container_name: rustassistant-grafana
+        environment:
+            - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+            - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin123}
+            - GF_AUTH_ANONYMOUS_ENABLED=false
+            - GF_INSTALL_PLUGINS=redis-datasource
+        volumes:
+            - grafana_data:/var/lib/grafana
+            - ./config/grafana/provisioning:/etc/grafana/provisioning
+            - ./config/grafana/dashboards:/var/lib/grafana/dashboards
+        ports:
+            - "3000:3000"
+        depends_on:
+            - prometheus
+            - tempo
+        networks:
+            - rustassistant-network
+
+    # ==========================================================================
+    # Load Balancer - HAProxy
+    # ==========================================================================
+
+    haproxy:
+        image: haproxy:latest
+        container_name: rustassistant-haproxy
+        volumes:
+            - ./config/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+        ports:
+            - "80:80" # HTTP
+            - "443:443" # HTTPS
+            - "8404:8404" # Stats
+        depends_on:
+            - rustassistant-1
+            - rustassistant-2
+        networks:
+            - rustassistant-network
+
+    # ==========================================================================
+    # Application - RustAssistant Instance 1
+    # ==========================================================================
+
+    rustassistant-1:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        container_name: rustassistant-1
+        environment:
+            # Database
+            - DATABASE_URL=postgresql://rustassistant:${POSTGRES_PASSWORD:-changeme123}@postgres-primary:5432/rustassistant
+
+            # Redis
+            - REDIS_URL=redis://:${REDIS_PASSWORD:-redis123}@redis-master:6379
+            - CACHE_ENABLED=true
+            - CACHE_PREFIX=rustassistant
+            - CACHE_MAX_MEMORY_ITEMS=10000
+            - CACHE_DEFAULT_TTL=3600
+
+            # OpenTelemetry
+            - OTLP_ENDPOINT=http://jaeger:4317
+            - TELEMETRY_ENABLED=true
+            - SAMPLING_RATE=1.0
+            - SERVICE_NAME=rustassistant
+            - ENVIRONMENT=production
+            - INSTANCE_ID=1
+
+            # Analytics
+            - ANALYTICS_ENABLED=true
+            - ANALYTICS_RETENTION_DAYS=90
+
+            # Multi-tenancy
+            - MULTI_TENANT_MODE=true
+
+            # Server
+            - RUST_LOG=info
+            - SERVER_HOST=0.0.0.0
+            - SERVER_PORT=8080
+            - WORKERS=4
+        volumes:
+            - rustassistant_data_1:/data
+            - ./models:/models
+        ports:
+            - "8081:8080"
+        depends_on:
+            - postgres-primary
+            - redis-master
+            - jaeger
+        healthcheck:
+            test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            start_period: 40s
+        networks:
+            - rustassistant-network
+        restart: unless-stopped
+
+    # ==========================================================================
+    # Application - RustAssistant Instance 2
+    # ==========================================================================
+
+    rustassistant-2:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        container_name: rustassistant-2
+        environment:
+            # Database
+            - DATABASE_URL=postgresql://rustassistant:${POSTGRES_PASSWORD:-changeme123}@postgres-primary:5432/rustassistant
+
+            # Redis
+            - REDIS_URL=redis://:${REDIS_PASSWORD:-redis123}@redis-master:6379
+            - CACHE_ENABLED=true
+            - CACHE_PREFIX=rustassistant
+            - CACHE_MAX_MEMORY_ITEMS=10000
+            - CACHE_DEFAULT_TTL=3600
+
+            # OpenTelemetry
+            - OTLP_ENDPOINT=http://jaeger:4317
+            - TELEMETRY_ENABLED=true
+            - SAMPLING_RATE=1.0
+            - SERVICE_NAME=rustassistant
+            - ENVIRONMENT=production
+            - INSTANCE_ID=2
+
+            # Analytics
+            - ANALYTICS_ENABLED=true
+            - ANALYTICS_RETENTION_DAYS=90
+
+            # Multi-tenancy
+            - MULTI_TENANT_MODE=true
+
+            # Server
+            - RUST_LOG=info
+            - SERVER_HOST=0.0.0.0
+            - SERVER_PORT=8080
+            - WORKERS=4
+        volumes:
+            - rustassistant_data_2:/data
+            - ./models:/models
+        ports:
+            - "8082:8080"
+        depends_on:
+            - postgres-primary
+            - redis-master
+            - jaeger
+        healthcheck:
+            test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            start_period: 40s
+        networks:
+            - rustassistant-network
+        restart: unless-stopped
+
+    # ==========================================================================
+    # Application - RustAssistant Instance 3 (Backup)
+    # ==========================================================================
+
+    rustassistant-3:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        container_name: rustassistant-3
+        environment:
+            - DATABASE_URL=postgresql://rustassistant:${POSTGRES_PASSWORD:-changeme123}@postgres-primary:5432/rustassistant
+            - REDIS_URL=redis://:${REDIS_PASSWORD:-redis123}@redis-master:6379
+            - CACHE_ENABLED=true
+            - CACHE_PREFIX=rustassistant
+            - OTLP_ENDPOINT=http://jaeger:4317
+            - TELEMETRY_ENABLED=true
+            - SAMPLING_RATE=1.0
+            - SERVICE_NAME=rustassistant
+            - ENVIRONMENT=production
+            - INSTANCE_ID=3
+            - ANALYTICS_ENABLED=true
+            - MULTI_TENANT_MODE=true
+            - RUST_LOG=info
+            - SERVER_HOST=0.0.0.0
+            - SERVER_PORT=8080
+            - WORKERS=4
+        volumes:
+            - rustassistant_data_3:/data
+            - ./models:/models
+        ports:
+            - "8083:8080"
+        depends_on:
+            - postgres-primary
+            - redis-master
+            - jaeger
+        healthcheck:
+            test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            start_period: 40s
+        networks:
+            - rustassistant-network
+        restart: unless-stopped
+
+# ==============================================================================
+# Volumes
+# ==============================================================================
+
+volumes:
+    postgres_primary_data:
+        driver: local
+    postgres_replica_data:
+        driver: local
+    redis_master_data:
+        driver: local
+    redis_replica_data:
+        driver: local
+    redis_sentinel_data:
+        driver: local
+    jaeger_data:
+        driver: local
+    tempo_data:
+        driver: local
+    prometheus_data:
+        driver: local
+    grafana_data:
+        driver: local
+    rustassistant_data_1:
+        driver: local
+    rustassistant_data_2:
+        driver: local
+    rustassistant_data_3:
+        driver: local
+
+# ==============================================================================
+# Networks
+# ==============================================================================
+
+networks:
+    rustassistant-network:
+        driver: bridge
+        ipam:
+            config:
+                - subnet: 172.20.0.0/16

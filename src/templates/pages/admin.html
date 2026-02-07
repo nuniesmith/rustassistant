@@ -1,0 +1,835 @@
+{% extends "../layouts/base.html" %}
+
+{% block title %}Admin Dashboard - RustAssistant{% endblock %}
+
+{% block head %}
+<style>
+    .admin-container {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 2rem;
+    }
+
+    .dashboard-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+    }
+
+    .stat-card {
+        background: white;
+        border-radius: 8px;
+        padding: 1.5rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        border-left: 4px solid #3b82f6;
+    }
+
+    .stat-card.success { border-left-color: #10b981; }
+    .stat-card.warning { border-left-color: #f59e0b; }
+    .stat-card.danger { border-left-color: #ef4444; }
+    .stat-card.info { border-left-color: #3b82f6; }
+
+    .stat-value {
+        font-size: 2.5rem;
+        font-weight: bold;
+        color: #1f2937;
+        margin: 0.5rem 0;
+    }
+
+    .stat-label {
+        color: #6b7280;
+        font-size: 0.875rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .stat-change {
+        font-size: 0.875rem;
+        margin-top: 0.5rem;
+    }
+
+    .stat-change.up { color: #10b981; }
+    .stat-change.down { color: #ef4444; }
+
+    .section-card {
+        background: white;
+        border-radius: 8px;
+        padding: 2rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        margin-bottom: 1.5rem;
+    }
+
+    .section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+        padding-bottom: 1rem;
+        border-bottom: 2px solid #e5e7eb;
+    }
+
+    .section-title {
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: #1f2937;
+    }
+
+    .btn {
+        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        border: none;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .btn-primary {
+        background: #3b82f6;
+        color: white;
+    }
+
+    .btn-primary:hover {
+        background: #2563eb;
+    }
+
+    .btn-danger {
+        background: #ef4444;
+        color: white;
+    }
+
+    .btn-danger:hover {
+        background: #dc2626;
+    }
+
+    .btn-secondary {
+        background: #6b7280;
+        color: white;
+    }
+
+    .btn-secondary:hover {
+        background: #4b5563;
+    }
+
+    .table-container {
+        overflow-x: auto;
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    th, td {
+        padding: 0.75rem 1rem;
+        text-align: left;
+        border-bottom: 1px solid #e5e7eb;
+    }
+
+    th {
+        background: #f9fafb;
+        font-weight: 600;
+        color: #374151;
+        font-size: 0.875rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    tr:hover {
+        background: #f9fafb;
+    }
+
+    .badge {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .badge-success {
+        background: #d1fae5;
+        color: #065f46;
+    }
+
+    .badge-warning {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .badge-danger {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    .badge-info {
+        background: #dbeafe;
+        color: #1e40af;
+    }
+
+    .chart-container {
+        height: 300px;
+        margin: 1rem 0;
+    }
+
+    .form-group {
+        margin-bottom: 1rem;
+    }
+
+    .form-label {
+        display: block;
+        margin-bottom: 0.5rem;
+        font-weight: 500;
+        color: #374151;
+    }
+
+    .form-input {
+        width: 100%;
+        padding: 0.5rem;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        font-size: 1rem;
+    }
+
+    .form-input:focus {
+        outline: none;
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+
+    .modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 1000;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .modal.active {
+        display: flex;
+    }
+
+    .modal-content {
+        background: white;
+        border-radius: 8px;
+        padding: 2rem;
+        max-width: 500px;
+        width: 90%;
+        max-height: 80vh;
+        overflow-y: auto;
+    }
+
+    .tabs {
+        display: flex;
+        gap: 1rem;
+        border-bottom: 2px solid #e5e7eb;
+        margin-bottom: 1.5rem;
+    }
+
+    .tab {
+        padding: 0.75rem 1rem;
+        border: none;
+        background: none;
+        cursor: pointer;
+        font-weight: 500;
+        color: #6b7280;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -2px;
+    }
+
+    .tab.active {
+        color: #3b82f6;
+        border-bottom-color: #3b82f6;
+    }
+
+    .tab-content {
+        display: none;
+    }
+
+    .tab-content.active {
+        display: block;
+    }
+
+    .alert {
+        padding: 1rem;
+        border-radius: 6px;
+        margin-bottom: 1rem;
+    }
+
+    .alert-success {
+        background: #d1fae5;
+        color: #065f46;
+        border: 1px solid #10b981;
+    }
+
+    .alert-error {
+        background: #fee2e2;
+        color: #991b1b;
+        border: 1px solid #ef4444;
+    }
+
+    .progress-bar {
+        height: 8px;
+        background: #e5e7eb;
+        border-radius: 4px;
+        overflow: hidden;
+    }
+
+    .progress-fill {
+        height: 100%;
+        background: #3b82f6;
+        transition: width 0.3s;
+    }
+
+    .code-block {
+        background: #1f2937;
+        color: #f9fafb;
+        padding: 1rem;
+        border-radius: 6px;
+        overflow-x: auto;
+        font-family: 'Courier New', monospace;
+        font-size: 0.875rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="admin-container">
+    <h1 style="margin-bottom: 2rem;">Admin Dashboard</h1>
+
+    <!-- Statistics Overview -->
+    <div class="dashboard-grid">
+        <div class="stat-card info">
+            <div class="stat-label">Total Documents</div>
+            <div class="stat-value" id="total-documents">{{ stats.total_documents | default(value=0) }}</div>
+            <div class="stat-change up">↑ 12% this week</div>
+        </div>
+
+        <div class="stat-card success">
+            <div class="stat-label">Total Searches</div>
+            <div class="stat-value" id="total-searches">{{ stats.total_searches | default(value=0) }}</div>
+            <div class="stat-change up">↑ 25% this week</div>
+        </div>
+
+        <div class="stat-card warning">
+            <div class="stat-label">Active Jobs</div>
+            <div class="stat-value" id="active-jobs">{{ stats.active_jobs | default(value=0) }}</div>
+            <div class="stat-change">{{ stats.pending_jobs | default(value=0) }} pending</div>
+        </div>
+
+        <div class="stat-card success">
+            <div class="stat-label">Cache Hit Rate</div>
+            <div class="stat-value" id="cache-hit-rate">{{ stats.cache_hit_rate | default(value=0) }}%</div>
+            <div class="stat-change up">↑ 5% improvement</div>
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+        <button class="tab active" onclick="switchTab('overview')">Overview</button>
+        <button class="tab" onclick="switchTab('analytics')">Analytics</button>
+        <button class="tab" onclick="switchTab('webhooks')">Webhooks</button>
+        <button class="tab" onclick="switchTab('api-keys')">API Keys</button>
+        <button class="tab" onclick="switchTab('jobs')">Indexing Jobs</button>
+        <button class="tab" onclick="switchTab('metrics')">Metrics</button>
+    </div>
+
+    <!-- Overview Tab -->
+    <div id="tab-overview" class="tab-content active">
+        <div class="section-card">
+            <div class="section-header">
+                <h2 class="section-title">System Health</h2>
+                <button class="btn btn-secondary" onclick="refreshHealth()">Refresh</button>
+            </div>
+            <div class="dashboard-grid">
+                <div>
+                    <strong>Database:</strong>
+                    <span class="badge badge-success" id="db-status">Healthy</span>
+                </div>
+                <div>
+                    <strong>Redis Cache:</strong>
+                    <span class="badge badge-success" id="redis-status">Connected</span>
+                </div>
+                <div>
+                    <strong>Vector Index:</strong>
+                    <span class="badge badge-success" id="index-status">Ready</span>
+                </div>
+                <div>
+                    <strong>Webhook Delivery:</strong>
+                    <span class="badge badge-success" id="webhook-status">Active</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="section-card">
+            <div class="section-header">
+                <h2 class="section-title">Recent Activity</h2>
+            </div>
+            <div class="table-container">
+                <table id="recent-activity">
+                    <thead>
+                        <tr>
+                            <th>Timestamp</th>
+                            <th>Event</th>
+                            <th>Details</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>2024-01-15 14:30:25</td>
+                            <td>Document Indexed</td>
+                            <td>technical-guide.md (45 chunks)</td>
+                            <td><span class="badge badge-success">Success</span></td>
+                        </tr>
+                        <tr>
+                            <td>2024-01-15 14:28:10</td>
+                            <td>Search Query</td>
+                            <td>"rust async patterns" (12 results)</td>
+                            <td><span class="badge badge-info">Completed</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Analytics Tab -->
+    <div id="tab-analytics" class="tab-content">
+        <div class="section-card">
+            <div class="section-header">
+                <h2 class="section-title">Search Analytics</h2>
+                <select class="form-input" style="width: auto;" onchange="updateAnalyticsPeriod(this.value)">
+                    <option value="7">Last 7 Days</option>
+                    <option value="30" selected>Last 30 Days</option>
+                    <option value="90">Last 90 Days</option>
+                </select>
+            </div>
+
+            <div class="chart-container" id="search-chart">
+                <!-- Chart will be rendered here with Chart.js or similar -->
+                <canvas id="search-trends-canvas"></canvas>
+            </div>
+        </div>
+
+        <div class="section-card">
+            <div class="section-header">
+                <h2 class="section-title">Popular Queries</h2>
+            </div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Query</th>
+                            <th>Count</th>
+                            <th>Avg Results</th>
+                            <th>Avg Time (ms)</th>
+                            <th>Search Type</th>
+                        </tr>
+                    </thead>
+                    <tbody id="popular-queries">
+                        {% for query in popular_queries | default(value=[]) %}
+                        <tr>
+                            <td>{{ query.query }}</td>
+                            <td>{{ query.count }}</td>
+                            <td>{{ query.avg_results | round(precision=1) }}</td>
+                            <td>{{ query.avg_execution_time_ms | round(precision=0) }}</td>
+                            <td><span class="badge badge-info">{{ query.search_type }}</span></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Webhooks Tab -->
+    <div id="tab-webhooks" class="tab-content">
+        <div class="section-card">
+            <div class="section-header">
+                <h2 class="section-title">Webhooks</h2>
+                <button class="btn btn-primary" onclick="showCreateWebhook()">Create Webhook</button>
+            </div>
+
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>URL</th>
+                            <th>Events</th>
+                            <th>Status</th>
+                            <th>Last Delivery</th>
+                            <th>Success Rate</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="webhooks-list">
+                        {% for webhook in webhooks | default(value=[]) %}
+                        <tr>
+                            <td>{{ webhook.url }}</td>
+                            <td>{{ webhook.events | join(sep=", ") }}</td>
+                            <td>
+                                {% if webhook.enabled %}
+                                <span class="badge badge-success">Active</span>
+                                {% else %}
+                                <span class="badge badge-warning">Disabled</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ webhook.last_delivery | default(value="Never") }}</td>
+                            <td>{{ webhook.success_rate | default(value=0) }}%</td>
+                            <td>
+                                <button class="btn btn-secondary" onclick="testWebhook('{{ webhook.id }}')">Test</button>
+                                <button class="btn btn-danger" onclick="deleteWebhook('{{ webhook.id }}')">Delete</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="section-card">
+            <div class="section-header">
+                <h2 class="section-title">Recent Deliveries</h2>
+            </div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Timestamp</th>
+                            <th>Event</th>
+                            <th>URL</th>
+                            <th>Status</th>
+                            <th>Response Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="webhook-deliveries">
+                        <!-- Populated via HTMX or JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- API Keys Tab -->
+    <div id="tab-api-keys" class="tab-content">
+        <div class="section-card">
+            <div class="section-header">
+                <h2 class="section-title">API Keys</h2>
+                <button class="btn btn-primary" onclick="showCreateApiKey()">Generate New Key</button>
+            </div>
+
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Key Prefix</th>
+                            <th>Created</th>
+                            <th>Last Used</th>
+                            <th>Requests (30d)</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="api-keys-list">
+                        {% for key in api_keys | default(value=[]) %}
+                        <tr>
+                            <td>{{ key.name }}</td>
+                            <td><code>{{ key.prefix }}...</code></td>
+                            <td>{{ key.created_at }}</td>
+                            <td>{{ key.last_used | default(value="Never") }}</td>
+                            <td>{{ key.request_count | default(value=0) }}</td>
+                            <td>
+                                <button class="btn btn-danger" onclick="revokeApiKey('{{ key.id }}')">Revoke</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="section-card">
+            <div class="section-header">
+                <h2 class="section-title">Rate Limiting</h2>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Requests per minute per key</label>
+                <input type="number" class="form-input" value="60" id="rate-limit-rpm">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Burst capacity</label>
+                <input type="number" class="form-input" value="100" id="rate-limit-burst">
+            </div>
+            <button class="btn btn-primary" onclick="updateRateLimits()">Update Limits</button>
+        </div>
+    </div>
+
+    <!-- Jobs Tab -->
+    <div id="tab-jobs" class="tab-content">
+        <div class="section-card">
+            <div class="section-header">
+                <h2 class="section-title">Indexing Jobs</h2>
+                <button class="btn btn-secondary" onclick="refreshJobs()">Refresh</button>
+            </div>
+
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Job ID</th>
+                            <th>Document</th>
+                            <th>Status</th>
+                            <th>Progress</th>
+                            <th>Started</th>
+                            <th>Duration</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="jobs-list">
+                        {% for job in jobs | default(value=[]) %}
+                        <tr>
+                            <td><code>{{ job.id }}</code></td>
+                            <td>{{ job.document_id }}</td>
+                            <td>
+                                {% if job.status == "completed" %}
+                                <span class="badge badge-success">Completed</span>
+                                {% elif job.status == "processing" %}
+                                <span class="badge badge-info">Processing</span>
+                                {% elif job.status == "failed" %}
+                                <span class="badge badge-danger">Failed</span>
+                                {% else %}
+                                <span class="badge badge-warning">Pending</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="progress-bar">
+                                    <div class="progress-fill" style="width: {{ job.progress | default(value=0) }}%"></div>
+                                </div>
+                                {{ job.progress | default(value=0) }}%
+                            </td>
+                            <td>{{ job.started_at | default(value="Not started") }}</td>
+                            <td>{{ job.duration | default(value="-") }}</td>
+                            <td>
+                                {% if job.status == "failed" %}
+                                <button class="btn btn-secondary" onclick="retryJob('{{ job.id }}')">Retry</button>
+                                {% endif %}
+                                <button class="btn btn-secondary" onclick="viewJobDetails('{{ job.id }}')">Details</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Metrics Tab -->
+    <div id="tab-metrics" class="tab-content">
+        <div class="section-card">
+            <div class="section-header">
+                <h2 class="section-title">Prometheus Metrics</h2>
+                <a href="/api/metrics" target="_blank" class="btn btn-secondary">Raw Metrics</a>
+            </div>
+
+            <div class="dashboard-grid">
+                <div class="stat-card">
+                    <div class="stat-label">HTTP Requests</div>
+                    <div class="stat-value">{{ metrics.http_requests | default(value=0) }}</div>
+                    <small></small>Total requests processed</small>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Avg Response Time</div>
+                    <div class="stat-value">{{ metrics.avg_response_time | default(value=0) }}ms</div>
+                    <small>Last hour average</small>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Error Rate</div>
+                    <div class="stat-value">{{ metrics.error_rate | default(value=0) }}%</div>
+                    <small>5xx errors</small>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Embeddings Generated</div>
+                    <div class="stat-value">{{ metrics.embeddings_count | default(value=0) }}</div>
+                    <small>Total vectors created</small>
+                </div>
+            </div>
+
+            <div class="chart-container">
+                <canvas id="metrics-chart"></canvas>
+            </div>
+        </div>
+
+        <div class="section-card">
+            <div class="section-header">
+                <h2 class="section-title">Grafana Integration</h2>
+            </div>
+            <div class="code-block">
+# Prometheus scrape config
+scrape_configs:
+  - job_name: 'rustassistant'
+    static_configs:
+      - targets: ['localhost:8080']
+    metrics_path: '/api/metrics'
+    scrape_interval: 15s
+            </div>
+            <p style="margin-top: 1rem;">
+                Copy this configuration to your Prometheus config file and restart Prometheus.
+                Then configure Grafana to use Prometheus as a data source.
+            </p>
+        </div>
+    </div>
+</div>
+
+<!-- Create Webhook Modal -->
+<div id="webhook-modal" class="modal">
+    <div class="modal-content">
+        <h2 style="margin-bottom: 1.5rem;">Create Webhook</h2>
+        <form id="webhook-form">
+            <div class="form-group">
+                <label class="form-label">Webhook URL</label>
+                <input type="url" class="form-input" name="url" required placeholder="https://example.com/webhook">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Secret</label>
+                <input type="text" class="form-input" name="secret" required placeholder="webhook_secret">
+                <small>Used for HMAC signature verification</small>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Events (select multiple)</label>
+                <select class="form-input" name="events" multiple size="5">
+                    <option value="document.uploaded">Document Uploaded</option>
+                    <option value="document.indexed">Document Indexed</option>
+                    <option value="document.failed">Indexing Failed</option>
+                    <option value="search.performed">Search Performed</option>
+                    <option value="job.completed">Job Completed</option>
+                </select>
+            </div>
+            <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+                <button type="submit" class="btn btn-primary">Create</button>
+                <button type="button" class="btn btn-secondary" onclick="closeWebhookModal()">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Create API Key Modal -->
+<div id="apikey-modal" class="modal">
+    <div class="modal-content">
+        <h2 style="margin-bottom: 1.5rem;">Generate API Key</h2>
+        <form id="apikey-form">
+            <div class="form-group">
+                <label class="form-label">Key Name</label>
+                <input type="text" class="form-input" name="name" required placeholder="Production API Key">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Description (optional)</label>
+                <textarea class="form-input" name="description" rows="3"></textarea>
+            </div>
+            <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+                <button type="submit" class="btn btn-primary">Generate</button>
+                <button type="button" class="btn btn-secondary" onclick="closeApiKeyModal()">Cancel</button>
+            </div>
+        </form>
+        <div id="apikey-result" style="display: none; margin-top: 1.5rem;">
+            <div class="alert alert-success">
+                <strong>API Key Generated!</strong>
+                <div class="code-block" style="margin-top: 0.5rem;">
+                    <code id="generated-key"></code>
+                </div>
+                <p style="margin-top: 0.5rem;"><strong>Important:</strong> Copy this key now. You won't be able to see it again!</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function switchTab(tabName) {
+    // Hide all tabs
+    document.querySelectorAll('.tab-content').forEach(tab => {
+        tab.classList.remove('active');
+    });
+    document.querySelectorAll('.tab').forEach(btn => {
+        btn.classList.remove('active');
+    });
+
+    // Show selected tab
+    document.getElementById('tab-' + tabName).classList.add('active');
+    event.target.classList.add('active');
+}
+
+function refreshHealth() {
+    fetch('/api/health')
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('db-status').textContent = data.database ? 'Healthy' : 'Error';
+            document.getElementById('redis-status').textContent = data.cache ? 'Connected' : 'Disconnected';
+        });
+}
+
+function showCreateWebhook() {
+    document.getElementById('webhook-modal').classList.add('active');
+}
+
+function closeWebhookModal() {
+    document.getElementById('webhook-modal').classList.remove('active');
+}
+
+function showCreateApiKey() {
+    document.getElementById('apikey-modal').classList.add('active');
+}
+
+function closeApiKeyModal() {
+    document.getElementById('apikey-modal').classList.remove('active');
+}
+
+function testWebhook(id) {
+    fetch(`/api/webhooks/${id}/test`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => alert('Webhook test sent!'));
+}
+
+function deleteWebhook(id) {
+    if (confirm('Are you sure you want to delete this webhook?')) {
+        fetch(`/api/webhooks/${id}`, { method: 'DELETE' })
+            .then(() => location.reload());
+    }
+}
+
+function revokeApiKey(id) {
+    if (confirm('Are you sure you want to revoke this API key?')) {
+        fetch(`/api/keys/${id}`, { method: 'DELETE' })
+            .then(() => location.reload());
+    }
+}
+
+function retryJob(id) {
+    fetch(`/api/jobs/${id}/retry`, { method: 'POST' })
+        .then(() => location.reload());
+}
+
+function viewJobDetails(id) {
+    window.location.href = `/jobs/${id}`;
+}
+
+function refreshJobs() {
+    location.reload();
+}
+
+// Auto-refresh stats every 30 seconds
+setInterval(() => {
+    fetch('/api/stats')
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('total-documents').textContent = data.total_documents;
+            document.getElementById('total-searches').textContent = data.total_searches;
+            document.getElementById('active-jobs').textContent = data.active_jobs;
+        });
+}, 30000);
+</script>
+{% endblock %}

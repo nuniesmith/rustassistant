@@ -1,0 +1,385 @@
+{% extends "../layouts/base.html" %}
+
+{% block title %}Search - Rustassistant{% endblock %}
+
+{% block extra_head %}
+<style>
+    .search-container {
+        max-width: 900px;
+        margin: 0 auto;
+    }
+
+    .search-box {
+        position: relative;
+        margin-bottom: 2rem;
+    }
+
+    .search-input {
+        width: 100%;
+        padding: 1rem 1rem 1rem 3rem;
+        font-size: 1.125rem;
+        border: 2px solid var(--border);
+        border-radius: 0.5rem;
+        background: var(--surface);
+        color: var(--text);
+        transition: all 0.2s;
+    }
+
+    .search-input:focus {
+        border-color: #3b82f6;
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+
+    .search-icon {
+        position: absolute;
+        left: 1rem;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 1.25rem;
+        color: var(--text-light);
+    }
+
+    .search-filters {
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+        margin-bottom: 2rem;
+        padding: 1rem;
+        background: var(--surface);
+        border-radius: 0.5rem;
+        border: 1px solid var(--border);
+    }
+
+    .filter-group {
+        flex: 1;
+        min-width: 200px;
+    }
+
+    .filter-group label {
+        font-size: 0.875rem;
+        margin-bottom: 0.25rem;
+        color: var(--text-light);
+    }
+
+    .filter-group select,
+    .filter-group input {
+        width: 100%;
+        padding: 0.5rem;
+        background: var(--bg);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 0.375rem;
+    }
+
+    .search-type-selector {
+        display: flex;
+        gap: 0.5rem;
+        padding: 0.25rem;
+        background: var(--bg);
+        border-radius: 0.5rem;
+    }
+
+    .search-type-btn {
+        flex: 1;
+        padding: 0.5rem 1rem;
+        background: transparent;
+        color: var(--text-light);
+        border: none;
+        border-radius: 0.375rem;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-size: 0.875rem;
+    }
+
+    .search-type-btn.active {
+        background: #3b82f6;
+        color: white;
+    }
+
+    .search-type-btn:hover:not(.active) {
+        background: var(--surface);
+        color: var(--text);
+    }
+
+    .search-results {
+        margin-top: 2rem;
+    }
+
+    .search-meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+        padding: 0.75rem;
+        background: var(--surface);
+        border-radius: 0.375rem;
+        font-size: 0.875rem;
+        color: var(--text-light);
+    }
+
+    .result-item {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 0.5rem;
+        padding: 1.5rem;
+        margin-bottom: 1rem;
+        transition: all 0.2s;
+    }
+
+    .result-item:hover {
+        border-color: #3b82f6;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        transform: translateY(-2px);
+    }
+
+    .result-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: start;
+        margin-bottom: 0.75rem;
+    }
+
+    .result-title {
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: var(--primary);
+        margin-bottom: 0.25rem;
+    }
+
+    .result-score {
+        background: #3b82f6;
+        color: white;
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .result-meta {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 0.75rem;
+        font-size: 0.875rem;
+        color: var(--text-light);
+    }
+
+    .result-content {
+        color: var(--text);
+        line-height: 1.6;
+        margin-bottom: 0.75rem;
+        padding: 1rem;
+        background: var(--bg);
+        border-radius: 0.375rem;
+        border-left: 3px solid #3b82f6;
+    }
+
+    .result-tags {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+
+    .result-tag {
+        padding: 0.25rem 0.75rem;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 0.25rem;
+        font-size: 0.75rem;
+        color: var(--text-light);
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 4rem 2rem;
+        color: var(--text-light);
+    }
+
+    .empty-state-icon {
+        font-size: 4rem;
+        margin-bottom: 1rem;
+        opacity: 0.5;
+    }
+
+    .loading-skeleton {
+        animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+
+    .stats-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 1rem;
+        margin-bottom: 2rem;
+    }
+
+    .stat-box {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 0.5rem;
+        padding: 1rem;
+        text-align: center;
+    }
+
+    .stat-box-value {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #3b82f6;
+    }
+
+    .stat-box-label {
+        font-size: 0.875rem;
+        color: var(--text-light);
+        margin-top: 0.25rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="search-container">
+    <h1 class="card-title mb-4">🔍 Semantic Search</h1>
+
+    <!-- Search Stats -->
+    <div class="stats-row">
+        <div class="stat-box">
+            <div class="stat-box-value">{{ total_documents | default(value="0") }}</div>
+            <div class="stat-box-label">Total Documents</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-box-value">{{ indexed_documents | default(value="0") }}</div>
+            <div class="stat-box-label">Indexed</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-box-value">{{ total_chunks | default(value="0") }}</div>
+            <div class="stat-box-label">Chunks</div>
+        </div>
+    </div>
+
+    <!-- Search Box -->
+    <div class="search-box">
+        <span class="search-icon">🔎</span>
+        <input
+            type="text"
+            id="search-input"
+            class="search-input"
+            placeholder="Search documents semantically... (e.g., 'authentication implementation', 'error handling patterns')"
+            hx-post="/api/search"
+            hx-trigger="keyup changed delay:500ms"
+            hx-target="#search-results"
+            hx-include="[name='search_type'],[name='doc_type'],[name='limit']"
+            hx-indicator="#loading-indicator"
+        />
+    </div>
+
+    <!-- Search Type Selector -->
+    <div class="card mb-2">
+        <div class="search-type-selector">
+            <button class="search-type-btn active" data-type="hybrid" onclick="setSearchType('hybrid')">
+                🔀 Hybrid
+            </button>
+            <button class="search-type-btn" data-type="semantic" onclick="setSearchType('semantic')">
+                🧠 Semantic
+            </button>
+            <button class="search-type-btn" data-type="keyword" onclick="setSearchType('keyword')">
+                📝 Keyword
+            </button>
+        </div>
+        <input type="hidden" name="search_type" id="search-type" value="hybrid" />
+    </div>
+
+    <!-- Filters -->
+    <div class="search-filters">
+        <div class="filter-group">
+            <label>Document Type</label>
+            <select name="doc_type" id="doc-type">
+                <option value="">All Types</option>
+                <option value="code">Code</option>
+                <option value="documentation">Documentation</option>
+                <option value="note">Note</option>
+                <option value="markdown">Markdown</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>Results Limit</label>
+            <select name="limit" id="limit">
+                <option value="5">5 results</option>
+                <option value="10" selected>10 results</option>
+                <option value="20">20 results</option>
+                <option value="50">50 results</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>Repository</label>
+            <select name="repo_id" id="repo-id">
+                <option value="">All Repositories</option>
+                <!-- Dynamically populated -->
+            </select>
+        </div>
+    </div>
+
+    <!-- Loading Indicator -->
+    <div id="loading-indicator" class="htmx-indicator">
+        <div class="alert alert-info">
+            <div class="spinner"></div>
+            Searching...
+        </div>
+    </div>
+
+    <!-- Search Results -->
+    <div id="search-results">
+        <div class="empty-state">
+            <div class="empty-state-icon">🔍</div>
+            <h3>Start Your Search</h3>
+            <p class="mt-1">Type a query to search across all indexed documents using AI-powered semantic search.</p>
+            <div class="mt-2 text-muted">
+                <p></p><strong>Try examples:</strong></p>
+                <ul style="list-style: none; margin-top: 0.5rem;">
+                    <li>• "How to implement authentication"</li>
+                    <li>• "Error handling best practices"</li>
+                    <li>• "Database connection setup"</li>
+                    <li>• "API endpoint design"</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function setSearchType(type) {
+        // Update hidden input
+        document.getElementById('search-type').value = type;
+
+        // Update button states
+        document.querySelectorAll('.search-type-btn').forEach(btn => {
+            if (btn.dataset.type === type) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+
+        // Trigger search if there's a query
+        const searchInput = document.getElementById('search-input');
+        if (searchInput.value.trim()) {
+            htmx.trigger(searchInput, 'keyup');
+        }
+    }
+
+    // Handle HTMX response
+    document.body.addEventListener('htmx:afterSwap', function(event) {
+        if (event.detail.target.id === 'search-results') {
+            // Scroll to results
+            event.detail.target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    });
+
+    // Auto-focus search input on load
+    document.addEventListener('DOMContentLoaded', function() {
+        document.getElementById('search-input').focus();
+    });
+</script>
+{% endblock %}

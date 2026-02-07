@@ -12,9 +12,10 @@ use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
 use crate::db::{Database, Repository};
-use crate::git::GitManager;
+
 use crate::refactor_assistant::RefactorAssistant;
 use crate::repo_cache_sql::RepoCacheSql;
+use crate::repo_manager::RepoManager;
 
 /// Auto-scanner configuration
 #[derive(Debug, Clone)]
@@ -64,16 +65,25 @@ pub struct AutoScanner {
     pool: sqlx::SqlitePool,
     repos_dir: PathBuf,
     scan_states: Arc<RwLock<HashMap<String, RepoScanState>>>,
+    repo_manager: Arc<RepoManager>,
 }
 
 impl AutoScanner {
     /// Create a new auto-scanner
     pub fn new(config: AutoScannerConfig, pool: sqlx::SqlitePool, repos_dir: PathBuf) -> Self {
+        // Get GitHub token from environment for private repos
+        let github_token = std::env::var("GITHUB_TOKEN").ok();
+
+        let repo_manager = Arc::new(
+            RepoManager::new(&repos_dir, github_token).expect("Failed to create RepoManager"),
+        );
+
         Self {
             config,
             pool,
             repos_dir,
             scan_states: Arc::new(RwLock::new(HashMap::new())),
+            repo_manager,
         }
     }
 
@@ -175,8 +185,8 @@ impl AutoScanner {
 
         info!("Scanning repository: {} ({})", repo.name, repo.path);
 
-        // Update last_scan_check
-        self.update_last_scan_check(&repo.id, now).await?;
+        // Track scan start time for duration calculation
+        let scan_start = std::time::Instant::now();
 
         // Ensure the repo exists locally — clone from git_url if missing
         let repo_path = PathBuf::from(&repo.path);
@@ -187,7 +197,7 @@ impl AutoScanner {
                     repo_path.display(),
                     git_url
                 );
-                match self.clone_repo(git_url, &repo.name) {
+                match self.clone_or_update_repo(git_url, &repo.name) {
                     Ok(cloned_path) => {
                         // Update the stored path in the database to the new clone location
                         let new_path = cloned_path.to_string_lossy().to_string();
@@ -214,8 +224,12 @@ impl AutoScanner {
             repo_path
         };
 
-        // Fetch latest changes from remote (for cloned repos)
-        self.fetch_remote(&repo_path);
+        // Update repository if it exists (git pull)
+        if let Some(ref git_url) = repo.git_url {
+            if let Err(e) = self.clone_or_update_repo(git_url, &repo.name) {
+                warn!("Failed to update {}: {}", repo.name, e);
+            }
+        }
 
         // Check for changes (both committed and uncommitted)
         let current_head = self.get_head_hash(&repo_path)?;
@@ -233,6 +247,8 @@ impl AutoScanner {
             if let Some(ref hash) = current_head {
                 self.update_last_commit_hash(&repo.id, hash).await?;
             }
+            // Update last_scan_check for interval tracking
+            self.update_last_scan_check(&repo.id, now).await?;
             return Ok(());
         }
 
@@ -242,27 +258,68 @@ impl AutoScanner {
             repo.name
         );
 
-        // Analyze changed files
-        self.analyze_changed_files(&repo_path, &changed_files)
-            .await?;
+        // Start progress tracking
+        let total_files = changed_files.len() as i64;
+        if let Err(e) = crate::db::core::start_scan(&self.pool, &repo.id, total_files).await {
+            error!("Failed to start scan progress tracking: {}", e);
+        }
 
-        // Update last_analyzed and commit hash
-        self.update_last_analyzed(&repo.id, now).await?;
-        if let Some(ref hash) = current_head {
-            self.update_last_commit_hash(&repo.id, hash).await?;
+        // Analyze changed files with progress tracking
+        let result = self
+            .analyze_changed_files_with_progress(&repo.id, &repo_path, &changed_files)
+            .await;
+
+        match result {
+            Ok((files_analyzed, issues_found)) => {
+                // Calculate scan duration
+                let duration_ms = scan_start.elapsed().as_millis() as i64;
+
+                // Complete scan with metrics
+                if let Err(e) = crate::db::core::complete_scan(
+                    &self.pool,
+                    &repo.id,
+                    duration_ms,
+                    files_analyzed,
+                    issues_found,
+                )
+                .await
+                {
+                    error!("Failed to complete scan progress tracking: {}", e);
+                }
+
+                info!(
+                    "Scan completed for {}: {} files, {} issues in {}ms",
+                    repo.name, files_analyzed, issues_found, duration_ms
+                );
+
+                // Update last_analyzed and commit hash
+                self.update_last_analyzed(&repo.id, now).await?;
+                if let Some(ref hash) = current_head {
+                    self.update_last_commit_hash(&repo.id, hash).await?;
+                }
+            }
+            Err(e) => {
+                error!("Scan failed for {}: {}", repo.name, e);
+                if let Err(err) =
+                    crate::db::core::fail_scan(&self.pool, &repo.id, &e.to_string()).await
+                {
+                    error!("Failed to mark scan as failed: {}", err);
+                }
+                return Err(e);
+            }
         }
 
         Ok(())
     }
 
-    /// Clone a repository from a git URL into the repos directory
-    fn clone_repo(&self, git_url: &str, name: &str) -> Result<PathBuf> {
-        let git = GitManager::new(self.repos_dir.clone(), false)
-            .context("Failed to initialize GitManager")?;
-        let cloned_path = git
-            .clone_repo(git_url, Some(name))
-            .context(format!("Failed to clone {}", git_url))?;
-        Ok(cloned_path)
+    /// Clone or update a repository from a git URL into the repos directory
+    fn clone_or_update_repo(&self, git_url: &str, name: &str) -> Result<PathBuf> {
+        self.repo_manager
+            .clone_or_update(git_url, name)
+            .context(format!(
+                "Failed to clone or update {} from {}",
+                name, git_url
+            ))
     }
 
     /// Update the stored path for a repository in the database
@@ -281,55 +338,6 @@ impl AutoScanner {
         .await?;
 
         Ok(())
-    }
-
-    /// Fetch latest changes from the remote origin
-    fn fetch_remote(&self, repo_path: &Path) {
-        use std::process::Command;
-
-        // Fast-forward the local branch after fetching
-        let fetch_result = Command::new("git")
-            .args(["fetch", "origin"])
-            .current_dir(repo_path)
-            .output();
-
-        match fetch_result {
-            Ok(output) if output.status.success() => {
-                debug!("Fetched latest from origin for {}", repo_path.display());
-
-                // Try to fast-forward merge (safe for bare tracking repos)
-                let merge_result = Command::new("git")
-                    .args(["merge", "--ff-only", "FETCH_HEAD"])
-                    .current_dir(repo_path)
-                    .output();
-
-                match merge_result {
-                    Ok(out) if out.status.success() => {
-                        debug!("Fast-forwarded {}", repo_path.display());
-                    }
-                    Ok(out) => {
-                        debug!(
-                            "Fast-forward not possible for {} ({}), using fetched refs for diff",
-                            repo_path.display(),
-                            String::from_utf8_lossy(&out.stderr).trim()
-                        );
-                    }
-                    Err(e) => {
-                        debug!("Failed to merge for {}: {}", repo_path.display(), e);
-                    }
-                }
-            }
-            Ok(output) => {
-                debug!(
-                    "git fetch failed for {} ({})",
-                    repo_path.display(),
-                    String::from_utf8_lossy(&output.stderr).trim()
-                );
-            }
-            Err(e) => {
-                debug!("Failed to run git fetch for {}: {}", repo_path.display(), e);
-            }
-        }
     }
 
     /// Get the current HEAD commit hash for a repository
@@ -503,32 +511,68 @@ impl AutoScanner {
             || file_path.ends_with(".rb")
     }
 
-    /// Analyze a list of changed files
-    async fn analyze_changed_files(&self, repo_path: &Path, files: &[PathBuf]) -> Result<()> {
+    /// Analyze changed files with progress tracking
+    /// Returns (files_analyzed, issues_found)
+    async fn analyze_changed_files_with_progress(
+        &self,
+        repo_id: &str,
+        repo_path: &Path,
+        files: &[PathBuf],
+    ) -> Result<(i64, i64)> {
         let cache = RepoCacheSql::new_for_repo(repo_path).await?;
+        let mut files_analyzed = 0i64;
+        let mut issues_found = 0i64;
+        let progress_update_interval = 5; // Update progress every N files
 
-        for file in files {
-            if let Err(e) = self.analyze_file(repo_path, file, &cache).await {
-                error!("Failed to analyze {}: {}", file.display(), e);
+        for (idx, file) in files.iter().enumerate() {
+            // Update progress periodically
+            if idx % progress_update_interval == 0 || idx == files.len() - 1 {
+                let current_file = file
+                    .strip_prefix(repo_path)
+                    .unwrap_or(file)
+                    .to_string_lossy()
+                    .to_string();
+
+                if let Err(e) = crate::db::core::update_scan_progress(
+                    &self.pool,
+                    repo_id,
+                    idx as i64,
+                    Some(&current_file),
+                )
+                .await
+                {
+                    error!("Failed to update scan progress: {}", e);
+                }
+            }
+
+            match self.analyze_file(repo_path, file, &cache).await {
+                Ok(found_issues) => {
+                    files_analyzed += 1;
+                    issues_found += found_issues;
+                }
+                Err(e) => {
+                    error!("Failed to analyze {}: {}", file.display(), e);
+                }
             }
         }
 
-        Ok(())
+        Ok((files_analyzed, issues_found))
     }
 
     /// Analyze a single file
+    /// Returns the number of issues found (0 or 1 for now)
     async fn analyze_file(
         &self,
         repo_path: &Path,
         file_path: &Path,
         cache: &RepoCacheSql,
-    ) -> Result<()> {
+    ) -> Result<i64> {
         // Read file content
         let content = match tokio::fs::read_to_string(file_path).await {
             Ok(c) => c,
             Err(e) => {
                 warn!("Cannot read {}: {}", file_path.display(), e);
-                return Ok(());
+                return Ok(0);
             }
         };
 
@@ -554,7 +598,7 @@ impl AutoScanner {
             .is_some()
         {
             debug!("Cache hit for {}", rel_path);
-            return Ok(());
+            return Ok(0);
         }
 
         info!("Analyzing {}", rel_path);
@@ -585,7 +629,9 @@ impl AutoScanner {
 
         debug!("Cached analysis for {}", rel_path);
 
-        Ok(())
+        // For now, count any analysis as 1 issue found
+        // TODO: Parse analysis.suggestions to count actual issues
+        Ok(1)
     }
 
     /// Update last_scan_check timestamp
@@ -646,6 +692,7 @@ impl AutoScanner {
             pool: self.pool.clone(),
             repos_dir: self.repos_dir.clone(),
             scan_states: self.scan_states.clone(),
+            repo_manager: self.repo_manager.clone(),
         }
     }
 }

@@ -1,0 +1,100 @@
+# ============================================================================
+# RustAssistant - Production Docker Compose (Raspberry Pi / Remote Server)
+# ============================================================================
+# Uses pre-built images from Docker Hub. Zero bind mounts.
+#
+# Usage:
+#   docker compose -f docker-compose.prod.yml up -d
+# ============================================================================
+
+services:
+  rustassistant:
+    image: nuniesmith/rustassistant:latest
+    container_name: rustassistant
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "3001"
+      RUST_LOG: "info,rustassistant=info"
+      DATABASE_PATH: "/app/data/rustassistant.db"
+      CACHE_DB_PATH: "/app/data/rustassistant_cache.db"
+      REPOS_PATH: "/app/repos"
+      REDIS_URL: "redis://redis:6379"
+      XAI_API_KEY: "${XAI_API_KEY}"
+      XAI_BASE_URL: "${XAI_BASE_URL:-https://api.x.ai/v1}"
+      GITHUB_TOKEN: "${GITHUB_TOKEN:-}"
+      GITHUB_USER: "${GITHUB_USER:-nuniesmith}"
+      AUTO_SCAN_ENABLED: "true"
+      AUTO_SCAN_INTERVAL: "${AUTO_SCAN_INTERVAL:-60}"
+      AUTO_SCAN_MAX_CONCURRENT: "2"
+    volumes:
+      - rustassistant-data:/app/data
+      - rustassistant-repos:/app/repos
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - rustassistant-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.5"
+        reservations:
+          memory: 128M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  redis:
+    image: redis:7-alpine
+    container_name: rustassistant-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save 60 1
+      --appendonly yes
+    volumes:
+      - rustassistant-redis:/data
+    networks:
+      - rustassistant-network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "3m"
+        max-file: "2"
+
+volumes:
+  rustassistant-data:
+    name: rustassistant-data
+  rustassistant-repos:
+    name: rustassistant-repos
+  rustassistant-redis:
+    name: rustassistant-redis
+
+networks:
+  rustassistant-network:
+    name: rustassistant-network
+    driver: bridge
