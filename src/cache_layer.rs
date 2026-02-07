@@ -537,11 +537,11 @@ impl CacheLayer {
         let full_key = self.redis_key(key);
 
         if let Some(seconds) = ttl {
-            conn.set_ex(&full_key, bytes, seconds)
+            conn.set_ex::<_, _, ()>(&full_key, bytes, seconds)
                 .await
                 .context("Failed to set value in Redis with TTL")?;
         } else {
-            conn.set(&full_key, bytes)
+            conn.set::<_, _, ()>(&full_key, bytes)
                 .await
                 .context("Failed to set value in Redis")?;
         }

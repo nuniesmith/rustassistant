@@ -103,7 +103,7 @@ impl<T> PaginatedResponse<T> {
 // Document Management
 // ============================================================================
 
-/// Request to upload a new document
+/// Request to upload a document
 #[derive(Debug, Clone, Deserialize)]
 pub struct UploadDocumentRequest {
     pub title: String,
@@ -111,8 +111,6 @@ pub struct UploadDocumentRequest {
     pub doc_type: String,
     #[serde(default)]
     pub tags: Vec<String>,
-    #[serde(default)]
-    pub metadata: serde_json::Value,
     pub repo_id: Option<i64>,
     pub source_type: Option<String>,
     pub source_url: Option<String>,
@@ -121,7 +119,7 @@ pub struct UploadDocumentRequest {
 /// Response for uploaded document
 #[derive(Debug, Clone, Serialize)]
 pub struct UploadDocumentResponse {
-    pub id: i64,
+    pub id: String,
     pub title: String,
     pub status: String,
     pub created_at: DateTime<Utc>,
@@ -129,29 +127,26 @@ pub struct UploadDocumentResponse {
 }
 
 /// Request to update document metadata
+/// Request to update document
 #[derive(Debug, Clone, Deserialize)]
 pub struct UpdateDocumentRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tags: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<serde_json::Value>,
 }
 
 /// Document details response
 #[derive(Debug, Clone, Serialize)]
 pub struct DocumentResponse {
-    pub id: i64,
+    pub id: String,
     pub title: String,
     pub content: String,
     pub doc_type: String,
     pub tags: Vec<String>,
-    pub metadata: serde_json::Value,
     pub repo_id: Option<i64>,
     pub source_type: Option<String>,
     pub source_url: Option<String>,
-    pub is_indexed: bool,
     pub indexed_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -221,7 +216,6 @@ pub struct SearchResultItem {
     pub doc_type: String,
     pub score: f32,
     pub tags: Vec<String>,
-    pub metadata: serde_json::Value,
     pub source_url: Option<String>,
     pub created_at: DateTime<Utc>,
 }

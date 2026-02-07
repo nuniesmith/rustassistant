@@ -238,7 +238,7 @@ impl JobQueue {
         };
 
         if let Some(job_id) = job_id {
-            self.process_job(job_id).await;
+            Box::pin(self.process_job(job_id)).await;
         }
     }
 
@@ -285,7 +285,7 @@ impl JobQueue {
         }
 
         // Process next job
-        self.process_next_job().await;
+        Box::pin(self.process_next_job()).await;
     }
 
     /// Index multiple documents

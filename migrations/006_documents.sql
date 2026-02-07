@@ -247,7 +247,7 @@ AFTER DELETE ON document_tags
 FOR EACH ROW
 BEGIN
     UPDATE tags
-    SET usage_count = GREATEST(0, usage_count - 1)
+    SET usage_count = MAX(0, usage_count - 1)
     WHERE name = OLD.tag;
 END;
 

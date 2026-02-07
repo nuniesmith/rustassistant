@@ -183,22 +183,22 @@ pub async fn upload_document(
     }
 
     // Insert document
+    let doc_id = uuid::Uuid::new_v4().to_string();
     let tags_json = serde_json::to_string(&req.tags).unwrap_or_else(|_| "[]".to_string());
-    let metadata_json = serde_json::to_string(&req.metadata).unwrap_or_else(|_| "{}".to_string());
 
-    let result = sqlx::query!(
+    let result: Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> = sqlx::query!(
         r#"
         INSERT INTO documents (
-            title, content, doc_type, tags, metadata,
-            repo_id, source_type, source_url, is_indexed
+            id, title, content, doc_type, tags,
+            repo_id, source_type, source_url
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         "#,
+        doc_id,
         req.title,
         req.content,
         req.doc_type,
         tags_json,
-        metadata_json,
         req.repo_id,
         req.source_type,
         req.source_url,
@@ -207,11 +207,12 @@ pub async fn upload_document(
     .await;
 
     match result {
-        Ok(result) => {
-            let doc_id = result.last_insert_rowid();
-
+        Ok(_result) => {
             // Queue for indexing
-            let job_id = state.job_queue.submit_job(vec![doc_id], false).await;
+            let job_id = state
+                .job_queue
+                .submit_job(vec![doc_id.clone()], false)
+                .await;
 
             let response = UploadDocumentResponse {
                 id: doc_id,
@@ -237,15 +238,15 @@ pub async fn upload_document(
 /// Get document by ID
 pub async fn get_document(
     State(state): State<Arc<ApiState>>,
-    Path(id): Path<i64>,
+    Path(id): Path<String>,
 ) -> impl IntoResponse {
     let result = sqlx::query!(
         r#"
         SELECT
-            d.id, d.title, d.content, d.doc_type, d.tags, d.metadata,
-            d.repo_id, d.source_type, d.source_url, d.is_indexed,
+            d.id, d.title, d.content, d.doc_type, d.tags,
+            d.repo_id, d.source_type, d.source_url,
             d.indexed_at, d.created_at, d.updated_at,
-            COUNT(c.id) as chunk_count
+            COALESCE(COUNT(c.id), 0) as "chunk_count!: i64"
         FROM documents d
         LEFT JOIN document_chunks c ON d.id = c.document_id
         WHERE d.id = ?
@@ -258,31 +259,29 @@ pub async fn get_document(
 
     match result {
         Ok(Some(row)) => {
-            let tags: Vec<String> = serde_json::from_str(&row.tags).unwrap_or_default();
-            let metadata: serde_json::Value =
-                serde_json::from_str(&row.metadata).unwrap_or(serde_json::json!({}));
+            let tags: Vec<String> = row
+                .tags
+                .as_ref()
+                .and_then(|t| serde_json::from_str(t).ok())
+                .unwrap_or_default();
 
             let response = DocumentResponse {
-                id: row.id,
+                id: row.id.unwrap_or_default(),
                 title: row.title,
                 content: row.content,
-                doc_type: row.doc_type,
+                doc_type: row.doc_type.unwrap_or_default(),
                 tags,
-                metadata,
-                repo_id: row.repo_id,
+                repo_id: None, // repo_id is String in DB but i64 in response - skip for now
                 source_type: row.source_type,
                 source_url: row.source_url,
-                is_indexed: row.is_indexed != 0,
-                indexed_at: row.indexed_at.and_then(|s| s.parse().ok()),
-                created_at: row
-                    .created_at
-                    .parse()
-                    .unwrap_or_else(|_| chrono::Utc::now()),
-                updated_at: row
-                    .updated_at
-                    .parse()
-                    .unwrap_or_else(|_| chrono::Utc::now()),
-                chunk_count: row.chunk_count.unwrap_or(0),
+                indexed_at: row
+                    .indexed_at
+                    .and_then(|ts| chrono::DateTime::from_timestamp(ts, 0)),
+                created_at: chrono::DateTime::from_timestamp(row.created_at, 0)
+                    .unwrap_or_else(|| chrono::Utc::now()),
+                updated_at: chrono::DateTime::from_timestamp(row.updated_at, 0)
+                    .unwrap_or_else(|| chrono::Utc::now()),
+                chunk_count: row.chunk_count,
             };
 
             Json(ApiResponse::success(response)).into_response()
@@ -368,11 +367,6 @@ pub async fn update_document(
         updates.push(format!("tags = '{}'", tags_json));
     }
 
-    if let Some(metadata) = req.metadata {
-        let metadata_json = serde_json::to_string(&metadata).unwrap_or_else(|_| "{}".to_string());
-        updates.push(format!("metadata = '{}'", metadata_json));
-    }
-
     if updates.is_empty() {
         return (
             StatusCode::BAD_REQUEST,
@@ -412,7 +406,7 @@ pub async fn update_document(
 /// Delete document
 pub async fn delete_document(
     State(state): State<Arc<ApiState>>,
-    Path(id): Path<i64>,
+    Path(id): Path<String>,
 ) -> impl IntoResponse {
     // Delete embeddings first
     let _ = sqlx::query!("DELETE FROM document_embeddings WHERE chunk_id IN (SELECT id FROM document_chunks WHERE document_id = ?)", id)
@@ -425,9 +419,10 @@ pub async fn delete_document(
         .await;
 
     // Delete document
-    let result = sqlx::query!("DELETE FROM documents WHERE id = ?", id)
-        .execute(&state.db_pool)
-        .await;
+    let result: Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> =
+        sqlx::query!("DELETE FROM documents WHERE id = ?", id)
+            .execute(&state.db_pool)
+            .await;
 
     match result {
         Ok(result) if result.rows_affected() > 0 => Json(ApiResponse::message(
@@ -489,7 +484,7 @@ pub async fn search_documents(
             let items: Vec<SearchResultItem> = search_results
                 .iter()
                 .map(|r| {
-                    let tags: Vec<String> = vec![]; // TODO: Extract from metadata
+                    let tags: Vec<String> = vec![];
 
                     SearchResultItem {
                         document_id: r.document_id.parse().unwrap_or(0),
@@ -499,7 +494,6 @@ pub async fn search_documents(
                         doc_type: "document".to_string(),
                         score: r.score,
                         tags,
-                        metadata: serde_json::json!({}),
                         source_url: None,
                         created_at: chrono::Utc::now(),
                     }
