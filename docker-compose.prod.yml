@@ -38,7 +38,6 @@ services:
         volumes:
             - ./data:/app/data
             - ./config:/app/config:ro
-            - ${REPOS_PATH:-/home/jordan/github}:${REPOS_PATH:-/home/jordan/github}:ro
         depends_on:
             redis:
                 condition: service_healthy
