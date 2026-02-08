@@ -1,0 +1,450 @@
+# =============================================================================
+# RustAssistant - CI/CD Pipeline
+# =============================================================================
+# Automated deployment of RustAssistant to Raspberry Pi via Tailscale
+#
+# Required Secrets:
+#   - TAILSCALE_OAUTH_CLIENT_ID: Tailscale OAuth Client ID
+#   - TAILSCALE_OAUTH_SECRET: Tailscale OAuth Secret
+#   - PROD_TAILSCALE_IP: Production server Tailscale IP
+#   - PROD_SSH_KEY: SSH private key for deployment
+#   - PROD_SSH_USER: SSH username (default: actions)
+#   - PROD_SSH_PORT: SSH port (default: 22)
+#   - DOCKER_USERNAME: Docker Hub username
+#   - DOCKER_TOKEN: Docker Hub access token
+#   - DISCORD_WEBHOOK_ACTIONS: Discord webhook for CI/CD notifications
+# =============================================================================
+
+name: CI/CD Pipeline
+
+on:
+    push:
+        branches: [main]
+    pull_request:
+        branches: [main]
+
+env:
+    CARGO_TERM_COLOR: always
+    REGISTRY: docker.io
+    IMAGE_NAME: nuniesmith/rustassistant
+
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: false
+
+jobs:
+    # =========================================================================
+    # Stage 1: Test and Lint (Fast - no coverage)
+    # =========================================================================
+    test-and-lint:
+        name: 🧪 Test and Lint
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+        steps:
+            - name: 📥 Checkout code
+              uses: actions/checkout@v4
+
+            - name: 📣 Notify build started
+              continue-on-error: true
+              uses: nuniesmith/actions/.github/actions/discord-notify@main
+              with:
+                  webhook-url: ${{ secrets.DISCORD_WEBHOOK_ACTIONS }}
+                  title: "🔨 CI/CD Pipeline Started"
+                  description: "Building RustAssistant"
+                  status: started
+                  include-repo-info: "true"
+
+            - name: 🦀 Rust CI
+              uses: nuniesmith/actions/.github/actions/rust-ci@main
+              with:
+                  toolchain: stable
+                  run-fmt: "true"
+                  run-clippy: "true"
+                  run-tests: "true"
+                  run-build: "true"
+                  build-release: "true"
+                  coverage: "false"
+
+            - name: ✅ Notify tests passed
+              if: success()
+              continue-on-error: true
+              uses: nuniesmith/actions/.github/actions/discord-notify@main
+              with:
+                  webhook-url: ${{ secrets.DISCORD_WEBHOOK_ACTIONS }}
+                  title: "✅ Tests & Lint Passed"
+                  description: "All tests passed successfully"
+                  status: success
+
+            - name: ❌ Notify tests failed
+              if: failure()
+              continue-on-error: true
+              uses: nuniesmith/actions/.github/actions/discord-notify@main
+              with:
+                  webhook-url: ${{ secrets.DISCORD_WEBHOOK_ACTIONS }}
+                  title: "❌ Tests Failed"
+                  description: "CI tests failed. Check the logs for details."
+                  status: failure
+                  fields: '[{"name": "Workflow", "value": "[View Logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})", "inline": false}]'
+
+    # =========================================================================
+    # Stage 2a: Build and Push AMD64 Docker Image
+    # =========================================================================
+    build-and-push-amd64:
+        name: 🐳 Build AMD64 Image
+        needs: test-and-lint
+        runs-on: ubuntu-latest
+        timeout-minutes: 30
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        steps:
+            - name: 📥 Checkout code
+              uses: actions/checkout@v4
+
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v3
+
+            - name: Log in to Docker Hub
+              uses: docker/login-action@v3
+              with:
+                  username: ${{ secrets.DOCKER_USERNAME }}
+                  password: ${{ secrets.DOCKER_TOKEN }}
+
+            - name: Extract metadata
+              id: meta
+              uses: docker/metadata-action@v5
+              with:
+                  images: ${{ env.IMAGE_NAME }}
+                  tags: |
+                      type=raw,value=latest-amd64,enable=${{ github.ref == 'refs/heads/main' }}
+                      type=sha,prefix={{branch}}-,suffix=-amd64
+
+            - name: Build and push AMD64
+              uses: docker/build-push-action@v5
+              with:
+                  context: .
+                  file: docker/Dockerfile.web
+                  platforms: linux/amd64
+                  push: true
+                  tags: ${{ steps.meta.outputs.tags }}
+                  labels: ${{ steps.meta.outputs.labels }}
+                  cache-from: type=gha,scope=amd64
+                  cache-to: type=gha,mode=max,scope=amd64
+
+            - name: ✅ Notify AMD64 build complete
+              if: success()
+              continue-on-error: true
+              uses: nuniesmith/actions/.github/actions/discord-notify@main
+              with:
+                  webhook-url: ${{ secrets.DISCORD_WEBHOOK_ACTIONS }}
+                  title: "🐳 AMD64 Image Built"
+                  description: "AMD64 Docker image pushed to Docker Hub"
+                  status: success
+                  fields: '[{"name": "Image", "value": "${{ env.IMAGE_NAME }}:latest-amd64", "inline": true}, {"name": "Platform", "value": "amd64", "inline": true}]'
+
+            - name: ❌ Notify AMD64 build failed
+              if: failure()
+              continue-on-error: true
+              uses: nuniesmith/actions/.github/actions/discord-notify@main
+              with:
+                  webhook-url: ${{ secrets.DISCORD_WEBHOOK_ACTIONS }}
+                  title: "❌ AMD64 Build Failed"
+                  description: "Failed to build or push AMD64 Docker image"
+                  status: failure
+
+    # =========================================================================
+    # Stage 2b: Build and Push ARM64 Docker Image
+    # =========================================================================
+    build-and-push-arm64:
+        name: 🐳 Build ARM64 Image
+        needs: test-and-lint
+        runs-on: ubuntu-latest
+        timeout-minutes: 60
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        steps:
+            - name: 📥 Checkout code
+              uses: actions/checkout@v4
+
+            - name: Set up QEMU
+              uses: docker/setup-qemu-action@v3
+
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v3
+
+            - name: Log in to Docker Hub
+              uses: docker/login-action@v3
+              with:
+                  username: ${{ secrets.DOCKER_USERNAME }}
+                  password: ${{ secrets.DOCKER_TOKEN }}
+
+            - name: Extract metadata
+              id: meta
+              uses: docker/metadata-action@v5
+              with:
+                  images: ${{ env.IMAGE_NAME }}
+                  tags: |
+                      type=raw,value=latest-arm64,enable=${{ github.ref == 'refs/heads/main' }}
+                      type=sha,prefix={{branch}}-,suffix=-arm64
+
+            - name: Build and push ARM64
+              uses: docker/build-push-action@v5
+              with:
+                  context: .
+                  file: docker/Dockerfile.web
+                  platforms: linux/arm64
+                  push: true
+                  tags: ${{ steps.meta.outputs.tags }}
+                  labels: ${{ steps.meta.outputs.labels }}
+                  cache-from: type=gha,scope=arm64
+                  cache-to: type=gha,mode=max,scope=arm64
+
+            - name: ✅ Notify ARM64 build complete
+              if: success()
+              continue-on-error: true
+              uses: nuniesmith/actions/.github/actions/discord-notify@main
+              with:
+                  webhook-url: ${{ secrets.DISCORD_WEBHOOK_ACTIONS }}
+                  title: "🐳 ARM64 Image Built"
+                  description: "ARM64 Docker image pushed to Docker Hub"
+                  status: success
+                  fields: '[{"name": "Image", "value": "${{ env.IMAGE_NAME }}:latest-arm64", "inline": true}, {"name": "Platform", "value": "arm64 (Raspberry Pi)", "inline": true}]'
+
+            - name: ❌ Notify ARM64 build failed
+              if: failure()
+              continue-on-error: true
+              uses: nuniesmith/actions/.github/actions/discord-notify@main
+              with:
+                  webhook-url: ${{ secrets.DISCORD_WEBHOOK_ACTIONS }}
+                  title: "❌ ARM64 Build Failed"
+                  description: "Failed to build or push ARM64 Docker image"
+                  status: failure
+
+    # =========================================================================
+    # Stage 2c: Create Multi-Arch Manifest
+    # =========================================================================
+    create-manifest:
+        name: 🐳 Create Multi-Arch Manifest
+        needs: [build-and-push-amd64, build-and-push-arm64]
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        steps:
+            - name: Log in to Docker Hub
+              uses: docker/login-action@v3
+              with:
+                  username: ${{ secrets.DOCKER_USERNAME }}
+                  password: ${{ secrets.DOCKER_TOKEN }}
+
+            - name: Create and push manifest
+              run: |
+                  docker buildx imagetools create -t ${{ env.IMAGE_NAME }}:latest \
+                    ${{ env.IMAGE_NAME }}:latest-amd64 \
+                    ${{ env.IMAGE_NAME }}:latest-arm64
+
+            - name: ✅ Notify manifest creation complete
+              if: success()
+              continue-on-error: true
+              uses: nuniesmith/actions/.github/actions/discord-notify@main
+              with:
+                  webhook-url: ${{ secrets.DISCORD_WEBHOOK_ACTIONS }}
+                  title: "🐳 Multi-Arch Manifest Created"
+                  description: "Docker manifest created with AMD64 and ARM64 images"
+                  status: success
+                  fields: '[{"name": "Image", "value": "${{ env.IMAGE_NAME }}:latest", "inline": true}, {"name": "Platforms", "value": "amd64, arm64", "inline": true}]'
+
+            - name: ❌ Notify manifest creation failed
+              if: failure()
+              continue-on-error: true
+              uses: nuniesmith/actions/.github/actions/discord-notify@main
+              with:
+                  webhook-url: ${{ secrets.DISCORD_WEBHOOK_ACTIONS }}
+                  title: "❌ Manifest Creation Failed"
+                  description: "Failed to create multi-arch manifest"
+                  status: failure
+
+    # =========================================================================
+    # Stage 3: Deploy to Production (Raspberry Pi)
+    # =========================================================================
+    deploy:
+        name: 🚀 Deploy to Raspberry Pi
+        needs: create-manifest
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        steps:
+            - name: 📥 Checkout code
+              uses: actions/checkout@v4
+
+            - name: 🔌 Connect to Tailscale
+              uses: nuniesmith/actions/.github/actions/tailscale-connect@main
+              with:
+                  oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+                  oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
+                  target-ip: ${{ secrets.PROD_TAILSCALE_IP }}
+                  target-ssh-port: ${{ secrets.PROD_SSH_PORT || '22' }}
+
+            - name: 🚀 Deploy via SSH
+              id: deploy
+              uses: nuniesmith/actions/.github/actions/ssh-deploy@main
+              with:
+                  host: ${{ secrets.PROD_TAILSCALE_IP }}
+                  port: ${{ secrets.PROD_SSH_PORT || '22' }}
+                  username: ${{ secrets.PROD_SSH_USER || 'actions' }}
+                  ssh-key: ${{ secrets.PROD_SSH_KEY }} # Action saves to ~/.ssh/deploy_key
+                  project-path: ~/rustassistant
+                  git-pull: false
+                  git-branch: main
+                  docker-pull: false
+                  docker-prune: false
+                  pre-deploy-command: |
+                      echo "🤖 Deploying RustAssistant to Raspberry Pi..."
+
+                      # Handle git repository setup
+                      if [ ! -d "~/rustassistant/.git" ]; then
+                        if [ -d "~/rustassistant" ]; then
+                          echo "📁 Directory exists but is not a git repo - initializing..."
+                          cd ~/rustassistant
+                          git init
+                          git remote add origin https://github.com/${{ github.repository }}.git
+                          git fetch origin
+                          git checkout -f main
+                          git branch --set-upstream-to=origin/main main
+                        else
+                          echo "📥 First deployment - cloning repository..."
+                          mkdir -p ~
+                          git clone https://github.com/${{ github.repository }}.git ~/rustassistant
+                          cd ~/rustassistant
+                          git checkout main
+                        fi
+                      else
+                        cd ~/rustassistant
+                        echo "📥 Pulling latest changes..."
+                        git fetch origin
+                        git checkout main
+                        git pull origin main
+                      fi
+
+                      # Ensure run.sh is executable
+                      chmod +x ./run.sh 2>/dev/null || true
+
+                      # Create .env file from template if it exists
+                      if [ -f "deploy/env.template" ]; then
+                        echo "📝 Creating .env from template..."
+                        cp deploy/env.template .env
+                        chmod 600 .env
+                        echo "✅ Created .env file"
+                      elif [ ! -f ".env" ]; then
+                        echo "📝 Creating default .env..."
+                        cat > .env <<EOF
+                      # RustAssistant Environment Configuration
+                      RUST_LOG=info
+                      XAI_API_KEY=${{ secrets.XAI_API_KEY }}
+                      EOF
+                        chmod 600 .env
+                        echo "✅ Created default .env file"
+                      else
+                        echo "✅ Using existing .env file"
+                      fi
+
+                      # Update XAI_API_KEY in .env if it exists
+                      if [ -f ".env" ]; then
+                        if grep -q "^XAI_API_KEY=" .env; then
+                          echo "📝 Updating XAI_API_KEY in .env..."
+                          sed -i 's|^XAI_API_KEY=.*|XAI_API_KEY=${{ secrets.XAI_API_KEY }}|' .env
+                        else
+                          echo "📝 Adding XAI_API_KEY to .env..."
+                          echo "XAI_API_KEY=${{ secrets.XAI_API_KEY }}" >> .env
+                        fi
+                        echo "✅ XAI_API_KEY configured"
+                      fi
+
+                      # Update GITHUB_TOKEN in .env if secret is set
+                      if [ -f ".env" ] && [ -n "${{ secrets.REPO_API_KEY }}" ]; then
+                        if grep -q "^GITHUB_TOKEN=" .env; then
+                          echo "📝 Updating GITHUB_TOKEN in .env..."
+                          sed -i 's|^GITHUB_TOKEN=.*|GITHUB_TOKEN=${{ secrets.REPO_API_KEY }}|' .env
+                        else
+                          echo "📝 Adding GITHUB_TOKEN to .env..."
+                          echo "GITHUB_TOKEN=${{ secrets.REPO_API_KEY }}" >> .env
+                        fi
+                        echo "✅ GITHUB_TOKEN configured"
+                      fi
+
+                      # Create required directories with proper permissions
+                      echo "📁 Creating data and config directories..."
+                      mkdir -p data config
+                      chmod 755 data config
+                      echo "✅ Directories ready"
+
+                  deploy-command: |
+                      cd ~/rustassistant
+
+                      # Stop existing services
+                      echo "🐳 Stopping existing services..."
+                      docker compose -f docker-compose.prod.yml down 2>/dev/null || true
+
+                      # Pull latest ARM64 images from Docker Hub
+                      echo "🐳 Pulling latest ARM64 images from Docker Hub..."
+                      docker compose -f docker-compose.prod.yml pull
+
+                      # Start services
+                      echo "🚀 Starting services..."
+                      docker compose -f docker-compose.prod.yml up -d --remove-orphans
+
+                  post-deploy-command: |
+                      cd ~/rustassistant
+
+                      echo ""
+                      echo "📊 Checking container health..."
+                      docker compose -f docker-compose.prod.yml ps 2>/dev/null || docker ps --format "table {{.Names}}\t{{.Status}}"
+
+                      echo ""
+                      echo "📊 Storage usage:"
+                      df -h / | grep -v Filesystem
+                      docker system df
+
+                      # Prune old images to save space on Raspberry Pi
+                      echo ""
+                      echo "🧹 Pruning unused Docker resources..."
+                      docker system prune -f --volumes 2>/dev/null || true
+
+                      echo ""
+                      echo "🎯 Architecture information:"
+                      uname -m
+                      docker info --format '{{.Architecture}}'
+
+                      echo ""
+                      echo "✅ RustAssistant deployment complete!"
+
+            - name: 🔍 Verify deployment
+              env:
+                  PROD_SSH_USER: ${{ secrets.PROD_SSH_USER || 'actions' }}
+                  PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT || '22' }}
+                  PI_HOST: ${{ secrets.PROD_TAILSCALE_IP }}
+              run: |
+                  echo "📋 Checking container logs..."
+
+                  ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                      -p ${PROD_SSH_PORT} -i ~/.ssh/deploy_key \
+                      ${PROD_SSH_USER}@${PI_HOST} \
+                      "cd ~/rustassistant && docker compose -f docker-compose.prod.yml logs --tail=20" || true
+
+            - name: ✅ Notify deployment success
+              if: success()
+              continue-on-error: true
+              uses: nuniesmith/actions/.github/actions/discord-notify@main
+              with:
+                  webhook-url: ${{ secrets.DISCORD_WEBHOOK_ACTIONS }}
+                  title: "🚀 Deployment Successful"
+                  description: "RustAssistant deployed to Raspberry Pi"
+                  status: success
+                  fields: '[{"name": "Platform", "value": "🥧 Raspberry Pi (ARM64)", "inline": true}, {"name": "Branch", "value": "${{ github.ref_name }}", "inline": true}, {"name": "Network", "value": "🔒 Tailscale VPN", "inline": true}]'
+
+            - name: ❌ Notify deployment failed
+              if: failure()
+              continue-on-error: true
+              uses: nuniesmith/actions/.github/actions/discord-notify@main
+              with:
+                  webhook-url: ${{ secrets.DISCORD_WEBHOOK_ACTIONS }}
+                  title: "❌ Deployment Failed"
+                  description: "Failed to deploy to Raspberry Pi"
+                  status: failure
+                  fields: '[{"name": "Error", "value": "Check SSH connection and Tailscale setup", "inline": false}, {"name": "Logs", "value": "[View Workflow](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})", "inline": false}]'
