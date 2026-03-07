@@ -90,7 +90,7 @@ async fn test_upload_document() {
     };
 
     let response = client
-        .post(&format!("{}/api/documents", base_url))
+        .post(format!("{}/api/documents", base_url))
         .header("X-API-Key", &api_key)
         .json(&upload_req)
         .send()
@@ -128,7 +128,7 @@ async fn test_list_documents() {
         };
 
         client
-            .post(&format!("{}/api/documents", base_url))
+            .post(format!("{}/api/documents", base_url))
             .header("X-API-Key", &api_key)
             .json(&upload_req)
             .send()
@@ -138,7 +138,7 @@ async fn test_list_documents() {
 
     // List documents
     let response = client
-        .get(&format!("{}/api/documents?limit=10", base_url))
+        .get(format!("{}/api/documents?limit=10", base_url))
         .send()
         .await
         .expect("Failed to send request");
@@ -168,7 +168,7 @@ async fn test_get_document_by_id() {
     };
 
     let upload_response = client
-        .post(&format!("{}/api/documents", base_url))
+        .post(format!("{}/api/documents", base_url))
         .header("X-API-Key", &api_key)
         .json(&upload_req)
         .send()
@@ -180,7 +180,7 @@ async fn test_get_document_by_id() {
 
     // Get document
     let response = client
-        .get(&format!("{}/api/documents/{}", base_url, doc_id))
+        .get(format!("{}/api/documents/{}", base_url, doc_id))
         .send()
         .await
         .expect("Failed to get document");
@@ -211,7 +211,7 @@ async fn test_delete_document() {
     };
 
     let upload_response = client
-        .post(&format!("{}/api/documents", base_url))
+        .post(format!("{}/api/documents", base_url))
         .header("X-API-Key", &api_key)
         .json(&upload_req)
         .send()
@@ -223,7 +223,7 @@ async fn test_delete_document() {
 
     // Delete document
     let response = client
-        .delete(&format!("{}/api/documents/{}", base_url, doc_id))
+        .delete(format!("{}/api/documents/{}", base_url, doc_id))
         .header("X-API-Key", &api_key)
         .send()
         .await
@@ -233,7 +233,7 @@ async fn test_delete_document() {
 
     // Verify deleted
     let get_response = client
-        .get(&format!("{}/api/documents/{}", base_url, doc_id))
+        .get(format!("{}/api/documents/{}", base_url, doc_id))
         .send()
         .await
         .expect("Failed to get");
@@ -271,7 +271,7 @@ async fn test_search_documents() {
         };
 
         client
-            .post(&format!("{}/api/documents", base_url))
+            .post(format!("{}/api/documents", base_url))
             .header("X-API-Key", &api_key)
             .json(&upload_req)
             .send()
@@ -291,7 +291,7 @@ async fn test_search_documents() {
     };
 
     let response = client
-        .post(&format!("{}/api/search", base_url))
+        .post(format!("{}/api/search", base_url))
         .json(&search_req)
         .send()
         .await
@@ -326,7 +326,7 @@ async fn test_auth_missing_key() {
     };
 
     let response = client
-        .post(&format!("{}/api/documents", base_url))
+        .post(format!("{}/api/documents", base_url))
         .json(&upload_req)
         .send()
         .await
@@ -353,7 +353,7 @@ async fn test_auth_invalid_key() {
     };
 
     let response = client
-        .post(&format!("{}/api/documents", base_url))
+        .post(format!("{}/api/documents", base_url))
         .header("X-API-Key", "wrong_key")
         .json(&upload_req)
         .send()
@@ -372,7 +372,7 @@ async fn test_auth_anonymous_read() {
 
     // Anonymous GET should work
     let response = client
-        .get(&format!("{}/api/health", base_url))
+        .get(format!("{}/api/health", base_url))
         .send()
         .await
         .expect("Failed to send");
@@ -395,7 +395,7 @@ async fn test_rate_limiting() {
     let mut responses = vec![];
     for _ in 0..150 {
         let response = client
-            .get(&format!("{}/api/health", base_url))
+            .get(format!("{}/api/health", base_url))
             .header("X-API-Key", &api_key)
             .send()
             .await
@@ -439,7 +439,7 @@ async fn test_index_job_lifecycle() {
     };
 
     let upload_response = client
-        .post(&format!("{}/api/documents", base_url))
+        .post(format!("{}/api/documents", base_url))
         .header("X-API-Key", &api_key)
         .json(&upload_req)
         .send()
@@ -456,7 +456,7 @@ async fn test_index_job_lifecycle() {
     });
 
     let index_response = client
-        .post(&format!("{}/api/index", base_url))
+        .post(format!("{}/api/index", base_url))
         .header("X-API-Key", &api_key)
         .json(&index_req)
         .send()
@@ -475,7 +475,7 @@ async fn test_index_job_lifecycle() {
 
     // Check job status
     let status_response = client
-        .get(&format!("{}/api/index/jobs/{}", base_url, job_id))
+        .get(format!("{}/api/index/jobs/{}", base_url, job_id))
         .send()
         .await
         .expect("Failed to get job status");
@@ -498,7 +498,7 @@ async fn test_health_check() {
     let client = reqwest::Client::new();
 
     let response = client
-        .get(&format!("{}/api/health", base_url))
+        .get(format!("{}/api/health", base_url))
         .send()
         .await
         .expect("Failed to send");
@@ -518,7 +518,7 @@ async fn test_stats_endpoint() {
     let client = reqwest::Client::new();
 
     let response = client
-        .get(&format!("{}/api/stats", base_url))
+        .get(format!("{}/api/stats", base_url))
         .send()
         .await
         .expect("Failed to send");
@@ -546,7 +546,7 @@ async fn test_invalid_document_id() {
     let client = reqwest::Client::new();
 
     let response = client
-        .get(&format!("{}/api/documents/99999", base_url))
+        .get(format!("{}/api/documents/99999", base_url))
         .send()
         .await
         .expect("Failed to send");
@@ -562,7 +562,7 @@ async fn test_invalid_json() {
     let client = reqwest::Client::new();
 
     let response = client
-        .post(&format!("{}/api/documents", base_url))
+        .post(format!("{}/api/documents", base_url))
         .header("X-API-Key", &api_key)
         .header("Content-Type", "application/json")
         .body("invalid json")
@@ -597,7 +597,7 @@ async fn test_pagination() {
         };
 
         client
-            .post(&format!("{}/api/documents", base_url))
+            .post(format!("{}/api/documents", base_url))
             .header("X-API-Key", &api_key)
             .json(&upload_req)
             .send()
@@ -607,7 +607,7 @@ async fn test_pagination() {
 
     // Get first page
     let page1 = client
-        .get(&format!("{}/api/documents?page=1&limit=10", base_url))
+        .get(format!("{}/api/documents?page=1&limit=10", base_url))
         .send()
         .await
         .expect("Failed to send");
@@ -617,7 +617,7 @@ async fn test_pagination() {
 
     // Get second page
     let page2 = client
-        .get(&format!("{}/api/documents?page=2&limit=10", base_url))
+        .get(format!("{}/api/documents?page=2&limit=10", base_url))
         .send()
         .await
         .expect("Failed to send");
