@@ -638,12 +638,12 @@ jobs:
                       r.raise_for_status()
                       return r.json()["choices"][0]["message"]["content"]
 
-                  def call_anthropic(key, model="claude-opus-4-6"):
+                  def call_anthropic(key, model="claude-opus-4-20250514"):
                       r = requests.post(
                           "https://api.anthropic.com/v1/messages",
                           headers={
                               "x-api-key": key,
-                              "anthropic-version": "2024-10-22",
+                              "anthropic-version": "2023-06-01",
                               "Content-Type": "application/json"
                           },
                           json={"model": model, "max_tokens": 8192,
@@ -678,9 +678,9 @@ jobs:
                       if provider == "xai":
                           raw = call_xai(os.environ["XAI_API_KEY"])
                       elif provider == "claude-opus":
-                          raw = call_anthropic(os.environ["ANTHROPIC_API_KEY"], "claude-opus-4-6")
+                          raw = call_anthropic(os.environ["ANTHROPIC_API_KEY"], "claude-opus-4-20250514")
                       elif provider == "claude-sonnet":
-                          raw = call_anthropic(os.environ["ANTHROPIC_API_KEY"], "claude-sonnet-4-6")
+                          raw = call_anthropic(os.environ["ANTHROPIC_API_KEY"], "claude-sonnet-4-20250514")
                       elif provider == "anthropic":
                           raw = call_anthropic(os.environ["ANTHROPIC_API_KEY"])
                       elif provider == "google":
