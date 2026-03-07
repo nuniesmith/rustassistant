@@ -60,4 +60,8 @@ target/doc/
 
 # Cache directories
 .cache/
-.rustassistant/
+
+# .rustassistant/ is tracked — it stores cross-run cache state for the
+# LLM Audit workflow (llm-audit.yml in nuniesmith/actions).  The workflow
+# reads and updates .rustassistant/cache.json, batches/, etc. on every run
+# so the repo is self-describing.  Do NOT add .rustassistant/ back here.

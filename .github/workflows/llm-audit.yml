@@ -1,0 +1,2058 @@
+# ============================================================================
+# RustAssistant — LLM Audit & TODO Planner Workflow
+# ============================================================================
+# Manually triggered workflow that clones any target GitHub repo and runs
+# LLM-powered analysis on it.  All heavy lifting is done in pure shell via
+# direct LLM API calls — no custom Rust CLI required.
+#
+# Modes
+# ──────
+# regular      : Holistic codebase review (architecture, quality, security)
+# full         : File-by-file deep analysis with master synthesis
+# todo-analyze : Scan every TODO/FIXME/HACK/XXX in code, batch-analyse with
+#                Grok, compile a prioritised implementation plan
+# todo-plan    : Read the repo's root todo.md, generate a batched gameplan
+#                with Grok, commit the plan back to the target repo
+# todo-work    : Execute the gameplan batch-by-batch using Grok to generate
+#                code changes, update todo.md with progress (✅/⚠️/❌), and
+#                open one Pull Request per batch for review
+# todo-review  : Post-execution review — reads all open batch PRs plus the
+#                updated todo.md, asks Grok for a holistic summary of what
+#                was done, what needs follow-up, and what to tackle next
+#
+# Cache Strategy
+# ──────────────
+# Each target repo gets a .rustassistant/ directory at its root.  This hidden
+# directory is committed into the repo so it persists across runs and works
+# even when this workflow is running against many repos simultaneously.
+# It contains:
+#   .rustassistant/cache.json     — file hashes, last-run metadata, run history
+#   .rustassistant/batches/       — per-batch state files (status, PR number, diff)
+#   .rustassistant/todo_state.json — snapshot of todo.md item completion state
+#
+# This design means rustassistant itself never needs to store per-repo state
+# centrally — each repo is self-describing.  When rustassistant eventually
+# runs 24/7 it can simply clone, read .rustassistant/cache.json to know
+# exactly what state the repo is in, and continue from where it left off.
+#
+# Pull Request Flow
+# ─────────────────
+# todo-work creates one branch + PR per batch:
+#   rustassistant/batch-<N>-<slug>
+# Each PR description includes:
+#   - Which todo.md items it addresses
+#   - What changes were made
+#   - Completion status of each item
+#   - Link to the workflow run
+# todo.md is updated in the SAME commit so the history is always consistent.
+#
+# Required Secrets (set in nuniesmith/actions)
+# ─────────────────────────────────────────────
+# XAI_API_KEY       : xAI / Grok  (todo-analyze / todo-plan / todo-work /
+#                     todo-review always use this)
+# ANTHROPIC_API_KEY : Anthropic / Claude (regular + full modes)
+# GOOGLE_API_KEY    : Google / Gemini    (regular + full modes)
+# GH_PAT            : Personal Access Token with repo + pull_requests scope
+#                     Required for cloning private repos, pushing branches,
+#                     and opening pull requests via the GitHub API
+# ============================================================================
+
+name: 🤖 LLM Audit
+
+on:
+    workflow_dispatch:
+        inputs:
+            # ------------------------------------------------------------------
+            # Target repository
+            # ------------------------------------------------------------------
+            target_repo:
+                description: "Target repo to audit (owner/repo, e.g. nuniesmith/rustassistant)"
+                required: true
+                type: string
+                default: "nuniesmith/rustassistant"
+
+            target_branch:
+                description: "Base branch in the target repo"
+                required: false
+                type: string
+                default: "main"
+
+            # ------------------------------------------------------------------
+            # Audit / work mode
+            # ------------------------------------------------------------------
+            audit_mode:
+                description: "Mode"
+                required: true
+                type: choice
+                default: "todo-plan"
+                options:
+                    - regular
+                    - full
+                    - todo-analyze
+                    - todo-plan
+                    - todo-work
+                    - todo-review
+
+            # ------------------------------------------------------------------
+            # LLM provider
+            # (todo-analyze / todo-plan / todo-work / todo-review → always xAI)
+            # ------------------------------------------------------------------
+            llm_provider:
+                description: "LLM Provider (todo-* modes always use xAI/Grok)"
+                required: true
+                type: choice
+                default: "xai"
+                options:
+                    - xai
+                    - anthropic
+                    - claude-opus
+                    - claude-sonnet
+                    - google
+
+            focus_point:
+                description: "Focus area for regular/full audits (e.g. 'security', 'performance')"
+                required: false
+                type: string
+                default: ""
+
+            # ------------------------------------------------------------------
+            # todo-analyze options
+            # ------------------------------------------------------------------
+            todo_priority:
+                description: "Priority filter for todo-analyze (all | high | medium | low)"
+                required: false
+                type: choice
+                default: "all"
+                options:
+                    - all
+                    - high
+                    - medium
+                    - low
+
+            todo_batch_size:
+                description: "Max TODOs per Grok API call in todo-analyze (default: 15)"
+                required: false
+                type: string
+                default: "15"
+
+            todo_context_lines:
+                description: "Lines of context around each TODO in todo-analyze (default: 30)"
+                required: false
+                type: string
+                default: "30"
+
+            # ------------------------------------------------------------------
+            # todo-plan options
+            # ------------------------------------------------------------------
+            todo_plan_batch_count:
+                description: "Number of implementation batches Grok should produce (default: 5)"
+                required: false
+                type: string
+                default: "5"
+
+            # ------------------------------------------------------------------
+            # todo-work options
+            # ------------------------------------------------------------------
+            work_batch_number:
+                description: "Which batch number to execute in todo-work (0 = auto: next pending)"
+                required: false
+                type: string
+                default: "0"
+
+            work_dry_run:
+                description: "Dry-run todo-work: generate changes but do NOT push or open PR"
+                required: false
+                type: boolean
+                default: false
+
+            # ------------------------------------------------------------------
+            # General
+            # ------------------------------------------------------------------
+            commit_results:
+                description: "Commit audit reports / cache back to the target repo"
+                required: false
+                type: boolean
+                default: true
+
+permissions:
+    contents: write
+    actions: read
+    pull-requests: write
+
+env:
+    REPO_DIR: target-repo
+    CACHE_DIR: target-repo/.rustassistant
+
+jobs:
+    llm-audit:
+        name: >-
+            🤖 ${{
+              inputs.audit_mode == 'full'         && 'Full Audit'       ||
+              inputs.audit_mode == 'todo-analyze' && 'TODO Analyze'     ||
+              inputs.audit_mode == 'todo-plan'    && 'TODO Plan'        ||
+              inputs.audit_mode == 'todo-work'    && 'TODO Work'        ||
+              inputs.audit_mode == 'todo-review'  && 'TODO Review'      ||
+              'Regular Audit'
+            }} — ${{ inputs.target_repo }} (${{
+              (inputs.audit_mode == 'todo-analyze' ||
+               inputs.audit_mode == 'todo-plan'    ||
+               inputs.audit_mode == 'todo-work'    ||
+               inputs.audit_mode == 'todo-review') && 'xai' || inputs.llm_provider
+            }})
+        runs-on: ubuntu-latest
+        timeout-minutes: 180
+
+        steps:
+            # ================================================================
+            # 1. Checkout actions repo (for shared actions access)
+            # ================================================================
+            - name: 📥 Checkout actions repo
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 1
+                  token: ${{ secrets.GITHUB_TOKEN }}
+
+            # ================================================================
+            # 2. Clone the TARGET repo
+            # ================================================================
+            - name: 📦 Clone target repo — ${{ inputs.target_repo }}
+              env:
+                  GH_PAT: ${{ secrets.GH_PAT }}
+              run: |
+                  TARGET="${{ inputs.target_repo }}"
+                  BRANCH="${{ inputs.target_branch }}"
+
+                  echo "## 📦 Cloning \`$TARGET\` @ \`$BRANCH\`" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+
+                  if [ -n "$GH_PAT" ]; then
+                      CLONE_URL="https://x-access-token:${GH_PAT}@github.com/${TARGET}.git"
+                      echo "🔐 Using PAT authentication" >> $GITHUB_STEP_SUMMARY
+                  else
+                      CLONE_URL="https://github.com/${TARGET}.git"
+                      echo "🌐 No PAT — public repo only" >> $GITHUB_STEP_SUMMARY
+                  fi
+
+                  # Full depth needed so we can branch and push from the clone
+                  git clone --branch "$BRANCH" "$CLONE_URL" "${{ env.REPO_DIR }}"
+
+                  FILE_COUNT=$(find "${{ env.REPO_DIR }}" -type f \
+                      -not -path "*/.git/*" -not -path "*/target/*" | wc -l)
+                  RS_COUNT=$(find "${{ env.REPO_DIR }}" -type f -name "*.rs" \
+                      -not -path "*/target/*" | wc -l)
+
+                  echo "- Branch : \`$BRANCH\`"          >> $GITHUB_STEP_SUMMARY
+                  echo "- Files  : $FILE_COUNT"           >> $GITHUB_STEP_SUMMARY
+                  echo "- \`.rs\` files : $RS_COUNT"      >> $GITHUB_STEP_SUMMARY
+                  echo ""                                  >> $GITHUB_STEP_SUMMARY
+
+            # ================================================================
+            # 3. Initialise / restore .rustassistant cache from target repo
+            # ================================================================
+            - name: 🗄️ Initialise .rustassistant cache
+              run: |
+                  CACHE="${{ env.CACHE_DIR }}"
+                  REPO="${{ env.REPO_DIR }}"
+                  TARGET="${{ inputs.target_repo }}"
+                  BRANCH="${{ inputs.target_branch }}"
+                  RUN_ID="${{ github.run_id }}"
+                  RUN_NUM="${{ github.run_number }}"
+                  NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+                  mkdir -p "$CACHE/batches"
+
+                  # ── Initialise cache.json if this is the first run ─────────
+                  if [ ! -f "$CACHE/cache.json" ]; then
+                      echo "📝 No existing cache — creating fresh cache.json" >> $GITHUB_STEP_SUMMARY
+                      cat > "$CACHE/cache.json" << CACHE_JSON
+                  {
+                    "schema_version": "1",
+                    "repo": "$TARGET",
+                    "base_branch": "$BRANCH",
+                    "created_at": "$NOW",
+                    "last_run_at": "$NOW",
+                    "last_run_id": "$RUN_ID",
+                    "last_run_number": $RUN_NUM,
+                    "runs": [],
+                    "file_hashes": {},
+                    "active_batches": [],
+                    "completed_batches": [],
+                    "failed_batches": []
+                  }
+                  CACHE_JSON
+                  else
+                      echo "✅ Existing cache.json found" >> $GITHUB_STEP_SUMMARY
+                      # Update last-run metadata
+                      python3 - << PYEOF
+                  import json, sys
+                  path = "$CACHE/cache.json"
+                  with open(path) as f:
+                      d = json.load(f)
+                  d["last_run_at"]     = "$NOW"
+                  d["last_run_id"]     = "$RUN_ID"
+                  d["last_run_number"] = $RUN_NUM
+                  d.setdefault("runs", []).append({
+                      "run_id": "$RUN_ID",
+                      "run_number": $RUN_NUM,
+                      "mode": "${{ inputs.audit_mode }}",
+                      "started_at": "$NOW"
+                  })
+                  # Keep only the last 50 run entries
+                  d["runs"] = d["runs"][-50:]
+                  with open(path, "w") as f:
+                      json.dump(d, f, indent=2)
+                  PYEOF
+                  fi
+
+                  # ── Build/refresh file hash map ────────────────────────────
+                  python3 - << PYEOF
+                  import os, json, hashlib
+
+                  cache_path = "$CACHE/cache.json"
+                  repo_root  = "$REPO"
+                  new_hashes = {}
+
+                  for dirpath, dirnames, filenames in os.walk(repo_root):
+                      # Skip hidden dirs and build artifacts
+                      dirnames[:] = [d for d in dirnames
+                                     if d not in (".git", "target", "node_modules", ".rustassistant")]
+                      for fname in filenames:
+                          fpath = os.path.join(dirpath, fname)
+                          rel   = os.path.relpath(fpath, repo_root)
+                          try:
+                              with open(fpath, "rb") as fh:
+                                  h = hashlib.sha256(fh.read()).hexdigest()[:16]
+                              new_hashes[rel] = h
+                          except Exception:
+                              pass
+
+                  with open(cache_path) as f:
+                      d = json.load(f)
+
+                  old_hashes = d.get("file_hashes", {})
+                  changed = [k for k in new_hashes if new_hashes.get(k) != old_hashes.get(k)]
+                  added   = [k for k in new_hashes if k not in old_hashes]
+                  removed = [k for k in old_hashes if k not in new_hashes]
+
+                  d["file_hashes"]     = new_hashes
+                  d["last_file_scan"]  = "$NOW"
+                  d["files_changed"]   = changed
+                  d["files_added"]     = added
+                  d["files_removed"]   = removed
+
+                  with open(cache_path, "w") as f:
+                      json.dump(d, f, indent=2)
+
+                  print(f"files_total={len(new_hashes)}")
+                  print(f"files_changed={len(changed)}")
+                  print(f"files_added={len(added)}")
+                  print(f"files_removed={len(removed)}")
+                  PYEOF
+
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  echo "### 🗄️ Cache State" >> $GITHUB_STEP_SUMMARY
+                  echo "- Cache path: \`.rustassistant/\`" >> $GITHUB_STEP_SUMMARY
+                  TOTAL=$(python3 -c "import json; d=json.load(open('$CACHE/cache.json')); print(len(d.get('file_hashes',{})))" 2>/dev/null || echo "?")
+                  CBATCHES=$(python3 -c "import json; d=json.load(open('$CACHE/cache.json')); print(len(d.get('completed_batches',[])))" 2>/dev/null || echo "0")
+                  ABATCHES=$(python3 -c "import json; d=json.load(open('$CACHE/cache.json')); print(len(d.get('active_batches',[])))" 2>/dev/null || echo "0")
+                  echo "- Files tracked : $TOTAL"       >> $GITHUB_STEP_SUMMARY
+                  echo "- Batches done  : $CBATCHES"    >> $GITHUB_STEP_SUMMARY
+                  echo "- Batches active: $ABATCHES"    >> $GITHUB_STEP_SUMMARY
+                  echo ""                               >> $GITHUB_STEP_SUMMARY
+
+            # ================================================================
+            # 4. Validate API keys
+            # ================================================================
+            - name: 🔍 Validate API keys
+              env:
+                  HAS_XAI_KEY: ${{ secrets.XAI_API_KEY != '' }}
+                  HAS_ANTHROPIC_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+                  HAS_GOOGLE_KEY: ${{ secrets.GOOGLE_API_KEY != '' }}
+              run: |
+                  PROVIDER="${{ inputs.llm_provider }}"
+                  MODE="${{ inputs.audit_mode }}"
+
+                  # All todo-* modes always use xAI
+                  if [[ "$MODE" == todo-* ]]; then
+                      PROVIDER="xai"
+                  fi
+
+                  MISSING=""
+                  case "$PROVIDER" in
+                      xai)
+                          [ "$HAS_XAI_KEY" != "true" ] && MISSING="XAI_API_KEY"
+                          ;;
+                      anthropic|claude-opus|claude-sonnet)
+                          [ "$HAS_ANTHROPIC_KEY" != "true" ] && MISSING="ANTHROPIC_API_KEY"
+                          ;;
+                      google)
+                          [ "$HAS_GOOGLE_KEY" != "true" ] && MISSING="GOOGLE_API_KEY"
+                          ;;
+                  esac
+
+                  if [ -n "$MISSING" ]; then
+                      echo "❌ Missing required secret: $MISSING for provider: $PROVIDER"
+                      echo "## ❌ Missing API Key" >> $GITHUB_STEP_SUMMARY
+                      echo "Secret \`$MISSING\` is required for provider \`$PROVIDER\`." >> $GITHUB_STEP_SUMMARY
+                      exit 1
+                  fi
+
+                  echo "✅ API key validated for provider: $PROVIDER"
+
+            # ================================================================
+            # 5. Static scan — file list, tree, inline TODOs
+            #    (runs for all modes; results used by LLM steps)
+            # ================================================================
+            - name: 📊 Static scan
+              id: static
+              run: |
+                  REPO="${{ env.REPO_DIR }}"
+                  mkdir -p audit-workspace
+
+                  # Source file list
+                  find "$REPO" \
+                      -type f \
+                      \( -name "*.rs" -o -name "*.toml" -o -name "*.proto" -o -name "*.md" \) \
+                      -not -path "*/target/*" \
+                      -not -path "*/.git/*" \
+                      -not -path "*/.rustassistant/*" \
+                      > audit-workspace/file-list.txt
+
+                  FILE_COUNT=$(wc -l < audit-workspace/file-list.txt)
+
+                  # Inline TODO/FIXME/HACK/XXX scan (comment-style only)
+                  grep -rn \
+                      --include="*.rs" --include="*.toml" --include="*.md" \
+                      -E "(//|#)\s*(TODO|FIXME|HACK|XXX)" \
+                      "$REPO" \
+                      --exclude-dir=target \
+                      --exclude-dir=.git \
+                      --exclude-dir=.rustassistant \
+                      > audit-workspace/raw-todos.txt 2>/dev/null || true
+
+                  TODO_COUNT=$(wc -l < audit-workspace/raw-todos.txt)
+
+                  # Directory tree (depth-capped)
+                  find "$REPO" \
+                      -not -path "*/target/*" \
+                      -not -path "*/.git/*" \
+                      -not -path "*/.rustassistant/*" \
+                      -not -path "*/node_modules/*" \
+                      | sed "s|$REPO/||" \
+                      | head -400 \
+                      > audit-workspace/tree.txt
+
+                  echo "static_file_count=$FILE_COUNT" >> $GITHUB_OUTPUT
+                  echo "static_todo_count=$TODO_COUNT"  >> $GITHUB_OUTPUT
+
+                  echo "## 📊 Static Scan" >> $GITHUB_STEP_SUMMARY
+                  echo "- Source files : $FILE_COUNT" >> $GITHUB_STEP_SUMMARY
+                  echo "- Inline TODOs : $TODO_COUNT" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+
+            # ================================================================
+            # 6. Install Python deps
+            # ================================================================
+            - name: 🐍 Install Python dependencies
+              run: pip install requests --quiet
+
+            # ================================================================
+            # 7-A  REGULAR / FULL — holistic LLM audit
+            # ================================================================
+            - name: 🤖 Run LLM audit (${{ inputs.audit_mode }})
+              if: inputs.audit_mode == 'regular' || inputs.audit_mode == 'full'
+              id: llm_audit
+              env:
+                  XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+                  GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+                  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+              run: |
+                  echo "## 🤖 LLM Analysis (${{ inputs.audit_mode }})" >> $GITHUB_STEP_SUMMARY
+
+                  PROVIDER="${{ inputs.llm_provider }}"
+                  MODE="${{ inputs.audit_mode }}"
+                  FOCUS="${{ inputs.focus_point }}"
+                  REPO="${{ env.REPO_DIR }}"
+                  MAX_BYTES=150000
+                  [ "$MODE" = "full" ] && MAX_BYTES=400000
+
+                  # Build source snapshot up to size cap — write to file, not env var
+                  SOURCE_SNAP_FILE=/tmp/source_snapshot.txt
+                  : > "$SOURCE_SNAP_FILE"
+                  BYTES=0
+                  while IFS= read -r FILE; do
+                      [ ! -f "$FILE" ] && continue
+                      SIZE=$(wc -c < "$FILE" 2>/dev/null || echo 0)
+                      if [ $((BYTES + SIZE)) -gt $MAX_BYTES ]; then
+                          printf '\n\n... (size limit reached) ...' >> "$SOURCE_SNAP_FILE"
+                          break
+                      fi
+                      REL=$(echo "$FILE" | sed "s|$REPO/||")
+                      printf '\n\n### FILE: %s\n```\n' "$REL"   >> "$SOURCE_SNAP_FILE"
+                      cat "$FILE" 2>/dev/null                    >> "$SOURCE_SNAP_FILE"
+                      printf '\n```'                             >> "$SOURCE_SNAP_FILE"
+                      BYTES=$((BYTES + SIZE))
+                  done < audit-workspace/file-list.txt
+
+                  # Write other large values to temp files
+                  cat audit-workspace/tree.txt > /tmp/audit_tree.txt
+
+                  FOCUS_CLAUSE=""
+                  [ -n "$FOCUS" ] && FOCUS_CLAUSE="Pay special attention to: $FOCUS."
+
+                  cat > audit-workspace/audit_call.py << 'PYEOF'
+                  import os, json, requests, textwrap
+
+                  provider  = os.environ["PROVIDER"]
+                  mode      = os.environ["MODE"]
+                  focus     = os.environ.get("FOCUS_CLAUSE", "")
+                  repo_name = os.environ["REPO_NAME"]
+
+                  with open("/tmp/audit_tree.txt") as _f:
+                      tree = _f.read()
+                  with open("/tmp/source_snapshot.txt") as _f:
+                      source = _f.read()
+
+                  system_prompt = textwrap.dedent(f"""
+                      You are a senior software engineer performing a {mode} code audit on
+                      the repository '{repo_name}'.
+                      Return a single JSON object — no markdown fences, no prose outside JSON.
+                      Required top-level keys:
+                      {{
+                        "summary":          "<executive summary paragraph>",
+                        "overall_health":   <0-100>,
+                        "priority_actions": ["<action>", ...],
+                        "findings": [{{
+                          "severity":       "critical|high|medium|low",
+                          "category":       "<security|architecture|performance|quality|...>",
+                          "title":          "<short title>",
+                          "description":    "<detail>",
+                          "recommendation": "<what to do>",
+                          "files":          ["<path>", ...]
+                        }}],
+                        "strengths":  ["<strength>", ...],
+                        "weaknesses": ["<weakness>", ...],
+                        "tech_debt":  ["<item>", ...],
+                        "next_steps": ["<step>", ...]
+                      }}
+                      {focus}
+                  """).strip()
+
+                  user_prompt = (
+                      f"## Repository tree\n```\n{tree}\n```\n\n"
+                      f"## Source files\n{source}"
+                  )
+
+                  def call_xai(key):
+                      r = requests.post(
+                          "https://api.x.ai/v1/chat/completions",
+                          headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                          json={"model": "grok-3", "messages": [
+                              {"role": "system", "content": system_prompt},
+                              {"role": "user",   "content": user_prompt}
+                          ], "max_tokens": 8192, "temperature": 0.2},
+                          timeout=300
+                      )
+                      r.raise_for_status()
+                      return r.json()["choices"][0]["message"]["content"]
+
+                  def call_anthropic(key, model="claude-opus-4-6"):
+                      r = requests.post(
+                          "https://api.anthropic.com/v1/messages",
+                          headers={
+                              "x-api-key": key,
+                              "anthropic-version": "2024-10-22",
+                              "Content-Type": "application/json"
+                          },
+                          json={"model": model, "max_tokens": 8192,
+                                "system": system_prompt,
+                                "messages": [{"role": "user", "content": user_prompt}]},
+                          timeout=300
+                      )
+                      r.raise_for_status()
+                      return r.json()["content"][0]["text"]
+
+                  def call_google(key):
+                      model = "gemini-1.5-pro"
+                      r = requests.post(
+                          f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}",
+                          json={"contents": [{"parts": [{"text": system_prompt + "\n\n" + user_prompt}]}],
+                                "generationConfig": {"maxOutputTokens": 8192, "temperature": 0.2}},
+                          timeout=300
+                      )
+                      r.raise_for_status()
+                      return r.json()["candidates"][0]["content"]["parts"][0]["text"]
+
+                  def strip_fences(raw):
+                      raw = raw.strip()
+                      if raw.startswith("```"):
+                          lines = raw.split("\n")
+                          raw = "\n".join(lines[1:])
+                          if raw.endswith("```"):
+                              raw = raw[:-3]
+                      return raw.strip()
+
+                  try:
+                      if provider == "xai":
+                          raw = call_xai(os.environ["XAI_API_KEY"])
+                      elif provider == "claude-opus":
+                          raw = call_anthropic(os.environ["ANTHROPIC_API_KEY"], "claude-opus-4-6")
+                      elif provider == "claude-sonnet":
+                          raw = call_anthropic(os.environ["ANTHROPIC_API_KEY"], "claude-sonnet-4-6")
+                      elif provider == "anthropic":
+                          raw = call_anthropic(os.environ["ANTHROPIC_API_KEY"])
+                      elif provider == "google":
+                          raw = call_google(os.environ["GOOGLE_API_KEY"])
+                      else:
+                          raw = call_xai(os.environ["XAI_API_KEY"])
+
+                      data = json.loads(strip_fences(raw))
+                  except Exception as e:
+                      data = {
+                          "summary": f"Audit failed: {e}",
+                          "overall_health": 0,
+                          "priority_actions": [],
+                          "findings": [],
+                          "strengths": [],
+                          "weaknesses": [],
+                          "tech_debt": [],
+                          "next_steps": []
+                      }
+
+                  os.makedirs("audit-workspace", exist_ok=True)
+                  with open("audit-workspace/llm-analysis.json", "w") as f:
+                      json.dump(data, f, indent=2)
+
+                  print(f"overall_health={data.get('overall_health', 0)}")
+                  print(f"findings_count={len(data.get('findings', []))}")
+                  PYEOF
+
+                  PROVIDER="$PROVIDER" MODE="$MODE" FOCUS_CLAUSE="$FOCUS_CLAUSE" \
+                  REPO_NAME="${{ inputs.target_repo }}" \
+                  python3 audit-workspace/audit_call.py | tee /tmp/audit_output.txt || true
+
+                  HEALTH=$(grep "overall_health=" /tmp/audit_output.txt | cut -d= -f2 || echo "0")
+                  FINDINGS=$(grep "findings_count=" /tmp/audit_output.txt | cut -d= -f2 || echo "0")
+                  echo "overall_health=$HEALTH"   >> $GITHUB_OUTPUT
+                  echo "findings_count=$FINDINGS" >> $GITHUB_OUTPUT
+
+                  echo "| Metric | Value |"             >> $GITHUB_STEP_SUMMARY
+                  echo "|--------|-------|"             >> $GITHUB_STEP_SUMMARY
+                  echo "| Health | ${HEALTH}/100 |"     >> $GITHUB_STEP_SUMMARY
+                  echo "| Findings | $FINDINGS |"       >> $GITHUB_STEP_SUMMARY
+                  echo ""                               >> $GITHUB_STEP_SUMMARY
+
+            # ================================================================
+            # 7-B  TODO-ANALYZE — batch Grok analysis of inline code TODOs
+            # ================================================================
+            - name: 📋 TODO-Analyze
+              if: inputs.audit_mode == 'todo-analyze'
+              id: todo_analyze
+              env:
+                  XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+              run: |
+                  echo "## 📋 TODO Batch Analysis (Grok)" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+
+                  cat > audit-workspace/todo_analyze.py << 'PYEOF'
+                  import os, json, re, requests, textwrap
+
+                  xai_key    = os.environ["XAI_API_KEY"]
+                  repo_dir   = os.environ["REPO_DIR"]
+                  priority_f = os.environ.get("PRIORITY_FILTER", "all").lower()
+                  batch_size = int(os.environ.get("BATCH_SIZE", "15"))
+                  ctx_lines  = int(os.environ.get("CTX_LINES", "30"))
+                  todos_file = "audit-workspace/raw-todos.txt"
+
+                  todos = []
+                  with open(todos_file) as f:
+                      for line in f:
+                          line = line.rstrip()
+                          m = re.match(r'^(.+?):(\d+):(.*)$', line)
+                          if not m:
+                              continue
+                          filepath, lineno, text = m.group(1), int(m.group(2)), m.group(3).strip()
+                          tl = text.upper()
+                          if "FIXME" in tl or "HACK" in tl or "XXX" in tl:
+                              prio = "High"
+                          elif "TODO" in tl and any(k in tl for k in
+                               ("SECURITY","PERF","CRASH","PANIC","UNSAFE","CRITICAL")):
+                              prio = "High"
+                          elif "TODO" in tl:
+                              prio = "Medium"
+                          else:
+                              prio = "Low"
+
+                          if priority_f != "all" and prio.lower() != priority_f:
+                              continue
+
+                          try:
+                              with open(filepath) as src:
+                                  lines = src.readlines()
+                              start   = max(0, lineno - 1 - ctx_lines)
+                              end     = min(len(lines), lineno - 1 + ctx_lines + 1)
+                              context = "".join(lines[start:end])
+                          except Exception:
+                              context = text
+
+                          rel = filepath.replace(repo_dir + "/", "").replace(repo_dir + "\\", "")
+                          todos.append({"file": rel, "line": lineno, "text": text,
+                                        "priority": prio, "context": context})
+
+                  results, errors = [], []
+
+                  for i in range(0, len(todos), batch_size):
+                      batch = todos[i:i + batch_size]
+                      payload = [{"id": j, "file": t["file"], "line": t["line"],
+                                  "priority": t["priority"], "todo_text": t["text"],
+                                  "code_context": t["context"][:2000]}
+                                 for j, t in enumerate(batch)]
+
+                      system = textwrap.dedent("""
+                          You are a senior Rust engineer reviewing TODO/FIXME items.
+                          Return a JSON array (same order as input), each element:
+                            id, interpretation, estimated_effort, implementation_plan,
+                            risk_level, suggested_priority, confidence
+                          No prose outside the JSON array.
+                      """).strip()
+
+                      try:
+                          r = requests.post(
+                              "https://api.x.ai/v1/chat/completions",
+                              headers={"Authorization": f"Bearer {xai_key}",
+                                       "Content-Type": "application/json"},
+                              json={"model": "grok-3", "messages": [
+                                  {"role": "system", "content": system},
+                                  {"role": "user",   "content": json.dumps(payload, indent=2)}
+                              ], "max_tokens": 8192, "temperature": 0.2},
+                              timeout=300
+                          )
+                          r.raise_for_status()
+                          raw = r.json()["choices"][0]["message"]["content"].strip()
+                          if raw.startswith("```"):
+                              raw = "\n".join(raw.split("\n")[1:])
+                              if raw.endswith("```"):
+                                  raw = raw[:-3]
+                          analyses = json.loads(raw)
+                      except Exception as e:
+                          errors.append(str(e))
+                          analyses = [{"id": j, "interpretation": "API error",
+                                       "estimated_effort": "unknown",
+                                       "implementation_plan": "", "risk_level": "unknown",
+                                       "suggested_priority": t["priority"], "confidence": 0}
+                                      for j, t in enumerate(batch)]
+
+                      for a in analyses:
+                          idx = a.get("id", 0)
+                          if idx < len(batch):
+                              results.append({**batch[idx], **a})
+
+                      print(f"Batch {i // batch_size + 1}: {len(batch)} TODOs processed")
+
+                  report = {
+                      "audit_type":        "todo-analyze",
+                      "repo":              os.environ.get("REPO_NAME", ""),
+                      "analyzed_count":    len(results),
+                      "skipped_count":     len(todos) - len(results),
+                      "total_todos_found": len(todos),
+                      "errors":            errors,
+                      "results":           results,
+                      "scan_summary": {
+                          "total":           len(todos),
+                          "high_priority":   sum(1 for t in todos if t["priority"] == "High"),
+                          "medium_priority": sum(1 for t in todos if t["priority"] == "Medium"),
+                          "low_priority":    sum(1 for t in todos if t["priority"] == "Low")
+                      }
+                  }
+
+                  os.makedirs("audit-workspace", exist_ok=True)
+                  with open("audit-workspace/todo-analysis-report.json", "w") as f:
+                      json.dump(report, f, indent=2)
+
+                  print(f"analyzed_count={len(results)}")
+                  print(f"total_todos={len(todos)}")
+                  PYEOF
+
+                  REPO_DIR="${{ env.REPO_DIR }}" \
+                  PRIORITY_FILTER="${{ inputs.todo_priority }}" \
+                  BATCH_SIZE="${{ inputs.todo_batch_size }}" \
+                  CTX_LINES="${{ inputs.todo_context_lines }}" \
+                  REPO_NAME="${{ inputs.target_repo }}" \
+                  python3 audit-workspace/todo_analyze.py | tee /tmp/todo_output.txt || true
+
+                  ANALYZED=$(grep "analyzed_count=" /tmp/todo_output.txt | tail -1 | cut -d= -f2 || echo "0")
+                  TOTAL=$(grep "total_todos=" /tmp/todo_output.txt | tail -1 | cut -d= -f2 || echo "0")
+                  echo "analyzed_count=$ANALYZED" >> $GITHUB_OUTPUT
+                  echo "total_todos=$TOTAL"        >> $GITHUB_OUTPUT
+
+                  echo "| TODOs found | $TOTAL |"     >> $GITHUB_STEP_SUMMARY
+                  echo "| TODOs analysed | $ANALYZED |" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+
+            # ================================================================
+            # 7-C  TODO-PLAN — read todo.md, generate batched gameplan
+            # ================================================================
+            - name: 🗺️ TODO-Plan — gameplan from todo.md
+              if: inputs.audit_mode == 'todo-plan'
+              id: todo_plan
+              env:
+                  XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+              run: |
+                  echo "## 🗺️ TODO Plan" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+
+                  REPO="${{ env.REPO_DIR }}"
+                  CACHE="${{ env.CACHE_DIR }}"
+                  TODO_FILE="$REPO/todo.md"
+
+                  if [ ! -f "$TODO_FILE" ]; then
+                      TODO_FILE=$(find "$REPO" -maxdepth 2 -iname "todo.md" | head -1 || true)
+                  fi
+
+                  if [ -z "$TODO_FILE" ] || [ ! -f "$TODO_FILE" ]; then
+                      echo "❌ No todo.md found in ${{ inputs.target_repo }}" >> $GITHUB_STEP_SUMMARY
+                      echo '{"error":"No todo.md found","batches":[]}' > audit-workspace/todo-plan.json
+                      exit 0
+                  fi
+
+                  # Write large values to temp files instead of env vars
+                  cat "$TODO_FILE" > /tmp/todo_content.txt
+                  head -100 audit-workspace/raw-todos.txt > /tmp/inline_todos.txt 2>/dev/null || true
+                  BATCH_COUNT="${{ inputs.todo_plan_batch_count }}"
+
+                  echo "- todo.md : \`$(echo "$TODO_FILE" | sed "s|$REPO/||")\`" >> $GITHUB_STEP_SUMMARY
+                  echo "- Lines   : $(wc -l < "$TODO_FILE")"                     >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+
+                  cat > audit-workspace/todo_plan.py << 'PYEOF'
+                  import os, json, requests, textwrap
+
+                  xai_key     = os.environ["XAI_API_KEY"]
+                  repo_name   = os.environ["REPO_NAME"]
+                  batch_count = int(os.environ.get("BATCH_COUNT", "5"))
+
+                  with open("/tmp/todo_content.txt") as _f:
+                      todo_text = _f.read()
+                  try:
+                      with open("/tmp/inline_todos.txt") as _f:
+                          inline = _f.read()
+                  except FileNotFoundError:
+                      inline = ""
+
+                  system = textwrap.dedent(f"""
+                      You are a senior engineering lead reviewing the todo.md backlog for '{repo_name}'.
+
+                      Tasks:
+                      1. Understand every item in the todo list.
+                      2. Group related items into logical implementation batches.
+                      3. Order batches by impact / risk / dependency.
+                      4. For each batch: explain what to do, why, how, effort, acceptance criteria.
+                      5. Produce the full content of a GAMEPLAN.md document.
+
+                      Return a SINGLE JSON object with these exact keys:
+                      {{
+                        "summary":      "<overview paragraph>",
+                        "total_items":  <int>,
+                        "batches": [{{
+                          "batch_number":          <int starting at 1>,
+                          "title":                 "<short slug-friendly title>",
+                          "rationale":             "<why this order>",
+                          "priority":              "critical|high|medium|low",
+                          "estimated_effort":      "<e.g. 1-2 days>",
+                          "items":                 ["<todo item text>", ...],
+                          "implementation_steps":  ["<step>", ...],
+                          "acceptance_criteria":   ["<criterion>", ...],
+                          "dependencies":          ["<batch title or external dep>", ...]
+                        }}],
+                        "deferred":          ["<item not yet actionable>", ...],
+                        "risks":             ["<risk>", ...],
+                        "gameplan_markdown": "<full GAMEPLAN.md as a string>"
+                      }}
+
+                      Produce exactly {batch_count} batches (fewer only if the backlog is smaller).
+                      No prose outside the JSON object.
+                  """).strip()
+
+                  user = (
+                      f"## todo.md\n```markdown\n{todo_text}\n```\n\n"
+                      + (f"## Inline code TODOs (first 100)\n```\n{inline}\n```" if inline else "")
+                  )
+
+                  try:
+                      r = requests.post(
+                          "https://api.x.ai/v1/chat/completions",
+                          headers={"Authorization": f"Bearer {xai_key}",
+                                   "Content-Type": "application/json"},
+                          json={"model": "grok-3", "messages": [
+                              {"role": "system", "content": system},
+                              {"role": "user",   "content": user}
+                          ], "max_tokens": 8192, "temperature": 0.3},
+                          timeout=300
+                      )
+                      r.raise_for_status()
+                      raw = r.json()["choices"][0]["message"]["content"].strip()
+                      if raw.startswith("```"):
+                          raw = "\n".join(raw.split("\n")[1:])
+                          if raw.endswith("```"):
+                              raw = raw[:-3]
+                      data = json.loads(raw)
+                  except Exception as e:
+                      data = {
+                          "summary": f"Plan generation failed: {e}",
+                          "total_items": 0, "batches": [],
+                          "deferred": [], "risks": [],
+                          "gameplan_markdown": f"# Gameplan\n\nGeneration failed: {e}\n"
+                      }
+
+                  os.makedirs("audit-workspace", exist_ok=True)
+                  with open("audit-workspace/todo-plan.json", "w") as f:
+                      json.dump(data, f, indent=2)
+                  with open("audit-workspace/GAMEPLAN.md", "w") as f:
+                      f.write(data.get("gameplan_markdown", "# No gameplan generated\n"))
+
+                  print(f"total_items={data.get('total_items', 0)}")
+                  print(f"batch_count={len(data.get('batches', []))}")
+                  PYEOF
+
+                  XAI_API_KEY="$XAI_API_KEY" \
+                  REPO_NAME="${{ inputs.target_repo }}" \
+                  BATCH_COUNT="$BATCH_COUNT" \
+                  python3 audit-workspace/todo_plan.py | tee /tmp/plan_output.txt || true
+
+                  ITEMS=$(grep "total_items="  /tmp/plan_output.txt | cut -d= -f2 || echo "0")
+                  BATCHES=$(grep "batch_count=" /tmp/plan_output.txt | cut -d= -f2 || echo "0")
+                  echo "total_items=$ITEMS"   >> $GITHUB_OUTPUT
+                  echo "batch_count=$BATCHES" >> $GITHUB_OUTPUT
+
+                  # ── Persist gameplan into cache ────────────────────────────
+                  cp audit-workspace/todo-plan.json "$CACHE/todo-plan.json" 2>/dev/null || true
+                  cp audit-workspace/GAMEPLAN.md    "$CACHE/GAMEPLAN.md"    2>/dev/null || true
+
+                  echo "| Items   | $ITEMS |"   >> $GITHUB_STEP_SUMMARY
+                  echo "| Batches | $BATCHES |" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+
+            # ================================================================
+            # 7-D  TODO-WORK — execute one batch from the gameplan
+            #       • Grok generates code changes (unified diff)
+            #       • todo.md updated with ✅/⚠️/❌ per item
+            #       • Changes committed to a branch
+            #       • Pull Request opened via GitHub API
+            # ================================================================
+            - name: 🔨 TODO-Work — execute batch
+              if: inputs.audit_mode == 'todo-work'
+              id: todo_work
+              env:
+                  XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+                  GH_PAT: ${{ secrets.GH_PAT }}
+              run: |
+                  echo "## 🔨 TODO Work" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+
+                  REPO="${{ env.REPO_DIR }}"
+                  CACHE="${{ env.CACHE_DIR }}"
+                  TARGET="${{ inputs.target_repo }}"
+                  BASE_BRANCH="${{ inputs.target_branch }}"
+                  DRY_RUN="${{ inputs.work_dry_run }}"
+                  REQUESTED_BATCH="${{ inputs.work_batch_number }}"
+
+                  # ── Load gameplan from cache ──────────────────────────────
+                  PLAN_FILE="$CACHE/todo-plan.json"
+                  if [ ! -f "$PLAN_FILE" ]; then
+                      # Fall back to a plan checked into the repo
+                      PLAN_FILE="$REPO/docs/audit/todo-plan.json"
+                  fi
+                  if [ ! -f "$PLAN_FILE" ]; then
+                      echo "❌ No todo-plan.json found. Run todo-plan mode first." >> $GITHUB_STEP_SUMMARY
+                      echo "::error::No gameplan found. Run todo-plan mode first."
+                      exit 1
+                  fi
+
+                  # ── Determine which batch to run ──────────────────────────
+                  BATCH_NUM=$(python3 - << PYEOF
+                  import json, sys
+
+                  with open("$PLAN_FILE") as f:
+                      plan = json.load(f)
+
+                  cache_file = "$CACHE/cache.json"
+                  try:
+                      with open(cache_file) as f:
+                          cache = json.load(f)
+                  except Exception:
+                      cache = {}
+
+                  completed = set(cache.get("completed_batches", []))
+                  requested = int("$REQUESTED_BATCH")
+
+                  if requested > 0:
+                      print(requested)
+                      sys.exit(0)
+
+                  # Auto: find first pending batch
+                  for b in plan.get("batches", []):
+                      num = b["batch_number"]
+                      if num not in completed:
+                          print(num)
+                          sys.exit(0)
+
+                  print(0)  # All batches done
+                  PYEOF
+                  )
+
+                  if [ "$BATCH_NUM" = "0" ]; then
+                      echo "✅ All batches already completed!" >> $GITHUB_STEP_SUMMARY
+                      echo "batch_num=0" >> $GITHUB_OUTPUT
+                      exit 0
+                  fi
+
+                  echo "- Executing batch #$BATCH_NUM" >> $GITHUB_STEP_SUMMARY
+
+                  # ── Extract batch definition ──────────────────────────────
+                  python3 - << PYEOF > audit-workspace/current-batch.json
+                  import json
+                  with open("$PLAN_FILE") as f:
+                      plan = json.load(f)
+                  batch = next((b for b in plan.get("batches", [])
+                                if b["batch_number"] == $BATCH_NUM), None)
+                  if batch:
+                      print(json.dumps(batch, indent=2))
+                  else:
+                      print("{}")
+                  PYEOF
+
+                  BATCH_TITLE=$(python3 -c \
+                      "import json; d=json.load(open('audit-workspace/current-batch.json')); print(d.get('title','batch-$BATCH_NUM'))" \
+                      2>/dev/null || echo "batch-$BATCH_NUM")
+                  BATCH_SLUG=$(echo "$BATCH_TITLE" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | cut -c1-40)
+                  BRANCH_NAME="rustassistant/batch-${BATCH_NUM}-${BATCH_SLUG}"
+
+                  echo "- Branch : \`$BRANCH_NAME\`"   >> $GITHUB_STEP_SUMMARY
+                  echo "- Title  : $BATCH_TITLE"         >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+
+                  # ── Read todo.md ──────────────────────────────────────────
+                  TODO_FILE="$REPO/todo.md"
+                  if [ ! -f "$TODO_FILE" ]; then
+                      TODO_FILE=$(find "$REPO" -maxdepth 2 -iname "todo.md" | head -1 || true)
+                  fi
+                  # ── Build source snapshot for this batch — write to file, not env var ──
+                  SOURCE_SNAP_FILE=/tmp/work_source_snap.txt
+                  : > "$SOURCE_SNAP_FILE"
+                  BYTES=0
+                  MAX=80000
+                  while IFS= read -r FILE; do
+                      [ ! -f "$FILE" ] && continue
+                      SIZE=$(wc -c < "$FILE" 2>/dev/null || echo 0)
+                      [ $((BYTES + SIZE)) -gt $MAX ] && break
+                      REL=$(echo "$FILE" | sed "s|$REPO/||")
+                      printf '### FILE: %s\n```\n' "$REL" >> "$SOURCE_SNAP_FILE"
+                      cat "$FILE" 2>/dev/null              >> "$SOURCE_SNAP_FILE"
+                      printf '\n```\n'                     >> "$SOURCE_SNAP_FILE"
+                      BYTES=$((BYTES + SIZE))
+                  done < audit-workspace/file-list.txt
+
+                  # Write TODO_CONTENT to a temp file
+                  if [ -f "$TODO_FILE" ]; then
+                      cat "$TODO_FILE" > /tmp/work_todo_content.txt
+                  else
+                      : > /tmp/work_todo_content.txt
+                  fi
+
+                  # ── Ask Grok to implement the batch ──────────────────────
+                  cat > audit-workspace/todo_work.py << 'PYEOF'
+                  import os, json, requests, textwrap
+
+                  xai_key   = os.environ["XAI_API_KEY"]
+                  repo_name = os.environ["REPO_NAME"]
+
+                  with open("audit-workspace/current-batch.json") as _f:
+                      batch = json.load(_f)
+                  try:
+                      with open("/tmp/work_todo_content.txt") as _f:
+                          todo_text = _f.read()
+                  except FileNotFoundError:
+                      todo_text = ""
+                  try:
+                      with open("/tmp/work_source_snap.txt") as _f:
+                          source = _f.read()
+                  except FileNotFoundError:
+                      source = ""
+
+                  system = textwrap.dedent(f"""
+                      You are a senior Rust engineer implementing a batch of TODO items for '{repo_name}'.
+
+                      You must return a SINGLE JSON object with these keys:
+
+                      {{
+                        "branch_description": "<what this PR does in 1-2 sentences>",
+                        "pr_title":           "<concise PR title>",
+                        "pr_body":            "<full PR description markdown>",
+                        "file_changes": [{{
+                          "path":      "<relative file path>",
+                          "action":    "modify|create|delete",
+                          "content":   "<FULL new file content for modify/create, empty for delete>"
+                        }}],
+                        "todo_updates": [{{
+                          "item":   "<original todo item text, verbatim>",
+                          "status": "completed|partial|blocked",
+                          "note":   "<brief note on what was done or why it is partial/blocked>"
+                        }}],
+                        "summary":       "<what was implemented>",
+                        "risks":         ["<risk>", ...],
+                        "follow_up":     ["<follow-up item>", ...]
+                      }}
+
+                      Rules:
+                      - For file_changes, always provide the COMPLETE file content for modify/create.
+                        Never provide diffs or partial snippets — the full file will be written verbatim.
+                      - Mark todo items as:
+                          completed : fully implemented and tested
+                          partial   : partially done, note what remains
+                          blocked   : cannot proceed, note why
+                      - If you cannot safely implement a change, mark it partial/blocked and explain.
+                      - No prose outside the JSON object.
+                  """).strip()
+
+                  user = textwrap.dedent(f"""
+                      ## Batch to implement
+                      ```json
+                      {json.dumps(batch, indent=2)}
+                      ```
+
+                      ## Current todo.md
+                      ```markdown
+                      {todo_text[:3000]}
+                      ```
+
+                      ## Repository source (subset)
+                      {source[:60000]}
+                  """).strip()
+
+                  try:
+                      r = requests.post(
+                          "https://api.x.ai/v1/chat/completions",
+                          headers={"Authorization": f"Bearer {xai_key}",
+                                   "Content-Type": "application/json"},
+                          json={"model": "grok-3", "messages": [
+                              {"role": "system", "content": system},
+                              {"role": "user",   "content": user}
+                          ], "max_tokens": 16384, "temperature": 0.2},
+                          timeout=600
+                      )
+                      r.raise_for_status()
+                      raw = r.json()["choices"][0]["message"]["content"].strip()
+                      if raw.startswith("```"):
+                          raw = "\n".join(raw.split("\n")[1:])
+                          if raw.endswith("```"):
+                              raw = raw[:-3]
+                      result = json.loads(raw.strip())
+                  except Exception as e:
+                      result = {
+                          "branch_description": f"Implementation failed: {e}",
+                          "pr_title":    f"[WIP] Batch {batch.get('batch_number')}: {batch.get('title','')}",
+                          "pr_body":     f"Implementation failed: {e}",
+                          "file_changes": [],
+                          "todo_updates": [{"item": item, "status": "blocked",
+                                            "note": f"API error: {e}"}
+                                           for item in batch.get("items", [])],
+                          "summary":   f"Failed: {e}",
+                          "risks":     [],
+                          "follow_up": []
+                      }
+
+                  os.makedirs("audit-workspace", exist_ok=True)
+                  with open("audit-workspace/work-result.json", "w") as f:
+                      json.dump(result, f, indent=2)
+
+                  print(f"file_changes={len(result.get('file_changes', []))}")
+                  print(f"todo_updates={len(result.get('todo_updates', []))}")
+                  PYEOF
+
+                  XAI_API_KEY="$XAI_API_KEY" \
+                  REPO_NAME="$TARGET" \
+                  python3 audit-workspace/todo_work.py | tee /tmp/work_output.txt || true
+
+                  FILE_CHANGES=$(grep "file_changes=" /tmp/work_output.txt | cut -d= -f2 || echo "0")
+                  TODO_UPDATES=$(grep "todo_updates="  /tmp/work_output.txt | cut -d= -f2 || echo "0")
+
+                  echo "| File changes | $FILE_CHANGES |"  >> $GITHUB_STEP_SUMMARY
+                  echo "| TODO updates | $TODO_UPDATES |"  >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+
+                  # ── Create branch and apply file changes ─────────────────
+                  cd "$REPO"
+                  git config user.name  "github-actions[bot]"
+                  git config user.email "github-actions[bot]@users.noreply.github.com"
+                  git checkout -b "$BRANCH_NAME"
+
+                  # Apply file changes from Grok's result
+                  python3 - << PYEOF
+                  import json, os, pathlib
+
+                  with open("../audit-workspace/work-result.json") as f:
+                      result = json.load(f)
+
+                  repo_root = os.getcwd()
+
+                  for change in result.get("file_changes", []):
+                      path    = change.get("path", "").lstrip("/")
+                      action  = change.get("action", "modify")
+                      content = change.get("content", "")
+
+                      if not path:
+                          continue
+
+                      abs_path = os.path.join(repo_root, path)
+
+                      if action == "delete":
+                          if os.path.exists(abs_path):
+                              os.remove(abs_path)
+                              print(f"  deleted: {path}")
+                      else:
+                          pathlib.Path(abs_path).parent.mkdir(parents=True, exist_ok=True)
+                          with open(abs_path, "w") as fh:
+                              fh.write(content)
+                          print(f"  {'created' if action == 'create' else 'modified'}: {path}")
+                  PYEOF
+
+                  # ── Update todo.md with progress ─────────────────────────
+                  cd "$GITHUB_WORKSPACE"
+                  python3 - << PYEOF
+                  import json, re, os
+
+                  result_path = "audit-workspace/work-result.json"
+                  with open(result_path) as f:
+                      result = json.load(f)
+
+                  todo_path = "$TODO_FILE"
+                  if not os.path.exists(todo_path):
+                      print("No todo.md to update")
+                      exit(0)
+
+                  with open(todo_path) as f:
+                      content = f.read()
+
+                  batch_num   = $BATCH_NUM
+                  run_url     = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  branch_name = "$BRANCH_NAME"
+
+                  for update in result.get("todo_updates", []):
+                      item   = update.get("item", "").strip()
+                      status = update.get("status", "partial")
+                      note   = update.get("note", "").strip()
+
+                      if not item:
+                          continue
+
+                      emoji = {"completed": "✅", "partial": "⚠️", "blocked": "❌"}.get(status, "⚠️")
+                      annotation = f" {emoji} *[Batch {batch_num}: {status}*"
+                      if note:
+                          annotation += f" — {note}"
+                      annotation += f" — [PR branch]({branch_name})]*"
+
+                      # Try to find and annotate the line
+                      escaped = re.escape(item[:60])
+                      new_content, n = re.subn(
+                          rf'({escaped}[^\n]*)',
+                          rf'\1{annotation}',
+                          content,
+                          count=1
+                      )
+                      if n > 0:
+                          content = new_content
+
+                  # Append a run summary section at the bottom
+                  run_section = f"""
+                  ---
+                  ## Batch {batch_num} — {result.get("summary", "")}
+                  *Run: [{run_url}]({run_url})*
+
+                  """
+                  for update in result.get("todo_updates", []):
+                      emoji = {"completed": "✅", "partial": "⚠️", "blocked": "❌"}.get(
+                          update.get("status","partial"), "⚠️")
+                      run_section += f"- {emoji} `{update.get('item','')[:80]}` — {update.get('note','')}\n"
+
+                  if result.get("follow_up"):
+                      run_section += "\n### Follow-up\n"
+                      for item in result["follow_up"]:
+                          run_section += f"- {item}\n"
+
+                  content += run_section
+
+                  with open(todo_path, "w") as f:
+                      f.write(content)
+
+                  print("todo.md updated")
+                  PYEOF
+
+                  # ── Update .rustassistant cache state ─────────────────────
+                  python3 - << PYEOF
+                  import json, os, datetime
+
+                  with open("audit-workspace/work-result.json") as f:
+                      result = json.load(f)
+
+                  cache_path  = "$CACHE/cache.json"
+                  batch_state = {
+                      "batch_number":  $BATCH_NUM,
+                      "title":         "$BATCH_TITLE",
+                      "branch":        "$BRANCH_NAME",
+                      "status":        "completed" if all(
+                                           u.get("status") == "completed"
+                                           for u in result.get("todo_updates", [{}])
+                                       ) else "partial",
+                      "completed_at":  datetime.datetime.utcnow().isoformat() + "Z",
+                      "run_id":        "${{ github.run_id }}",
+                      "run_number":    ${{ github.run_number }},
+                      "file_changes":  len(result.get("file_changes", [])),
+                      "todo_updates":  result.get("todo_updates", []),
+                      "summary":       result.get("summary", ""),
+                      "risks":         result.get("risks", []),
+                      "follow_up":     result.get("follow_up", [])
+                  }
+
+                  # Save per-batch state file
+                  os.makedirs("$CACHE/batches", exist_ok=True)
+                  with open(f"$CACHE/batches/batch-{$BATCH_NUM}.json", "w") as f:
+                      json.dump(batch_state, f, indent=2)
+
+                  # Update main cache
+                  try:
+                      with open(cache_path) as f:
+                          cache = json.load(f)
+                  except Exception:
+                      cache = {}
+
+                  cache.setdefault("completed_batches", [])
+                  cache.setdefault("active_batches", [])
+                  if $BATCH_NUM not in cache["completed_batches"]:
+                      cache["completed_batches"].append($BATCH_NUM)
+                  cache["active_batches"] = [b for b in cache["active_batches"] if b != $BATCH_NUM]
+                  cache["last_batch_run"] = batch_state
+
+                  with open(cache_path, "w") as f:
+                      json.dump(cache, f, indent=2)
+
+                  print("cache updated")
+                  PYEOF
+
+                  # ── Commit everything (code changes + todo.md + cache) ────
+                  cd "$REPO"
+                  git add -A
+                  COMMIT_MSG="🤖 Batch $BATCH_NUM: $BATCH_TITLE [skip ci]"
+                  git commit -m "$COMMIT_MSG" || echo "Nothing to commit"
+
+                  # ── Push branch ───────────────────────────────────────────
+                  if [ "$DRY_RUN" = "true" ]; then
+                      echo "⚠️ Dry-run mode — skipping push and PR creation" >> $GITHUB_STEP_SUMMARY
+                      echo "batch_num=$BATCH_NUM"     >> $GITHUB_OUTPUT
+                      echo "branch=$BRANCH_NAME"       >> $GITHUB_OUTPUT
+                      echo "pr_created=false"          >> $GITHUB_OUTPUT
+                      exit 0
+                  fi
+
+                  git push origin "$BRANCH_NAME" || {
+                      echo "::error::Failed to push branch $BRANCH_NAME"
+                      exit 1
+                  }
+
+                  # ── Open Pull Request via GitHub API (pure Python — avoids shell escaping) ──
+                  cat > audit-workspace/create_pr.py << 'PYEOF'
+                  import os, json, requests
+
+                  gh_pat      = os.environ["GH_PAT"]
+                  target      = os.environ["TARGET_REPO"]
+                  branch_name = os.environ["BRANCH_NAME"]
+                  base_branch = os.environ["BASE_BRANCH"]
+                  batch_num   = int(os.environ["BATCH_NUM"])
+                  batch_title = os.environ["BATCH_TITLE"]
+                  run_url     = os.environ["RUN_URL"]
+
+                  with open("audit-workspace/work-result.json") as f:
+                      result = json.load(f)
+                  with open("audit-workspace/current-batch.json") as f:
+                      batch = json.load(f)
+
+                  pr_title = result.get("pr_title") or f"🤖 Batch {batch_num}: {batch_title}"
+
+                  body  = result.get("pr_body", "")
+                  body += "\n\n---\n"
+                  body += f"**Batch:** {batch.get('batch_number')} — {batch.get('title','')}\n"
+                  body += f"**Estimated effort:** {batch.get('estimated_effort','')}\n"
+                  body += f"**Priority:** {batch.get('priority','')}\n\n"
+                  body += "### TODO Item Status\n\n"
+                  for u in result.get("todo_updates", []):
+                      emoji = {"completed": "✅", "partial": "⚠️", "blocked": "❌"}.get(u.get("status","partial"), "⚠️")
+                      body += f"{emoji} `{u.get('item','')[:100]}` — {u.get('note','')}\n"
+                  body += "\n### Risks\n"
+                  for r in result.get("risks", []):
+                      body += f"- {r}\n"
+                  body += "\n### Follow-up\n"
+                  for f2 in result.get("follow_up", []):
+                      body += f"- {f2}\n"
+                  body += f"\n---\n*Generated by [RustAssistant]({run_url})*\n"
+
+                  resp = requests.post(
+                      f"https://api.github.com/repos/{target}/pulls",
+                      headers={
+                          "Authorization": f"token {gh_pat}",
+                          "Accept": "application/vnd.github+json",
+                      },
+                      json={
+                          "title": pr_title,
+                          "body":  body,
+                          "head":  branch_name,
+                          "base":  base_branch,
+                          "draft": False,
+                      },
+                      timeout=60,
+                  )
+
+                  if resp.status_code >= 400:
+                      err_msg = resp.json().get("message", resp.text[:200])
+                      print(f"pr_error={resp.status_code}: {err_msg}")
+                      print("pr_number=?")
+                      print("pr_url=")
+                      print(f"pr_title={pr_title}")
+                  else:
+                      pr_number = resp.json().get("number", "?")
+                      pr_url    = resp.json().get("html_url", "")
+                      print(f"pr_number={pr_number}")
+                      print(f"pr_url={pr_url}")
+                      print(f"pr_title={pr_title}")
+                  PYEOF
+
+                  cd "$GITHUB_WORKSPACE"
+                  GH_PAT="$GH_PAT" \
+                  TARGET_REPO="$TARGET" \
+                  BRANCH_NAME="$BRANCH_NAME" \
+                  BASE_BRANCH="$BASE_BRANCH" \
+                  BATCH_NUM="$BATCH_NUM" \
+                  BATCH_TITLE="$BATCH_TITLE" \
+                  RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+                  python3 audit-workspace/create_pr.py | tee /tmp/pr_output.txt || true
+
+                  PR_NUMBER=$(grep "^pr_number=" /tmp/pr_output.txt | cut -d= -f2 || echo "?")
+                  PR_URL=$(grep    "^pr_url="    /tmp/pr_output.txt | cut -d= -f2- || echo "")
+                  PR_TITLE=$(grep  "^pr_title="  /tmp/pr_output.txt | cut -d= -f2 || echo "🤖 Batch $BATCH_NUM: $BATCH_TITLE")
+
+                  # Update cache with PR number
+                  python3 - << PYEOF
+                  import json
+                  cache_path = "$CACHE/cache.json"
+                  with open(cache_path) as f:
+                      cache = json.load(f)
+                  if cache.get("last_batch_run"):
+                      cache["last_batch_run"]["pr_number"] = "$PR_NUMBER"
+                      cache["last_batch_run"]["pr_url"]    = "$PR_URL"
+                  batch_file = "$CACHE/batches/batch-$BATCH_NUM.json"
+                  with open(batch_file) as f:
+                      bd = json.load(f)
+                  bd["pr_number"] = "$PR_NUMBER"
+                  bd["pr_url"]    = "$PR_URL"
+                  with open(batch_file, "w") as f:
+                      json.dump(bd, f, indent=2)
+                  with open(cache_path, "w") as f:
+                      json.dump(cache, f, indent=2)
+                  PYEOF
+
+                  echo "batch_num=$BATCH_NUM"     >> $GITHUB_OUTPUT
+                  echo "branch=$BRANCH_NAME"       >> $GITHUB_OUTPUT
+                  echo "pr_number=$PR_NUMBER"       >> $GITHUB_OUTPUT
+                  echo "pr_url=$PR_URL"             >> $GITHUB_OUTPUT
+                  echo "pr_created=true"            >> $GITHUB_OUTPUT
+
+                  echo "### 🔀 Pull Request" >> $GITHUB_STEP_SUMMARY
+                  echo "- PR #$PR_NUMBER: [$PR_TITLE]($PR_URL)" >> $GITHUB_STEP_SUMMARY
+                  echo "- Branch: \`$BRANCH_NAME\`"              >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  cd "$GITHUB_WORKSPACE"
+
+            # ================================================================
+            # 7-E  TODO-REVIEW — holistic post-execution review
+            #       Reads cache batch states + updated todo.md
+            #       Asks Grok for a synthesis and next-steps report
+            # ================================================================
+            - name: 🔎 TODO-Review — post-execution review
+              if: inputs.audit_mode == 'todo-review'
+              id: todo_review
+              env:
+                  XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+                  GH_PAT: ${{ secrets.GH_PAT }}
+              run: |
+                  echo "## 🔎 TODO Post-Review" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+
+                  REPO="${{ env.REPO_DIR }}"
+                  CACHE="${{ env.CACHE_DIR }}"
+                  TARGET="${{ inputs.target_repo }}"
+
+                  # ── Gather all batch state files → temp file as JSON array ─
+                  python3 - << BSEOF
+                  import json, glob, os
+                  batches = []
+                  for f in sorted(glob.glob("$CACHE/batches/batch-*.json")):
+                      try:
+                          batches.append(json.load(open(f)))
+                      except Exception:
+                          pass
+                  json.dump(batches, open("/tmp/review_batch_states.json", "w"), indent=2)
+                  BSEOF
+
+                  # ── Read current todo.md → temp file ──────────────────────
+                  TODO_FILE="$REPO/todo.md"
+                  [ ! -f "$TODO_FILE" ] && \
+                      TODO_FILE=$(find "$REPO" -maxdepth 2 -iname "todo.md" | head -1 || true)
+                  if [ -f "$TODO_FILE" ]; then
+                      cat "$TODO_FILE" > /tmp/review_todo_content.txt
+                  else
+                      : > /tmp/review_todo_content.txt
+                  fi
+
+                  # ── Fetch open PRs from GitHub API → temp file ────────────
+                  curl -s \
+                      -H "Authorization: token $GH_PAT" \
+                      -H "Accept: application/vnd.github+json" \
+                      "https://api.github.com/repos/$TARGET/pulls?state=open&per_page=20" \
+                      > /tmp/review_open_prs.json 2>/dev/null || echo "[]" > /tmp/review_open_prs.json
+
+                  # ── Cache JSON → temp file ────────────────────────────────
+                  cp "$CACHE/cache.json" /tmp/review_cache.json 2>/dev/null || echo "{}" > /tmp/review_cache.json
+
+                  cat > audit-workspace/todo_review.py << 'PYEOF'
+                  import os, json, requests, textwrap
+
+                  xai_key   = os.environ["XAI_API_KEY"]
+                  repo_name = os.environ["REPO_NAME"]
+
+                  with open("/tmp/review_todo_content.txt") as _f:
+                      todo_text = _f.read()
+                  with open("/tmp/review_batch_states.json") as _f:
+                      batch_states_list = json.load(_f)
+                  batch_states = json.dumps(batch_states_list, indent=2)
+                  try:
+                      with open("/tmp/review_open_prs.json") as _f:
+                          open_prs = json.load(_f)
+                  except Exception:
+                      open_prs = []
+                  try:
+                      with open("/tmp/review_cache.json") as _f:
+                          cache = json.load(_f)
+                  except Exception:
+                      cache = {}
+
+                  # Summarise open PRs
+                  pr_summary = []
+                  for pr in open_prs:
+                      if "rustassistant/batch" in pr.get("head", {}).get("ref", ""):
+                          pr_summary.append({
+                              "number": pr.get("number"),
+                              "title":  pr.get("title"),
+                              "branch": pr.get("head", {}).get("ref"),
+                              "url":    pr.get("html_url")
+                          })
+
+                  system = textwrap.dedent(f"""
+                      You are a senior engineering lead performing a post-execution review for '{repo_name}'.
+                      You have been given:
+                        - The current state of todo.md (with completion annotations)
+                        - The batch execution state from the cache
+                        - Open pull requests from the rustassistant workflow
+                        - The overall cache metadata
+
+                      Return a SINGLE JSON object:
+                      {{
+                        "overall_progress": "<paragraph: how much has been done>",
+                        "completion_percentage": <0-100>,
+                        "completed_items":  ["<item>", ...],
+                        "partial_items":    [{{"item": "<text>", "note": "<what remains>"}}],
+                        "blocked_items":    [{{"item": "<text>", "reason": "<why blocked>"}}],
+                        "pending_items":    ["<item not yet started>", ...],
+                        "pr_review": [{{"pr": "#N", "assessment": "<is it safe to merge?>", "concerns": ["<concern>"]}}],
+                        "recommended_next_batches": ["<what to tackle next and why>"],
+                        "quality_assessment": "<assessment of work quality so far>",
+                        "risks": ["<risk>", ...],
+                        "report_markdown": "<full review report in markdown>"
+                      }}
+                      No prose outside the JSON object.
+                  """).strip()
+
+                  user = textwrap.dedent(f"""
+                      ## Current todo.md
+                      ```markdown
+                      {todo_text[:4000]}
+                      ```
+
+                      ## Batch execution states
+                      ```json
+                      {batch_states[:3000]}
+                      ```
+
+                      ## Open rustassistant PRs
+                      ```json
+                      {json.dumps(pr_summary, indent=2)}
+                      ```
+
+                      ## Cache summary
+                      ```json
+                      {json.dumps({{
+                          "completed_batches": cache.get("completed_batches", []),
+                          "active_batches":    cache.get("active_batches", []),
+                          "failed_batches":    cache.get("failed_batches", [])
+                      }}, indent=2)}
+                      ```
+                  """).strip()
+
+                  try:
+                      r = requests.post(
+                          "https://api.x.ai/v1/chat/completions",
+                          headers={"Authorization": f"Bearer {xai_key}",
+                                   "Content-Type": "application/json"},
+                          json={"model": "grok-3", "messages": [
+                              {"role": "system", "content": system},
+                              {"role": "user",   "content": user}
+                          ], "max_tokens": 8192, "temperature": 0.2},
+                          timeout=300
+                      )
+                      r.raise_for_status()
+                      raw = r.json()["choices"][0]["message"]["content"].strip()
+                      if raw.startswith("```"):
+                          raw = "\n".join(raw.split("\n")[1:])
+                          if raw.endswith("```"):
+                              raw = raw[:-3]
+                      data = json.loads(raw.strip())
+                  except Exception as e:
+                      data = {
+                          "overall_progress": f"Review failed: {e}",
+                          "completion_percentage": 0,
+                          "completed_items": [], "partial_items": [],
+                          "blocked_items": [], "pending_items": [],
+                          "pr_review": [], "recommended_next_batches": [],
+                          "quality_assessment": "N/A", "risks": [],
+                          "report_markdown": f"# Post-Review\n\nFailed: {e}\n"
+                      }
+
+                  os.makedirs("audit-workspace", exist_ok=True)
+                  with open("audit-workspace/todo-review.json", "w") as f:
+                      json.dump(data, f, indent=2)
+                  with open("audit-workspace/TODO_REVIEW_REPORT.md", "w") as f:
+                      f.write(data.get("report_markdown", "# No report generated\n"))
+
+                  print(f"completion_pct={data.get('completion_percentage', 0)}")
+                  print(f"completed={len(data.get('completed_items', []))}")
+                  print(f"pending={len(data.get('pending_items', []))}")
+                  PYEOF
+
+                  XAI_API_KEY="$XAI_API_KEY" \
+                  REPO_NAME="$TARGET" \
+                  python3 audit-workspace/todo_review.py | tee /tmp/review_output.txt || true
+
+                  PCT=$(grep "completion_pct=" /tmp/review_output.txt | cut -d= -f2 || echo "?")
+                  DONE=$(grep "completed="     /tmp/review_output.txt | cut -d= -f2 || echo "?")
+                  PEND=$(grep "pending="       /tmp/review_output.txt | cut -d= -f2 || echo "?")
+
+                  echo "| Completion | ${PCT}% |" >> $GITHUB_STEP_SUMMARY
+                  echo "| Completed  | $DONE   |" >> $GITHUB_STEP_SUMMARY
+                  echo "| Pending    | $PEND   |" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+
+            # ================================================================
+            # 8. Generate Markdown reports
+            # ================================================================
+            - name: 📄 Generate reports
+              run: |
+                  mkdir -p audit-workspace/reports
+
+                  MODE="${{ inputs.audit_mode }}"
+                  RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  DATE=$(date -u +"%Y-%m-%d %H:%M UTC")
+
+                  PROVIDER_DISPLAY="${{ inputs.llm_provider }}"
+                  if [[ "$MODE" == todo-* ]]; then
+                      PROVIDER_DISPLAY="Grok 3 (xAI)"
+                  else
+                      case "$PROVIDER_DISPLAY" in
+                          claude-opus)   PROVIDER_DISPLAY="Claude Opus 4 (Anthropic)" ;;
+                          claude-sonnet) PROVIDER_DISPLAY="Claude Sonnet 4 (Anthropic)" ;;
+                          anthropic)     PROVIDER_DISPLAY="Claude Opus 4 (Anthropic)" ;;
+                          xai)           PROVIDER_DISPLAY="Grok 3 (xAI)" ;;
+                          google)        PROVIDER_DISPLAY="Gemini 1.5 Pro (Google)" ;;
+                      esac
+                  fi
+
+                  REPORT_FILE=""
+                  case "$MODE" in
+                      todo-analyze) REPORT_FILE="audit-workspace/reports/TODO_ANALYSIS_REPORT.md" ;;
+                      todo-plan)    REPORT_FILE="audit-workspace/reports/GAMEPLAN.md" ;;
+                      todo-work)    REPORT_FILE="audit-workspace/reports/BATCH_WORK_REPORT.md" ;;
+                      todo-review)  REPORT_FILE="audit-workspace/reports/TODO_REVIEW_REPORT.md" ;;
+                      *)            REPORT_FILE="audit-workspace/reports/LLM_AUDIT_REPORT.md" ;;
+                  esac
+
+                  # ── Common header ─────────────────────────────────────────
+                  cat > "$REPORT_FILE" << HEADER
+                  # 🤖 RustAssistant — $(echo "$MODE" | tr '-' ' ' | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) substr($i,2)} 1') Report
+
+                  > Auto-generated by [RustAssistant]($RUN_URL)
+
+                  | | |
+                  |---|---|
+                  | **Repository** | \`${{ inputs.target_repo }}\` |
+                  | **Branch** | \`${{ inputs.target_branch }}\` |
+                  | **Mode** | \`$MODE\` |
+                  | **Provider** | $PROVIDER_DISPLAY |
+                  | **Date** | $DATE |
+                  | **Run** | [#${{ github.run_number }}]($RUN_URL) |
+
+                  ---
+
+                  HEADER
+
+                  # ── Mode-specific body ─────────────────────────────────────
+                  python3 - << PYEOF
+                  import json, os
+
+                  mode        = "$MODE"
+                  report_file = "$REPORT_FILE"
+
+                  def append(text):
+                      with open(report_file, "a") as f:
+                          f.write(text)
+
+                  # ── todo-plan ────────────────────────────────────────────
+                  if mode == "todo-plan":
+                      gp = "audit-workspace/GAMEPLAN.md"
+                      if os.path.exists(gp):
+                          with open(gp) as f:
+                              # Skip any H1 in GAMEPLAN.md to avoid double header
+                              lines = f.readlines()
+                              start = next((i for i, l in enumerate(lines) if not l.startswith("# ")), 0)
+                              append("".join(lines[start:]))
+                      else:
+                          append("_No gameplan generated._\n")
+
+                  # ── todo-analyze ─────────────────────────────────────────
+                  elif mode == "todo-analyze":
+                      src = "audit-workspace/todo-analysis-report.json"
+                      if not os.path.exists(src):
+                          append("_No analysis report generated._\n")
+                      else:
+                          with open(src) as f:
+                              data = json.load(f)
+                          ss = data.get("scan_summary", {})
+                          append("## 📊 Scan Summary\n\n")
+                          append(f"| Metric | Value |\n|--------|-------|\n")
+                          append(f"| Total TODOs    | {ss.get('total', 0)} |\n")
+                          append(f"| 🔴 High        | {ss.get('high_priority', 0)} |\n")
+                          append(f"| 🟡 Medium      | {ss.get('medium_priority', 0)} |\n")
+                          append(f"| 🟢 Low         | {ss.get('low_priority', 0)} |\n")
+                          append(f"| Analysed       | {data.get('analyzed_count', 0)} |\n\n---\n\n")
+                          append("## 🎯 High-Priority TODOs\n\n")
+                          for r in sorted(data.get("results", []),
+                                          key=lambda x: x.get("suggested_priority","") != "High"):
+                              if r.get("priority") != "High" and \
+                                 r.get("suggested_priority","").lower() != "high":
+                                  continue
+                              append(f"### `{r['file']}:{r['line']}`\n\n")
+                              append(f"**TODO:** {r['text']}\n\n")
+                              append(f"**Interpretation:** {r.get('interpretation','')}\n\n")
+                              append(f"**Effort:** {r.get('estimated_effort','?')}  "
+                                     f"**Risk:** {r.get('risk_level','?')}  "
+                                     f"**Confidence:** {r.get('confidence',0)}\n\n")
+                              plan = r.get("implementation_plan","")
+                              if plan:
+                                  append(f"**Plan:**\n\n{plan}\n\n")
+                              append("---\n\n")
+                          append("## 📋 All TODOs\n\n")
+                          for r in data.get("results", []):
+                              prio = r.get("priority","?")
+                              emoji = {"High":"🔴","Medium":"🟡","Low":"🟢"}.get(prio,"⚪")
+                              append(f"- {emoji} `{r['file']}:{r['line']}` {r['text']}\n")
+                          errs = data.get("errors", [])
+                          if errs:
+                              append("\n---\n\n## ⚠️ Errors\n\n")
+                              for e in errs:
+                                  append(f"- {e}\n")
+
+                  # ── todo-work ────────────────────────────────────────────
+                  elif mode == "todo-work":
+                      src = "audit-workspace/work-result.json"
+                      bat = "audit-workspace/current-batch.json"
+                      if not os.path.exists(src):
+                          append("_No work result generated._\n")
+                      else:
+                          with open(src) as f:
+                              result = json.load(f)
+                          with open(bat) as f:
+                              batch = json.load(f)
+                          append(f"## Batch {batch.get('batch_number')}: {batch.get('title','')}\n\n")
+                          append(f"**Priority:** {batch.get('priority','')}  "
+                                 f"**Effort:** {batch.get('estimated_effort','')}\n\n")
+                          append(f"### Summary\n\n{result.get('summary','')}\n\n---\n\n")
+                          append("### TODO Item Status\n\n")
+                          for u in result.get("todo_updates", []):
+                              emoji = {"completed":"✅","partial":"⚠️","blocked":"❌"}.get(
+                                  u.get("status","partial"),"⚠️")
+                              append(f"- {emoji} `{u.get('item','')[:100]}`\n"
+                                     f"  - Status: **{u.get('status','')}**\n"
+                                     f"  - Note: {u.get('note','')}\n\n")
+                          append("### File Changes\n\n")
+                          for fc in result.get("file_changes", []):
+                              append(f"- `{fc.get('action','?')}` `{fc.get('path','?')}`\n")
+                          append("\n### Risks\n\n")
+                          for r in result.get("risks", []):
+                              append(f"- {r}\n")
+                          append("\n### Follow-up\n\n")
+                          for fu in result.get("follow_up", []):
+                              append(f"- {fu}\n")
+
+                  # ── todo-review ──────────────────────────────────────────
+                  elif mode == "todo-review":
+                      src = "audit-workspace/TODO_REVIEW_REPORT.md"
+                      if os.path.exists(src):
+                          with open(src) as f:
+                              lines = f.readlines()
+                          # Skip H1 to avoid double header
+                          start = next((i for i, l in enumerate(lines) if not l.startswith("# ")), 0)
+                          append("".join(lines[start:]))
+                      else:
+                          append("_No review report generated._\n")
+
+                  # ── regular / full ───────────────────────────────────────
+                  else:
+                      src = "audit-workspace/llm-analysis.json"
+                      if not os.path.exists(src):
+                          append("_No analysis generated._\n")
+                      else:
+                          with open(src) as f:
+                              data = json.load(f)
+                          append(f"## 📋 Summary\n\n{data.get('summary','N/A')}\n\n")
+                          append(f"**Overall Health:** {data.get('overall_health',0)}/100\n\n---\n\n")
+                          if data.get("priority_actions"):
+                              append("## 🎯 Priority Actions\n\n")
+                              for a in data["priority_actions"]:
+                                  append(f"1. {a}\n")
+                              append("\n---\n\n")
+                          if data.get("findings"):
+                              append("## 🔍 Findings\n\n")
+                              sev_order = ["critical","high","medium","low"]
+                              for fd in sorted(data["findings"],
+                                               key=lambda x: sev_order.index(x.get("severity","low"))
+                                               if x.get("severity","low") in sev_order else 99):
+                                  sev = fd.get("severity","?").upper()
+                                  append(f"### {sev}: {fd.get('title','')}\n\n")
+                                  append(f"**Category:** {fd.get('category','')}\n\n")
+                                  append(f"{fd.get('description','')}\n\n")
+                                  append(f"**Recommendation:** {fd.get('recommendation','')}\n\n")
+                                  files = fd.get("files", [])
+                                  if files:
+                                      append(f"**Files:** {', '.join(files)}\n\n")
+                                  append("---\n\n")
+                          for section, header in [
+                              ("strengths",  "## ✅ Strengths\n\n"),
+                              ("weaknesses", "## ⚠️ Weaknesses\n\n"),
+                              ("tech_debt",  "## 📝 Technical Debt\n\n"),
+                              ("next_steps", "## ➡️ Next Steps\n\n"),
+                          ]:
+                              items = data.get(section, [])
+                              if items:
+                                  append(header)
+                                  for i, s in enumerate(items, 1):
+                                      prefix = f"{i}. " if section == "next_steps" else "- "
+                                      append(f"{prefix}{s}\n")
+                                  append("\n")
+
+                  append("\n---\n\n*Auto-generated — re-run for updated analysis.*\n")
+                  PYEOF
+
+                  echo "✅ Report written: $REPORT_FILE" >> $GITHUB_STEP_SUMMARY
+
+            # ================================================================
+            # 9. Commit reports + updated cache back to target repo
+            # ================================================================
+            - name: 💾 Commit results to target repo
+              if: inputs.commit_results == true && inputs.audit_mode != 'todo-work'
+              continue-on-error: true
+              env:
+                  GH_PAT: ${{ secrets.GH_PAT }}
+              run: |
+                  # todo-work already committed + pushed on its own branch — skip
+                  MODE="${{ inputs.audit_mode }}"
+                  REPO="${{ env.REPO_DIR }}"
+                  CACHE="${{ env.CACHE_DIR }}"
+
+                  cd "$REPO"
+                  git config user.name  "github-actions[bot]"
+                  git config user.email "github-actions[bot]@users.noreply.github.com"
+
+                  mkdir -p docs/audit
+
+                  # ── Copy report to target repo ─────────────────────────────
+                  case "$MODE" in
+                      todo-plan)
+                          cp ../audit-workspace/reports/GAMEPLAN.md   docs/audit/GAMEPLAN.md   || true
+                          cp ../audit-workspace/todo-plan.json         docs/audit/todo-plan.json || true
+                          ;;
+                      todo-analyze)
+                          cp ../audit-workspace/reports/TODO_ANALYSIS_REPORT.md \
+                             docs/audit/TODO_ANALYSIS_REPORT.md || true
+                          cp ../audit-workspace/todo-analysis-report.json \
+                             docs/audit/todo-analysis-report.json || true
+                          ;;
+                      todo-review)
+                          cp ../audit-workspace/reports/TODO_REVIEW_REPORT.md \
+                             docs/audit/TODO_REVIEW_REPORT.md || true
+                          cp ../audit-workspace/todo-review.json \
+                             docs/audit/todo-review.json || true
+                          ;;
+                      *)
+                          cp ../audit-workspace/reports/LLM_AUDIT_REPORT.md \
+                             docs/audit/LLM_AUDIT_REPORT.md || true
+                          cp ../audit-workspace/llm-analysis.json \
+                             docs/audit/llm-analysis.json || true
+                          ;;
+                  esac
+
+                  # ── Always update .rustassistant cache ────────────────────
+                  git add docs/audit/ 2>/dev/null || true
+                  git add -f .rustassistant/ 2>/dev/null || true
+
+                  if git diff --staged --quiet; then
+                      echo "ℹ️ No changes to commit"
+                      exit 0
+                  fi
+
+                  PROVIDER_TAG="${{ inputs.llm_provider }}"
+                  [[ "$MODE" == todo-* ]] && PROVIDER_TAG="xai"
+
+                  git commit -m "🤖 $MODE report + cache update ($PROVIDER_TAG) [skip ci]"
+
+                  # Push with retry + rebase
+                  MAX_RETRIES=3
+                  RETRY=0
+                  PUSH_OK=false
+                  while [ "$RETRY" -lt "$MAX_RETRIES" ]; do
+                      if git push 2>/dev/null; then
+                          PUSH_OK=true
+                          echo "✅ Pushed to ${{ inputs.target_repo }}"
+                          break
+                      fi
+                      RETRY=$((RETRY + 1))
+                      echo "⚠️ Push attempt $RETRY/$MAX_RETRIES failed — rebasing..."
+                      git pull --rebase --autostash origin "${{ inputs.target_branch }}" || {
+                          git rebase --abort 2>/dev/null || true
+                          break
+                      }
+                      sleep 2
+                  done
+
+                  if [ "$PUSH_OK" = "false" ]; then
+                      echo "::warning::Push failed after $MAX_RETRIES retries — results in artifacts."
+                  fi
+
+            # ================================================================
+            # 10. Upload artifacts
+            # ================================================================
+            - name: 📦 Upload artifacts
+              uses: actions/upload-artifact@v4
+              if: always()
+              with:
+                  name: >-
+                      rustassistant-${{ inputs.audit_mode }}-${{
+                        (inputs.audit_mode == 'todo-analyze' ||
+                         inputs.audit_mode == 'todo-plan'    ||
+                         inputs.audit_mode == 'todo-work'    ||
+                         inputs.audit_mode == 'todo-review') && 'xai' || inputs.llm_provider
+                      }}-run${{ github.run_number }}
+                  path: |
+                      audit-workspace/reports/
+                      audit-workspace/llm-analysis.json
+                      audit-workspace/todo-analysis-report.json
+                      audit-workspace/todo-plan.json
+                      audit-workspace/GAMEPLAN.md
+                      audit-workspace/work-result.json
+                      audit-workspace/current-batch.json
+                      audit-workspace/todo-review.json
+                      audit-workspace/TODO_REVIEW_REPORT.md
+                      audit-workspace/raw-todos.txt
+                      audit-workspace/file-list.txt
+                      audit-workspace/tree.txt
+                  retention-days: 30
+                  include-hidden-files: false
+
+            # ================================================================
+            # 11. Summary
+            # ================================================================
+            - name: ✅ Summary
+              if: always()
+              run: |
+                  MODE="${{ inputs.audit_mode }}"
+                  RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+                  echo ""                                                    >> $GITHUB_STEP_SUMMARY
+                  echo "---"                                                 >> $GITHUB_STEP_SUMMARY
+                  echo ""                                                    >> $GITHUB_STEP_SUMMARY
+                  echo "## ✅ Complete"                                      >> $GITHUB_STEP_SUMMARY
+                  echo ""                                                    >> $GITHUB_STEP_SUMMARY
+                  echo "| | |"                                               >> $GITHUB_STEP_SUMMARY
+                  echo "|---|---|"                                           >> $GITHUB_STEP_SUMMARY
+                  echo "| **Repo**   | \`${{ inputs.target_repo }}\` |"     >> $GITHUB_STEP_SUMMARY
+                  echo "| **Branch** | \`${{ inputs.target_branch }}\` |"   >> $GITHUB_STEP_SUMMARY
+                  echo "| **Mode**   | \`$MODE\` |"                         >> $GITHUB_STEP_SUMMARY
+
+                  case "$MODE" in
+                      regular|full)
+                          HEALTH=$(python3 -c "import json; d=json.load(open('audit-workspace/llm-analysis.json')); print(d.get('overall_health',0))" 2>/dev/null || echo "?")
+                          echo "| **Health** | ${HEALTH}/100 |"             >> $GITHUB_STEP_SUMMARY
+                          echo "| **Report** | \`docs/audit/LLM_AUDIT_REPORT.md\` |" >> $GITHUB_STEP_SUMMARY
+                          ;;
+                      todo-analyze)
+                          TOTAL=$(python3 -c "import json; d=json.load(open('audit-workspace/todo-analysis-report.json')); print(d.get('total_todos_found',0))" 2>/dev/null || echo "?")
+                          DONE=$(python3 -c "import json; d=json.load(open('audit-workspace/todo-analysis-report.json')); print(d.get('analyzed_count',0))" 2>/dev/null || echo "?")
+                          echo "| **TODOs found**    | $TOTAL |"            >> $GITHUB_STEP_SUMMARY
+                          echo "| **TODOs analysed** | $DONE |"             >> $GITHUB_STEP_SUMMARY
+                          echo "| **Report** | \`docs/audit/TODO_ANALYSIS_REPORT.md\` |" >> $GITHUB_STEP_SUMMARY
+                          ;;
+                      todo-plan)
+                          BATCHES=$(python3 -c "import json; d=json.load(open('audit-workspace/todo-plan.json')); print(len(d.get('batches',[])))" 2>/dev/null || echo "?")
+                          ITEMS=$(python3 -c "import json; d=json.load(open('audit-workspace/todo-plan.json')); print(d.get('total_items',0))" 2>/dev/null || echo "?")
+                          echo "| **Items**   | $ITEMS |"                   >> $GITHUB_STEP_SUMMARY
+                          echo "| **Batches** | $BATCHES |"                 >> $GITHUB_STEP_SUMMARY
+                          echo "| **Report**  | \`docs/audit/GAMEPLAN.md\` |" >> $GITHUB_STEP_SUMMARY
+                          ;;
+                      todo-work)
+                          BATCH_NUM=$(python3 -c "import json; d=json.load(open('audit-workspace/current-batch.json')); print(d.get('batch_number','?'))" 2>/dev/null || echo "?")
+                          PR_URL=""
+                          if [ -f "${{ env.CACHE_DIR }}/batches/batch-${BATCH_NUM}.json" ]; then
+                              PR_URL=$(python3 -c "import json; d=json.load(open('${{ env.CACHE_DIR }}/batches/batch-${BATCH_NUM}.json')); print(d.get('pr_url',''))" 2>/dev/null || echo "")
+                              PR_NUM=$(python3 -c "import json; d=json.load(open('${{ env.CACHE_DIR }}/batches/batch-${BATCH_NUM}.json')); print(d.get('pr_number','?'))" 2>/dev/null || echo "?")
+                          fi
+                          echo "| **Batch executed** | #$BATCH_NUM |"      >> $GITHUB_STEP_SUMMARY
+                          [ -n "$PR_URL" ] && \
+                          echo "| **Pull Request**   | [#$PR_NUM]($PR_URL) |" >> $GITHUB_STEP_SUMMARY
+                          echo "| **Report** | \`docs/audit/BATCH_WORK_REPORT.md\` |" >> $GITHUB_STEP_SUMMARY
+                          ;;
+                      todo-review)
+                          PCT=$(python3 -c "import json; d=json.load(open('audit-workspace/todo-review.json')); print(d.get('completion_percentage',0))" 2>/dev/null || echo "?")
+                          echo "| **Completion** | ${PCT}% |"               >> $GITHUB_STEP_SUMMARY
+                          echo "| **Report** | \`docs/audit/TODO_REVIEW_REPORT.md\` |" >> $GITHUB_STEP_SUMMARY
+                          ;;
+                  esac
+
+                  echo ""                                                    >> $GITHUB_STEP_SUMMARY
+                  echo "- 📦 [Artifacts — run #${{ github.run_number }}]($RUN_URL)" >> $GITHUB_STEP_SUMMARY
+                  COMMIT_STATUS="${{ inputs.commit_results == true && 'enabled' || 'disabled' }}"
+                  echo "- 💾 Commit results: $COMMIT_STATUS"                >> $GITHUB_STEP_SUMMARY
+                  echo ""                                                    >> $GITHUB_STEP_SUMMARY
+                  echo "**Cache:** \`.rustassistant/\` updated in \`${{ inputs.target_repo }}\`" >> $GITHUB_STEP_SUMMARY
+                  echo ""                                                    >> $GITHUB_STEP_SUMMARY
+                  echo "### Recommended Next Step"                           >> $GITHUB_STEP_SUMMARY
+                  case "$MODE" in
+                      todo-plan)    echo "Run \`todo-work\` to execute batch 1." >> $GITHUB_STEP_SUMMARY ;;
+                      todo-work)    echo "Review the PR, merge it, then run \`todo-work\` for the next batch, or \`todo-review\` for a progress check." >> $GITHUB_STEP_SUMMARY ;;
+                      todo-review)  echo "Address blocked/partial items, merge approved PRs, then run the next \`todo-work\` batch." >> $GITHUB_STEP_SUMMARY ;;
+                      todo-analyze) echo "Run \`todo-plan\` to generate an implementation gameplan from these findings." >> $GITHUB_STEP_SUMMARY ;;
+                      *)            echo "Review the findings and run \`todo-plan\` if you want to start implementing." >> $GITHUB_STEP_SUMMARY ;;
+                  esac

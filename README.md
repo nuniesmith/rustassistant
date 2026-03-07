@@ -42,37 +42,56 @@ A production-ready Retrieval-Augmented Generation (RAG) system built in Rust, fe
 ### 1. Clone Repository
 
 ```bash
-git clone https://github.com/yourusername/rustassistant.git
+git clone https://github.com/nuniesmith/rustassistant.git
 cd rustassistant
 ```
 
-### 2. Start Services (Simple)
+### 2. Start Services (Simple — Docker Compose)
 
 ```bash
-# Start PostgreSQL and Redis
-docker-compose up -d
+# Copy env template and add your API keys
+cp config/env.example.txt .env
+# Edit .env → set XAI_API_KEY, GITHUB_TOKEN, etc.
 
-# Run migrations
-export DATABASE_URL=postgresql://rustassistant:changeme123@localhost:5432/rustassistant
+# Start rustassistant + Redis
+docker compose up -d
+
+# Verify
+docker compose ps
+curl http://localhost:3000/health
+```
+
+**Web UI + API available at:** `http://localhost:3000`
+
+> The basic compose stack runs the Axum server (API + Web UI on port 3000)
+> with a Redis sidecar for LLM response caching. SQLite is used for
+> persistence — no PostgreSQL required.
+
+### 2b. Start without Docker (local dev)
+
+```bash
+# Install dependencies
+cargo build --release
+
+# Run migrations (SQLite — created automatically)
+export DATABASE_URL=sqlite:./data/rustassistant.db
 cargo sqlx migrate run
 
 # Start server
 cargo run --bin rustassistant-server
 ```
 
-**API available at:** `http://localhost:8080`
-
 ### 3. Start Full Stack (Advanced)
 
 ```bash
-# Start all services: PostgreSQL, Redis, Jaeger, Grafana, Prometheus, etc.
-docker-compose -f docker-compose.advanced.yml up -d
+# Start all services: Redis, Jaeger, Grafana, Prometheus, etc.
+docker compose -f docker-compose.advanced.yml up -d
 
 # Access services:
-# - API: http://localhost:8080
-# - Admin Dashboard: http://localhost:8080/admin
+# - Web UI + API: http://localhost:3000
+# - Admin Dashboard: http://localhost:3000/admin
 # - Jaeger UI: http://localhost:16686
-# - Grafana: http://localhost:3000
+# - Grafana: http://localhost:3001
 ```
 
 See **[Quick Start Guide](docs/guides/QUICK_START.md)** for detailed setup.
