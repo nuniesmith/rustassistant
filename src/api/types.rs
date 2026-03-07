@@ -156,8 +156,10 @@ pub struct DocumentResponse {
 /// List documents query parameters
 #[derive(Debug, Clone, Deserialize)]
 pub struct ListDocumentsQuery {
-    #[serde(flatten)]
-    pub pagination: PaginationQuery,
+    #[serde(default = "default_page")]
+    pub page: u32,
+    #[serde(default = "default_limit")]
+    pub limit: u32,
     pub doc_type: Option<String>,
     pub repo_id: Option<i64>,
     pub indexed_only: Option<bool>,

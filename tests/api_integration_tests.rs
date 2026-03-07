@@ -45,8 +45,17 @@ async fn create_test_server(pool: SqlitePool, api_key: String) -> String {
     use std::net::TcpListener;
     use tokio::net::TcpListener as TokioTcpListener;
 
-    let config = ApiConfig::development().with_api_key(api_key);
-    let app = config.build_router(pool).await;
+    // Use strict rate limit (20 req/min) so 150 rapid requests will be throttled.
+    // allow_anonymous_read so unauthenticated GETs to /health etc. return 200.
+    let config = ApiConfig::development()
+        .with_api_key(api_key)
+        .with_rate_limit(20, 60)
+        .allow_anonymous_read();
+    let api_router = config.build_router(pool).await;
+
+    // Nest under /api to match every test URL: "{base_url}/api/..."
+    use axum::Router;
+    let app = Router::new().nest("/api", api_router);
 
     // Find available port using a std listener, then drop it so tokio can bind
     let std_listener = TcpListener::bind("127.0.0.1:0").expect("Failed to bind");
@@ -59,7 +68,9 @@ async fn create_test_server(pool: SqlitePool, api_key: String) -> String {
         .expect("Failed to bind tokio listener");
 
     tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
+        axum::serve(listener, app.into_make_service())
+            .await
+            .unwrap();
     });
 
     // Give server time to start
@@ -104,7 +115,7 @@ async fn test_upload_document() {
     assert!(body.data.is_some());
 
     let data = body.data.unwrap();
-    assert!(data["id"].as_i64().is_some());
+    assert!(data["id"].as_str().is_some());
     assert_eq!(data["title"], "Test Document");
 }
 
@@ -176,7 +187,10 @@ async fn test_get_document_by_id() {
         .expect("Failed to upload");
 
     let upload_body: ApiResponse<Value> = upload_response.json().await.unwrap();
-    let doc_id = upload_body.data.unwrap()["id"].as_i64().unwrap();
+    let doc_id = upload_body.data.unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
 
     // Get document
     let response = client
@@ -219,7 +233,10 @@ async fn test_delete_document() {
         .expect("Failed to upload");
 
     let upload_body: ApiResponse<Value> = upload_response.json().await.unwrap();
-    let doc_id = upload_body.data.unwrap()["id"].as_i64().unwrap();
+    let doc_id = upload_body.data.unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
 
     // Delete document
     let response = client
@@ -292,6 +309,7 @@ async fn test_search_documents() {
 
     let response = client
         .post(format!("{}/api/search", base_url))
+        .header("X-API-Key", &api_key)
         .json(&search_req)
         .send()
         .await
@@ -447,7 +465,10 @@ async fn test_index_job_lifecycle() {
         .expect("Failed to upload");
 
     let upload_body: ApiResponse<Value> = upload_response.json().await.unwrap();
-    let doc_id = upload_body.data.as_ref().unwrap()["id"].as_i64().unwrap();
+    let doc_id = upload_body.data.as_ref().unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
 
     // Trigger indexing
     let index_req = serde_json::json!({

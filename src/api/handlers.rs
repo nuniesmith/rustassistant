@@ -185,11 +185,15 @@ pub async fn upload_document(
     // Insert document
     let doc_id = uuid::Uuid::new_v4().to_string();
     let tags_json = serde_json::to_string(&req.tags).unwrap_or_else(|_| "[]".to_string());
+    // req.doc_type carries content-type values like "markdown"/"text"/"code"/"html".
+    // The DB schema has a separate content_type column for this, while doc_type
+    // uses a different vocabulary (reference/research/tutorial/…).
+    let content_type = req.doc_type.clone();
 
     let result: Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> = sqlx::query!(
         r#"
         INSERT INTO documents (
-            id, title, content, doc_type, tags,
+            id, title, content, content_type, tags,
             repo_id, source_type, source_url
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -197,7 +201,7 @@ pub async fn upload_document(
         doc_id,
         req.title,
         req.content,
-        req.doc_type,
+        content_type,
         tags_json,
         req.repo_id,
         req.source_type,
@@ -307,23 +311,24 @@ pub async fn list_documents(
     State(state): State<Arc<ApiState>>,
     Query(params): Query<ListDocumentsQuery>,
 ) -> impl IntoResponse {
-    let limit = params.pagination.limit.min(100);
-    let _offset = (params.pagination.page.saturating_sub(1)) * limit;
+    let limit = params.limit.min(100) as i64;
+    let page = params.page.max(1) as i64;
+    let offset = (page - 1) * limit;
 
-    // Build WHERE clause
+    // Build dynamic WHERE clause
     let mut where_clauses = Vec::new();
-    let _bind_values: Vec<Box<dyn sqlx::Encode<'_, sqlx::Sqlite> + Send>> = Vec::new();
 
-    if let Some(_doc_type) = params.doc_type {
-        where_clauses.push("doc_type = ?");
+    if params.doc_type.is_some() {
+        where_clauses.push("content_type = ?");
     }
-
-    if let Some(_repo_id) = params.repo_id {
+    if params.repo_id.is_some() {
         where_clauses.push("repo_id = ?");
     }
-
     if params.indexed_only.unwrap_or(false) {
-        where_clauses.push("is_indexed = 1");
+        where_clauses.push("indexed_at IS NOT NULL");
+    }
+    if params.tag.is_some() {
+        where_clauses.push("tags LIKE ?");
     }
 
     let where_sql = if where_clauses.is_empty() {
@@ -332,20 +337,103 @@ pub async fn list_documents(
         format!("WHERE {}", where_clauses.join(" AND "))
     };
 
-    // Get total count
+    // Count total matching rows
     let count_query = format!("SELECT COUNT(*) FROM documents {}", where_sql);
-    let total: i64 = sqlx::query_scalar(&count_query)
-        .fetch_one(&state.db_pool)
-        .await
-        .unwrap_or(0);
+    let mut count_q = sqlx::query_scalar::<_, i64>(&count_query);
+    if let Some(ref dt) = params.doc_type {
+        count_q = count_q.bind(dt);
+    }
+    if let Some(ref rid) = params.repo_id {
+        count_q = count_q.bind(rid);
+    }
+    if let Some(ref tag) = params.tag {
+        count_q = count_q.bind(format!("%{}%", tag));
+    }
+    let total: i64 = count_q.fetch_one(&state.db_pool).await.unwrap_or(0);
 
-    // Get documents - simplified query without dynamic WHERE clause
-    let items: Vec<serde_json::Value> = vec![]; // Placeholder - implement with proper SQL
+    // Fetch paginated rows
+    let list_query = format!(
+        "SELECT id, title, content_type, tags, repo_id, source_type, source_url, \
+         indexed_at, created_at, updated_at \
+         FROM documents {} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        where_sql
+    );
+    let mut list_q = sqlx::query_as::<
+        _,
+        (
+            String,
+            String,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<i64>,
+            i64,
+            i64,
+        ),
+    >(&list_query);
+    if let Some(ref dt) = params.doc_type {
+        list_q = list_q.bind(dt);
+    }
+    if let Some(ref rid) = params.repo_id {
+        list_q = list_q.bind(rid);
+    }
+    if let Some(ref tag) = params.tag {
+        list_q = list_q.bind(format!("%{}%", tag));
+    }
+    list_q = list_q.bind(limit).bind(offset);
 
-    // TODO: Implement proper document listing with filters
-    // For now, return empty list to allow compilation
+    let rows = match list_q.fetch_all(&state.db_pool).await {
+        Ok(r) => r,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiResponse::<()>::error(format!(
+                    "Failed to list documents: {}",
+                    e
+                ))),
+            )
+                .into_response();
+        }
+    };
 
-    let response = PaginatedResponse::new(items, total as u32, params.pagination.page, limit);
+    let items: Vec<serde_json::Value> = rows
+        .into_iter()
+        .map(
+            |(
+                id,
+                title,
+                content_type,
+                tags,
+                repo_id,
+                source_type,
+                source_url,
+                indexed_at,
+                created_at,
+                updated_at,
+            )| {
+                let tags_vec: Vec<String> = tags
+                    .as_deref()
+                    .and_then(|t| serde_json::from_str(t).ok())
+                    .unwrap_or_default();
+                serde_json::json!({
+                    "id": id,
+                    "title": title,
+                    "doc_type": content_type.unwrap_or_default(),
+                    "tags": tags_vec,
+                    "repo_id": repo_id,
+                    "source_type": source_type,
+                    "source_url": source_url,
+                    "indexed": indexed_at.is_some(),
+                    "created_at": created_at,
+                    "updated_at": updated_at,
+                })
+            },
+        )
+        .collect();
+
+    let response = PaginatedResponse::new(items, total as u32, page as u32, limit as u32);
 
     Json(ApiResponse::success(response)).into_response()
 }
