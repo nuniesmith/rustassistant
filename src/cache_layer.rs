@@ -20,17 +20,17 @@
 //! let config = CacheConfig::default();
 //! let cache = CacheLayer::new(config).await?;
 //!
-//! // Set value
-//! cache.set("key", "value", Some(3600)).await?;
+//! // Set value (must be Serialize; use a String, not a &str literal)
+//! cache.set("key", &"value".to_string(), Some(3600)).await?;
 //!
 //! // Get value
 //! if let Some(value) = cache.get::<String>("key").await? {
 //!     println!("Cached value: {}", value);
 //! }
 //!
-//! // Get stats
-//! let stats = cache.stats();
-//! println!("Hit rate: {:.2}%", stats.hit_rate() * 100.0);
+//! // Get stats (stats() is async)
+//! let stats = cache.stats().await;
+//! println!("Hits: {}, Misses: {}", stats.hits, stats.misses);
 //! # Ok(())
 //! # }
 //! ```

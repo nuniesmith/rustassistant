@@ -14,9 +14,11 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use rustassistant::multi_tenant::{TenantManager, TenantQuota};
+//! use rustassistant::multi_tenant::{TenantManager, TenantQuota, QuotaType, UsageMetric};
+//! use sqlx::SqlitePool;
 //!
 //! # async fn example() -> anyhow::Result<()> {
+//! let db_pool = SqlitePool::connect("sqlite::memory:").await?;
 //! let tenant_mgr = TenantManager::new(db_pool).await?;
 //!
 //! // Create new tenant

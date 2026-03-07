@@ -19,33 +19,23 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use rustassistant::github::webhook::{WebhookHandler, WebhookEvent};
-//! use axum::{Router, routing::post};
+//! use rustassistant::github::webhook::WebhookHandler;
+//! use axum::{Router, routing::post, response::IntoResponse};
 //!
-//! async fn handle_webhook(payload: WebhookEvent) {
-//!     match payload {
-//!         WebhookEvent::Push(event) => {
-//!             println!("New push: {} commits", event.commits.len());
-//!         }
-//!         WebhookEvent::IssuesOpened(event) => {
-//!             println!("New issue: {}", event.issue.title);
-//!         }
-//!         _ => {}
-//!     }
+//! async fn webhook_endpoint() -> impl IntoResponse {
+//!     "ok"
 //! }
 //!
 //! #[tokio::main]
 //! async fn main() {
-//!     let handler = WebhookHandler::new("webhook_secret");
+//!     let _handler = WebhookHandler::new("webhook_secret");
 //!
 //!     let app = Router::new()
 //!         .route("/webhook", post(webhook_endpoint));
 //!
 //!     // Listen on port 3000
-//!     axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
-//!         .serve(app.into_make_service())
-//!         .await
-//!         .unwrap();
+//!     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+//!     axum::serve(listener, app).await.unwrap();
 //! }
 //! ```
 

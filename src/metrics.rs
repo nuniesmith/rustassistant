@@ -14,7 +14,7 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use rustassistant::metrics::{MetricsRegistry, track_request};
+//! use rustassistant::metrics::MetricsRegistry;
 //!
 //! # async fn example() -> anyhow::Result<()> {
 //! let registry = MetricsRegistry::new();
@@ -22,13 +22,13 @@
 //! // Track API request
 //! let timer = registry.start_request_timer("POST", "/api/documents");
 //! // ... process request ...
-//! timer.observe_duration();
+//! timer.observe_with_status(200).await;
 //!
 //! // Record search metrics
-//! registry.record_search("hybrid", 10, 45);
+//! registry.record_search("hybrid", 10, 45).await;
 //!
-//! // Export metrics
-//! let metrics = registry.export_prometheus();
+//! // Export metrics (async)
+//! let metrics = registry.export_prometheus().await;
 //! println!("{}", metrics);
 //! # Ok(())
 //! # }

@@ -23,7 +23,7 @@
 //!
 //! // Register a webhook
 //! manager.register(
-//!     "https://example.com/webhook",
+//!     "https://example.com/webhook".to_string(),
 //!     vec!["document.indexed".to_string()],
 //!     Some("secret_key".to_string())
 //! ).await?;

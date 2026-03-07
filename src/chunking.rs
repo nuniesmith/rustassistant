@@ -13,12 +13,12 @@
 //!
 //! # Example
 //!
-//! ```rust
+//! ```rust,no_run
 //! use rustassistant::chunking::{ChunkConfig, chunk_document};
 //!
 //! let config = ChunkConfig::default();
 //! let content = "# Introduction\n\nThis is a long document...";
-//! let chunks = chunk_document(content, &config)?;
+//! let chunks = chunk_document(content, &config).unwrap();
 //! ```
 
 use anyhow::{Context, Result};

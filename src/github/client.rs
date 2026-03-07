@@ -32,7 +32,7 @@
 //!
 //!     // Check rate limit
 //!     let limits = client.get_rate_limit().await?;
-//!     println!("Remaining: {}/{}", limits.remaining, limits.limit);
+//!     println!("Remaining: {}/{}", limits.resources.core.remaining, limits.resources.core.limit);
 //!
 //!     Ok(())
 //! }

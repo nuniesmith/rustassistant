@@ -28,18 +28,22 @@
 //!
 //! ```rust,no_run
 //! use rustassistant::github::{GitHubClient, SyncEngine};
+//! use sqlx::SqlitePool;
 //!
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
 //!     // Initialize client with PAT
 //!     let client = GitHubClient::new("ghp_your_token_here")?;
+//!     let pool = SqlitePool::connect("sqlite:data.db").await?;
 //!
 //!     // Sync all user repositories
-//!     let sync = SyncEngine::new(client, db_pool);
-//!     sync.sync_user_repos("username").await?;
+//!     let sync = SyncEngine::new(client, pool);
+//!     let result = sync.sync_all_repos().await?;
+//!     println!("Synced {} repositories", result.repos_synced);
 //!
-//!     // Fetch issues for analysis
-//!     let issues = sync.get_open_issues().await?;
+//!     // Incremental sync (only changes since last sync)
+//!     let result = sync.sync_incremental().await?;
+//!     println!("Updated {} items", result.items_updated);
 //!
 //!     Ok(())
 //! }

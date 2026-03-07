@@ -1229,9 +1229,14 @@ pub struct CacheHealth {
 /// Create the extension router with all new routes.
 /// Merge this with the main router in server.rs:
 ///
-/// ```rust
-/// let app = web_ui::create_router(state.clone())
-///     .merge(web_ui_extensions::create_extension_router(state));
+/// ```rust,no_run
+/// # use rustassistant::web_ui::WebAppState;
+/// # use rustassistant::web_ui_extensions::create_extension_router;
+/// # fn example(state: WebAppState) {
+/// use axum::Router;
+/// let app = Router::new()
+///     .merge(create_extension_router(state));
+/// # }
 /// ```
 pub fn create_extension_router(state: WebAppState) -> Router {
     let shared = Arc::new(state);
