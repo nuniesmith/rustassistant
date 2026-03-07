@@ -154,11 +154,11 @@ jobs:
     # Stage 2b: Build and Push ARM64 Docker Image
     # =========================================================================
     build-and-push-arm64:
-        name: 🐳 Build ARM64 Image
+        name: 🐳 Build ARM64 Image (disabled)
         needs: test-and-lint
         runs-on: ubuntu-latest
         timeout-minutes: 60
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: false # temporarily disabled — ARM build consistently times out at 60 min
         steps:
             - name: 📥 Checkout code
               uses: actions/checkout@v4
@@ -222,7 +222,7 @@ jobs:
     # =========================================================================
     create-manifest:
         name: 🐳 Create Multi-Arch Manifest
-        needs: [build-and-push-amd64, build-and-push-arm64]
+        needs: [build-and-push-amd64]
         runs-on: ubuntu-latest
         timeout-minutes: 10
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -235,9 +235,9 @@ jobs:
 
             - name: Create and push manifest
               run: |
+                  # ARM64 build is temporarily disabled; manifest points to amd64 only
                   docker buildx imagetools create -t ${{ env.IMAGE_NAME }}:latest \
-                    ${{ env.IMAGE_NAME }}:latest-amd64 \
-                    ${{ env.IMAGE_NAME }}:latest-arm64
+                    ${{ env.IMAGE_NAME }}:latest-amd64
 
             - name: ✅ Notify manifest creation complete
               if: success()
@@ -246,9 +246,9 @@ jobs:
               with:
                   webhook-url: ${{ secrets.DISCORD_WEBHOOK_ACTIONS }}
                   title: "🐳 Multi-Arch Manifest Created"
-                  description: "Docker manifest created with AMD64 and ARM64 images"
+                  description: "Docker manifest created with AMD64 image (ARM64 temporarily disabled)"
                   status: success
-                  fields: '[{"name": "Image", "value": "${{ env.IMAGE_NAME }}:latest", "inline": true}, {"name": "Platforms", "value": "amd64, arm64", "inline": true}]'
+                  fields: '[{"name": "Image", "value": "${{ env.IMAGE_NAME }}:latest", "inline": true}, {"name": "Platforms", "value": "amd64 only (ARM64 disabled)", "inline": true}]'
 
             - name: ❌ Notify manifest creation failed
               if: failure()

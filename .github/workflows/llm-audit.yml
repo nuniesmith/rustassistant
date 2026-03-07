@@ -92,7 +92,7 @@ on:
             # Audit / work mode
             # ------------------------------------------------------------------
             audit_mode:
-                description: "Mode (regular=cache+tree+review, full=regular+todo-full, todo-full=analyze→plan)"
+                description: "Mode (regular=cache+tree+review, full=regular+todo-full, todo-full=analyze→plan→rewrite)"
                 required: true
                 type: choice
                 default: "full"
@@ -102,6 +102,7 @@ on:
                     - todo-full
                     - todo-analyze
                     - todo-plan
+                    - todo-rewrite
                     - todo-work
 
             # ------------------------------------------------------------------
@@ -198,16 +199,18 @@ jobs:
     llm-audit:
         name: >-
             🤖 ${{
-              inputs.audit_mode == 'full'         && 'Full Audit'       ||
-              inputs.audit_mode == 'todo-full'    && 'TODO Full'        ||
-              inputs.audit_mode == 'todo-analyze' && 'TODO Analyze'     ||
-              inputs.audit_mode == 'todo-plan'    && 'TODO Plan'        ||
-              inputs.audit_mode == 'todo-work'    && 'TODO Work'        ||
+              inputs.audit_mode == 'full'          && 'Full Audit'       ||
+              inputs.audit_mode == 'todo-full'     && 'TODO Full'        ||
+              inputs.audit_mode == 'todo-analyze'  && 'TODO Analyze'     ||
+              inputs.audit_mode == 'todo-plan'     && 'TODO Plan'        ||
+              inputs.audit_mode == 'todo-rewrite'  && 'TODO Rewrite'     ||
+              inputs.audit_mode == 'todo-work'     && 'TODO Work'        ||
               'Regular Audit'
             }} — ${{ inputs.target_repo }} (${{
               (inputs.audit_mode == 'todo-full'    ||
                inputs.audit_mode == 'todo-analyze' ||
                inputs.audit_mode == 'todo-plan'    ||
+               inputs.audit_mode == 'todo-rewrite' ||
                inputs.audit_mode == 'todo-work') && 'xai' || inputs.llm_provider
             }})
         runs-on: ubuntu-latest
@@ -876,8 +879,9 @@ jobs:
             # ================================================================
             - name: 🗺️ TODO-Plan — gameplan from todo.md
               if: >-
-                  inputs.audit_mode == 'todo-plan' ||
-                  inputs.audit_mode == 'todo-full' ||
+                  inputs.audit_mode == 'todo-plan'    ||
+                  inputs.audit_mode == 'todo-full'    ||
+                  inputs.audit_mode == 'todo-rewrite' ||
                   inputs.audit_mode == 'full'
               id: todo_plan
               env:
@@ -1018,7 +1022,213 @@ jobs:
                   echo "" >> $GITHUB_STEP_SUMMARY
 
             # ================================================================
-            # 7-D  TODO-WORK — execute one batch from the gameplan
+            # 7-D-pre  TODO-REWRITE — regenerate todo.md in canonical format
+            #       • Reads current todo.md + gameplan + cache state
+            #       • Asks Grok to rewrite into clean rustassistant format
+            #       • Written back into the target repo before todo-work runs
+            # ================================================================
+            - name: 📝 TODO-Rewrite — regenerate todo.md
+              if: >-
+                  inputs.audit_mode == 'todo-rewrite' ||
+                  inputs.audit_mode == 'todo-plan'    ||
+                  inputs.audit_mode == 'todo-full'    ||
+                  inputs.audit_mode == 'todo-work'    ||
+                  inputs.audit_mode == 'full'
+              id: todo_rewrite
+              env:
+                  XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+              run: |
+                  echo "## 📝 TODO Rewrite" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+
+                  REPO="${{ env.REPO_DIR }}"
+                  CACHE="${{ env.CACHE_DIR }}"
+                  TARGET="${{ inputs.target_repo }}"
+
+                  # ── Locate todo.md ────────────────────────────────────────
+                  TODO_FILE="$REPO/todo.md"
+                  if [ ! -f "$TODO_FILE" ]; then
+                      TODO_FILE=$(find "$REPO" -maxdepth 3 -iname "todo.md" | head -1 || true)
+                  fi
+
+                  if [ -z "$TODO_FILE" ] || [ ! -f "$TODO_FILE" ]; then
+                      echo "ℹ️ No todo.md found — nothing to rewrite" >> $GITHUB_STEP_SUMMARY
+                      echo "rewrite_skipped=true" >> $GITHUB_OUTPUT
+                      exit 0
+                  fi
+
+                  echo "- todo.md : \`$(echo "$TODO_FILE" | sed "s|$REPO/||")\`" >> $GITHUB_STEP_SUMMARY
+                  echo "- Lines   : $(wc -l < "$TODO_FILE")"                     >> $GITHUB_STEP_SUMMARY
+
+                  # ── Load supporting context into temp files ───────────────
+                  cat "$TODO_FILE" > /tmp/rewrite_todo.txt
+
+                  # Gameplan from this run (todo-plan may have just generated it)
+                  GAMEPLAN_SRC=""
+                  if [ -f "audit-workspace/todo-plan.json" ]; then
+                      GAMEPLAN_SRC="audit-workspace/todo-plan.json"
+                  elif [ -f "$CACHE/todo-plan.json" ]; then
+                      GAMEPLAN_SRC="$CACHE/todo-plan.json"
+                  elif [ -f "$REPO/docs/audit/todo-plan.json" ]; then
+                      GAMEPLAN_SRC="$REPO/docs/audit/todo-plan.json"
+                  fi
+
+                  if [ -n "$GAMEPLAN_SRC" ]; then
+                      python3 -c "
+                  import json, sys
+                  with open('$GAMEPLAN_SRC') as f:
+                      d = json.load(f)
+                  # Summarise batches and completed status for context
+                  out = []
+                  out.append(f\"Summary: {d.get('summary','')}\")
+                  for b in d.get('batches', []):
+                      out.append(f\"Batch {b['batch_number']} ({b.get('priority','?')}): {b['title']}\")
+                      for item in b.get('items', []):
+                          out.append(f\"  - {item}\")
+                  completed = d.get('deferred', [])
+                  if completed:
+                      out.append('Deferred:')
+                      for item in completed:
+                          out.append(f'  - {item}')
+                  print('\n'.join(out))
+                  " > /tmp/rewrite_gameplan.txt 2>/dev/null || true
+                  else
+                      : > /tmp/rewrite_gameplan.txt
+                  fi
+
+                  # Cache completed-batch list
+                  python3 -c "
+                  import json, os, glob
+                  cache_path = '$CACHE/cache.json'
+                  completed = []
+                  try:
+                      with open(cache_path) as f:
+                          cache = json.load(f)
+                      completed = cache.get('completed_batches', [])
+                  except Exception:
+                      pass
+                  # Also pick up per-batch json files for richer status
+                  summaries = []
+                  for p in sorted(glob.glob('$CACHE/batches/batch-*.json')):
+                      try:
+                          with open(p) as f:
+                              bd = json.load(f)
+                          summaries.append(f\"Batch {bd.get('batch_number')}: {bd.get('title','')} — {bd.get('status','?')}\")
+                          for u in bd.get('todo_updates', []):
+                              summaries.append(f\"  {u.get('status','?')}: {u.get('item','')[:80]}\")
+                      except Exception:
+                          pass
+                  print('Completed batches: ' + str(completed))
+                  print('\n'.join(summaries))
+                  " > /tmp/rewrite_cache_state.txt 2>/dev/null || true
+
+                  cat > audit-workspace/todo_rewrite.py << 'PYEOF'
+                  import os, json, requests, textwrap
+
+                  xai_key   = os.environ["XAI_API_KEY"]
+                  repo_name = os.environ["REPO_NAME"]
+                  todo_path = os.environ["TODO_PATH"]
+
+                  with open("/tmp/rewrite_todo.txt") as _f:
+                      current_todo = _f.read()
+                  with open("/tmp/rewrite_gameplan.txt") as _f:
+                      gameplan_context = _f.read()
+                  with open("/tmp/rewrite_cache_state.txt") as _f:
+                      cache_state = _f.read()
+
+                  system = textwrap.dedent(f"""
+                      You are a senior engineering lead maintaining the todo.md backlog for '{repo_name}'.
+
+                      Your job is to produce a clean, well-structured rewrite of the todo.md file.
+
+                      Rules:
+                      1. Preserve every open (uncompleted) item — do not silently drop anything.
+                      2. Mark items as ✅ completed (move to Completed section) if the cache state
+                         shows they were finished in a previous batch run.
+                      3. Remove inline run-annotation noise (⚠️ *[Batch N: ...] — [PR branch]* etc.)
+                         that was appended by the workflow. Keep the item text clean.
+                      4. Organise open items under: 🔴 High Priority, 🟡 Medium Priority, 🟢 Low Priority.
+                      5. Within each priority group, organise by logical theme/category.
+                      6. Keep the Completed section clean — only final ✅ entries, no workflow noise.
+                      7. Update the "Next Steps" section to reflect current state (completed work done,
+                         remaining work prioritised).
+                      8. Use the same markdown style as the original: dash-list items, `[ ]` checkboxes
+                         for open items, `[x]` for completed items.
+                      9. Add a brief repo context header (name, purpose, key facts) if one exists in
+                         the original — keep it concise.
+                      10. Output ONLY the full rewritten todo.md content as plain markdown.
+                          No JSON wrapper, no code fences, no prose outside the document.
+                  """).strip()
+
+                  user = textwrap.dedent(f"""
+                      ## Current todo.md
+                      {current_todo}
+
+                      ## Gameplan context (from last todo-plan run)
+                      {gameplan_context[:3000] if gameplan_context.strip() else "(none)"}
+
+                      ## Cache state (completed batches and item statuses)
+                      {cache_state[:2000] if cache_state.strip() else "(none — first run)"}
+                  """).strip()
+
+                  try:
+                      r = requests.post(
+                          "https://api.x.ai/v1/chat/completions",
+                          headers={"Authorization": f"Bearer {xai_key}",
+                                   "Content-Type": "application/json"},
+                          json={"model": "grok-4-1-fast-reasoning", "messages": [
+                              {"role": "system", "content": system},
+                              {"role": "user",   "content": user}
+                          ], "max_tokens": 16384, "temperature": 0.2},
+                          timeout=300
+                      )
+                      r.raise_for_status()
+                      raw = r.json()["choices"][0]["message"]["content"].strip()
+                      # Strip accidental code fences if the model wrapped output
+                      if raw.startswith("```"):
+                          lines = raw.split("\n")
+                          raw = "\n".join(lines[1:])
+                          if raw.rstrip().endswith("```"):
+                              raw = raw.rstrip()[:-3].rstrip()
+                      rewritten = raw
+                      status = "ok"
+                  except Exception as e:
+                      rewritten = current_todo  # fall back to original
+                      status = f"error: {e}"
+
+                  os.makedirs("audit-workspace", exist_ok=True)
+                  # Save the rewritten content to a workspace file
+                  with open("audit-workspace/todo-rewritten.md", "w") as f:
+                      f.write(rewritten)
+                  # Write directly back into the repo
+                  with open(todo_path, "w") as f:
+                      f.write(rewritten)
+
+                  print(f"rewrite_status={status}")
+                  print(f"lines_in={len(current_todo.splitlines())}")
+                  print(f"lines_out={len(rewritten.splitlines())}")
+                  PYEOF
+
+                  XAI_API_KEY="$XAI_API_KEY" \
+                  REPO_NAME="$TARGET" \
+                  TODO_PATH="$TODO_FILE" \
+                  python3 audit-workspace/todo_rewrite.py | tee /tmp/rewrite_output.txt || true
+
+                  RSTAT=$(grep "^rewrite_status=" /tmp/rewrite_output.txt | cut -d= -f2- || echo "unknown")
+                  LINES_IN=$(grep  "^lines_in="  /tmp/rewrite_output.txt | cut -d= -f2 || echo "?")
+                  LINES_OUT=$(grep "^lines_out=" /tmp/rewrite_output.txt | cut -d= -f2 || echo "?")
+
+                  echo "rewrite_status=$RSTAT" >> $GITHUB_OUTPUT
+
+                  if [[ "$RSTAT" == "ok" ]]; then
+                      echo "- ✅ todo.md rewritten ($LINES_IN lines → $LINES_OUT lines)" >> $GITHUB_STEP_SUMMARY
+                  else
+                      echo "- ⚠️ Rewrite encountered an issue: $RSTAT (original preserved)" >> $GITHUB_STEP_SUMMARY
+                  fi
+                  echo "" >> $GITHUB_STEP_SUMMARY
+
+            # ================================================================
+            # 7-E  TODO-WORK — execute one batch from the gameplan
             #       • Grok generates code changes (unified diff)
             #       • todo.md updated with ✅/⚠️/❌ per item
             #       • Changes committed to a branch
@@ -1717,8 +1927,8 @@ jobs:
                       else:
                           print(f"  ⏭️  No todo-analysis-report.json — skipping")
 
-                  # ── Gameplan report (todo-plan, todo-full, full) ──────────
-                  if mode in ("todo-plan", "todo-full", "full"):
+                  # ── Gameplan report (todo-plan, todo-rewrite, todo-full, full) ──
+                  if mode in ("todo-plan", "todo-rewrite", "todo-full", "full"):
                       rf = "audit-workspace/reports/GAMEPLAN.md"
                       gp = "audit-workspace/GAMEPLAN.md"
                       if os.path.exists(gp):
@@ -1789,6 +1999,9 @@ jobs:
               if: >-
                   inputs.commit_results == true &&
                   inputs.audit_mode != 'todo-work'
+              # Note: todo-work commits on its own branch inside the step above.
+              # For todo-rewrite / todo-plan / todo-full / full we commit here,
+              # which includes the rewritten todo.md written back by todo_rewrite.py.
               continue-on-error: true
               env:
                   GH_PAT: ${{ secrets.GH_PAT }}
@@ -1814,11 +2027,17 @@ jobs:
                   cp ../audit-workspace/llm-analysis.json             docs/audit/ 2>/dev/null || true
                   cp ../audit-workspace/todo-analysis-report.json     docs/audit/ 2>/dev/null || true
                   cp ../audit-workspace/todo-plan.json                docs/audit/ 2>/dev/null || true
+                  # Rewritten todo.md — copy back to workspace artifact dir (the file
+                  # was already written in-place to target-repo/todo.md by todo_rewrite.py,
+                  # so git will pick it up via `git add -A` below).
+                  cp ../audit-workspace/todo-rewritten.md             docs/audit/ 2>/dev/null || true
 
                   # ── Always update .rustassistant cache ────────────────────
-                  # Only stage the directories we care about — never touch LFS files
+                  # Only stage the directories we care about — never touch LFS files.
+                  # Also stage todo.md if the rewrite step modified it.
                   git add docs/audit/ 2>/dev/null || true
                   git add -f .rustassistant/ 2>/dev/null || true
+                  git add todo.md 2>/dev/null || true
 
                   if git diff --staged --quiet; then
                       echo "ℹ️ No changes to commit"
@@ -1874,6 +2093,7 @@ jobs:
                         (inputs.audit_mode == 'todo-full'    ||
                          inputs.audit_mode == 'todo-analyze' ||
                          inputs.audit_mode == 'todo-plan'    ||
+                         inputs.audit_mode == 'todo-rewrite' ||
                          inputs.audit_mode == 'todo-work') && 'xai' || inputs.llm_provider
                       }}-run${{ github.run_number }}
                   path: |
@@ -1882,6 +2102,7 @@ jobs:
                       audit-workspace/todo-analysis-report.json
                       audit-workspace/todo-plan.json
                       audit-workspace/GAMEPLAN.md
+                      audit-workspace/todo-rewritten.md
                       audit-workspace/work-result.json
                       audit-workspace/current-batch.json
                       audit-workspace/raw-todos.txt
@@ -1898,6 +2119,7 @@ jobs:
               run: |
                   MODE="${{ inputs.audit_mode }}"
                   RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  REWRITE_STATUS="${{ steps.todo_rewrite.outputs.rewrite_status }}"
 
                   echo ""                                                    >> $GITHUB_STEP_SUMMARY
                   echo "---"                                                 >> $GITHUB_STEP_SUMMARY
@@ -1955,14 +2177,22 @@ jobs:
                   COMMIT_STATUS="${{ inputs.commit_results == true && 'enabled' || 'disabled' }}"
                   echo "- 💾 Commit results: $COMMIT_STATUS"                >> $GITHUB_STEP_SUMMARY
                   echo ""                                                    >> $GITHUB_STEP_SUMMARY
-                  echo "**Cache:** \`.rustassistant/\` updated in \`${{ inputs.target_repo }}\`" >> $GITHUB_STEP_SUMMARY
+                  echo "| **Cache** | \`.rustassistant/\` updated in \`${{ inputs.target_repo }}\` |" >> $GITHUB_STEP_SUMMARY
+                  if [[ "$MODE" == "todo-rewrite" || "$MODE" == "todo-plan" || "$MODE" == "todo-full" || "$MODE" == "full" ]]; then
+                      if [[ "$REWRITE_STATUS" == "ok" ]]; then
+                          echo "| **todo.md** | ✅ Rewritten and committed |" >> $GITHUB_STEP_SUMMARY
+                      elif [[ -n "$REWRITE_STATUS" && "$REWRITE_STATUS" != "" ]]; then
+                          echo "| **todo.md** | ⚠️ Rewrite issue: $REWRITE_STATUS |" >> $GITHUB_STEP_SUMMARY
+                      fi
+                  fi
                   echo ""                                                    >> $GITHUB_STEP_SUMMARY
                   echo "### Recommended Next Step"                           >> $GITHUB_STEP_SUMMARY
                   case "$MODE" in
                       full)         echo "Run \`todo-work\` to execute batch 1 from the generated gameplan." >> $GITHUB_STEP_SUMMARY ;;
                       todo-full)    echo "Run \`todo-work\` to execute batch 1 from the generated gameplan." >> $GITHUB_STEP_SUMMARY ;;
-                      todo-plan)    echo "Run \`todo-work\` to execute batch 1." >> $GITHUB_STEP_SUMMARY ;;
-                      todo-work)    echo "Review the PR, merge it, then run \`todo-work\` for the next batch." >> $GITHUB_STEP_SUMMARY ;;
+                      todo-plan)    echo "Run \`todo-rewrite\` to clean up todo.md, then \`todo-work\` to execute batch 1." >> $GITHUB_STEP_SUMMARY ;;
+                      todo-rewrite) echo "todo.md has been rewritten. Run \`todo-work\` to execute the next pending batch." >> $GITHUB_STEP_SUMMARY ;;
+                      todo-work)    echo "Review the PR, merge it, then run \`todo-work\` for the next batch (or \`todo-rewrite\` to tidy todo.md first)." >> $GITHUB_STEP_SUMMARY ;;
                       todo-analyze) echo "Run \`todo-plan\` to generate an implementation gameplan from these findings." >> $GITHUB_STEP_SUMMARY ;;
                       regular)      echo "Review the findings. Run \`full\` for a complete audit + gameplan, or \`todo-work\` if a plan already exists." >> $GITHUB_STEP_SUMMARY ;;
                   esac
