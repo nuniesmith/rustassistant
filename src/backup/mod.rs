@@ -81,7 +81,7 @@ impl BackupManager {
     pub fn check_rclone(&self) -> Result<bool> {
         let output = Command::new("rclone").args(["version"]).output().context(
             "rclone not found. Install with: curl https://rclone.org/install.sh | sudo bash",
-)?;
+        )?;
 
         if !output.status.success() {
             return Ok(false);
@@ -111,7 +111,7 @@ impl BackupManager {
         let backup_name = format!("backup_{}", timestamp);
         let remote_dest = format!(
             "{}:{}/{}",
-            self.config.remote_name,self.config.remote_path, backup_name
+            self.config.remote_name, self.config.remote_path, backup_name
         );
 
         // Create a local snapshot first (SQLite safe backup)
@@ -218,7 +218,7 @@ impl BackupManager {
 
     /// Remove old backups beyond retention count
     fn cleanup_old_backups(&self) -> Result<()> {
-        let remote_base = format!("{}:{}", self.config.remote_name,self.config.remote_path);
+        let remote_base = format!("{}:{}", self.config.remote_name, self.config.remote_path);
 
         // List existing backups
         let output = Command::new("rclone")
@@ -256,7 +256,7 @@ impl BackupManager {
 
     /// List available backups
     pub fn list_backups(&self) -> Result<Vec<BackupInfo>> {
-        let remote_base = format!("{}:{}", self.config.remote_name,self.config.remote_path);
+        let remote_base = format!("{}:{}", self.config.remote_name, self.config.remote_path);
 
         let output = Command::new("rclone")
             .args(["lsjson", &remote_base, "--dirs-only"])
@@ -294,7 +294,7 @@ impl BackupManager {
 
         let remote_src = format!(
             "{}:{}/{}",
-            self.config.remote_name,self.config.remote_path, backup_name
+            self.config.remote_name, self.config.remote_path, backup_name
         );
 
         // Create restore directory

@@ -134,7 +134,9 @@ impl BackgroundSyncManager {
         let sync_engine = SyncEngine::new(self.client.clone(), self.pool.clone());
 
         // Sync only recent items
-        let result = sync_engine.sync_with_options(SyncOptions::default()).await?;
+        let result = sync_engine
+            .sync_with_options(SyncOptions::default())
+            .await?;
         info!("  Synced {} repositories", result.repos_synced);
         info!("  Synced {} issues", result.issues_synced);
         info!("  Synced {} pull requests", result.prs_synced);
@@ -150,7 +152,9 @@ impl BackgroundSyncManager {
         let sync_engine = SyncEngine::new(self.client.clone(), self.pool.clone());
 
         // Full sync without limits
-        let result = sync_engine.sync_with_options(SyncOptions::default().force_full()).await?;
+        let result = sync_engine
+            .sync_with_options(SyncOptions::default().force_full())
+            .await?;
         info!("  Synced {} repositories", result.repos_synced);
         info!("  Synced {} issues", result.issues_synced);
         info!("  Synced {} pull requests", result.prs_synced);

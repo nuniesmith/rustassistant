@@ -170,10 +170,7 @@ async fn index_documents(pool: &sqlx::SqlitePool, doc_ids: &[String]) -> anyhow:
 
     for doc_id in doc_ids {
         let result = indexer.index_document(pool, doc_id).await?;
-        println!(
-            "  ✓ Indexed {}: {} chunks",
-            doc_id, result.chunks_indexed
-        );
+        println!("  ✓ Indexed {}: {} chunks", doc_id, result.chunks_indexed);
     }
 
     Ok(())
