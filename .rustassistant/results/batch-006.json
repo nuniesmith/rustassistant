@@ -1,0 +1,54 @@
+{
+  "batch_id": "batch-006",
+  "executed_at": "2026-03-08T01:28:24.103864393Z",
+  "dry_run": false,
+  "items_attempted": 3,
+  "items_succeeded": 2,
+  "items_failed": 1,
+  "items_skipped": 0,
+  "file_changes": [
+    {
+      "file": "src/api/handlers.rs",
+      "change_type": "modified",
+      "lines_added": 1,
+      "lines_removed": 0,
+      "backed_up_to": "/home/jordan/github/rustassistant/.rustassistant/backups/src_api_handlers.rs.bak"
+    },
+    {
+      "file": "src/api/handlers.rs",
+      "change_type": "modified",
+      "lines_added": 3,
+      "lines_removed": 0,
+      "backed_up_to": "/home/jordan/github/rustassistant/.rustassistant/backups/src_api_handlers.rs.bak"
+    }
+  ],
+  "item_results": [
+    {
+      "todo_id": "12542b08",
+      "status": "failed",
+      "message": "All file changes failed",
+      "files_changed": [],
+      "error": "src/api/handlers.rs: No hunks matched in src/api/handlers.rs"
+    },
+    {
+      "todo_id": "7048cea1",
+      "status": "success",
+      "message": "Applied 1 change(s): src/api/handlers.rs",
+      "files_changed": [
+        "src/api/handlers.rs"
+      ],
+      "error": null
+    },
+    {
+      "todo_id": "7167a7b9",
+      "status": "success",
+      "message": "Applied 1 change(s): src/api/handlers.rs",
+      "files_changed": [
+        "src/api/handlers.rs"
+      ],
+      "error": null
+    }
+  ],
+  "errors": [],
+  "todo_md_updated": false
+}

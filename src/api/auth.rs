@@ -97,7 +97,7 @@ pub enum AuthResult {
 }
 
 /// Hash an API key using SHA256
-fn hash_api_key(key: &str) -> String {
+pub fn hash_api_key(key: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(key.as_bytes());
     hex::encode(hasher.finalize())

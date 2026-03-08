@@ -203,8 +203,10 @@ impl Default for RepositoryAnalysis {
 impl GrokClient {
     /// Create a new Grok client
     pub fn new(api_key: impl Into<String>, db: Database) -> Self {
+        let model = std::env::var("XAI_MODEL").unwrap_or_else(|_| GROK_MODEL.to_string());
+
         let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(90))
+            .timeout(Duration::from_secs(180))
             .build()
             .expect("Failed to build HTTP client");
 
@@ -212,7 +214,7 @@ impl GrokClient {
             client,
             api_key: api_key.into(),
             db,
-            model: GROK_MODEL.to_string(),
+            model,
             cache: None,
             caching_enabled: false,
         }
@@ -224,6 +226,11 @@ impl GrokClient {
         self.cache = Some(cache);
         self.caching_enabled = true;
         Ok(self)
+    }
+
+    /// Return the model name this client is configured to use.
+    pub fn model_name(&self) -> &str {
+        &self.model
     }
 
     /// Disable caching
@@ -540,6 +547,11 @@ Code:
 
     /// Make a single API call
     async fn call_api_once(&self, prompt: &str) -> Result<ApiResponse> {
+        let max_tokens = std::env::var("XAI_MAX_TOKENS")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(8000);
+
         let request = ChatCompletionRequest {
             model: self.model.clone(),
             messages: vec![Message {
@@ -547,7 +559,7 @@ Code:
                 content: prompt.to_string(),
             }],
             temperature: 0.3,
-            max_tokens: 2000,
+            max_tokens,
         };
 
         debug!(

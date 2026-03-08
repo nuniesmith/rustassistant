@@ -368,43 +368,94 @@ impl DocumentIndexer {
 // Batch Indexing
 // ============================================================================
 
-/// Batch indexer for processing many documents
+/// Batch indexer for processing many documents concurrently.
 pub struct BatchIndexer {
-    indexer: DocumentIndexer,
-    #[allow(dead_code)]
+    indexer: Arc<DocumentIndexer>,
     concurrency: usize,
 }
 
 impl BatchIndexer {
-    /// Create a new batch indexer
+    /// Create a new batch indexer.
     pub async fn new(config: IndexingConfig, concurrency: usize) -> Result<Self> {
         let indexer = DocumentIndexer::new(config).await?;
         Ok(Self {
-            indexer,
-            concurrency,
+            indexer: Arc::new(indexer),
+            concurrency: concurrency.max(1),
         })
     }
 
-    /// Index documents concurrently
+    /// Index `document_ids` concurrently, gated by a semaphore of size `self.concurrency`.
+    ///
+    /// Individual document failures are logged and skipped — the method always
+    /// returns the results for documents that succeeded.
     pub async fn index_batch(
         &self,
         pool: &SqlitePool,
         document_ids: &[String],
     ) -> Result<Vec<IndexingResult>> {
-        // For now, use sequential processing
-        // TODO: Implement concurrent processing with semaphore
-        let mut results = Vec::new();
+        if document_ids.is_empty() {
+            return Ok(Vec::new());
+        }
 
-        for document_id in document_ids {
-            match self.indexer.index_document(pool, document_id).await {
-                Ok(result) => results.push(result),
-                Err(e) => {
-                    tracing::error!("Failed to index document {}: {}", document_id, e);
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(self.concurrency));
+        let mut join_set: tokio::task::JoinSet<Option<IndexingResult>> =
+            tokio::task::JoinSet::new();
+
+        for doc_id in document_ids {
+            let sem = Arc::clone(&semaphore);
+            let indexer = Arc::clone(&self.indexer);
+            let pool = pool.clone();
+            let id = doc_id.clone();
+
+            join_set.spawn(async move {
+                // Acquire permit before starting — limits concurrent DB + embedding work.
+                let _permit = sem
+                    .acquire()
+                    .await
+                    .expect("BatchIndexer semaphore closed unexpectedly");
+
+                match indexer.index_document(&pool, &id).await {
+                    Ok(result) => {
+                        tracing::info!(
+                            document_id = %id,
+                            chunks = result.chunks_indexed,
+                            "Batch index succeeded"
+                        );
+                        Some(result)
+                    }
+                    Err(e) => {
+                        tracing::error!(document_id = %id, error = %e, "Batch index failed");
+                        None
+                    }
+                }
+            });
+        }
+
+        let mut results = Vec::with_capacity(document_ids.len());
+
+        while let Some(outcome) = join_set.join_next().await {
+            match outcome {
+                Ok(Some(result)) => results.push(result),
+                Ok(None) => {} // individual failure already logged
+                Err(join_err) => {
+                    tracing::error!(error = %join_err, "Batch index task panicked");
                 }
             }
         }
 
+        tracing::info!(
+            total = document_ids.len(),
+            succeeded = results.len(),
+            failed = document_ids.len() - results.len(),
+            "Batch indexing complete"
+        );
+
         Ok(results)
+    }
+
+    /// Return the configured concurrency limit.
+    pub fn concurrency(&self) -> usize {
+        self.concurrency
     }
 }
 

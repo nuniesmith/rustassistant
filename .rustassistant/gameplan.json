@@ -1,0 +1,283 @@
+{
+  "generated_at": "2026-03-08T01:10:31.524919548Z",
+  "todo_path": "todo.md",
+  "model": "grok-4-turbo",
+  "batches": [
+    {
+      "id": "batch-001",
+      "title": "Fix GH_PAT permissions and core admin API issues",
+      "priority": "high",
+      "estimated_effort": "trivial",
+      "items": [
+        {
+          "todo_id": "f225916b",
+          "description": "Configure GH_PAT with repo scope or fine-grained Contents: Read and write on target repos",
+          "files": [],
+          "approach": "Update GitHub token settings - no code changes needed",
+          "acceptance_criteria": "No more 403 errors on nuniesmith/futures.git"
+        },
+        {
+          "todo_id": "4068a4e2",
+          "description": "Uncomment and fix pub mod admin - resolve ApiState field access issues",
+          "files": [
+            "src/api/mod.rs"
+          ],
+          "approach": "Add missing ApiState fields or update admin module to use existing fields",
+          "acceptance_criteria": "pub mod admin compiles and doesn't panic"
+        }
+      ],
+      "rationale": "Both are blocking high-priority issues with minimal code risk - quick config + simple module fix",
+      "dependencies": []
+    },
+    {
+      "id": "batch-002",
+      "title": "Implement todo-scan CLI command",
+      "priority": "high",
+      "estimated_effort": "medium",
+      "items": [
+        {
+          "todo_id": "997dd726",
+          "description": "Add rustassistant todo-scan <repo-path> command to parse TODO/FIXME/HACK/XXX comments into structured JSON",
+          "files": [
+            "src/bin/cli.rs"
+          ],
+          "approach": "Parse source files, extract comment contexts, output structured JSON replacing Python grep+LLM",
+          "acceptance_criteria": "Command scans repo and outputs parseable JSON with comment contexts"
+        }
+      ],
+      "rationale": "Standalone CLI command - foundation for replacing Python workflow steps",
+      "dependencies": [
+        "batch-001"
+      ]
+    },
+    {
+      "id": "batch-003",
+      "title": "Generate GAMEPLAN using Grok client",
+      "priority": "high",
+      "estimated_effort": "medium",
+      "items": [
+        {
+          "todo_id": "bcd3fc37",
+          "description": "Implement GAMEPLAN generation from todo.md using src/grok_client.rs - read todo.md + source context, call xAI, output JSON batches",
+          "files": [
+            "src/grok_client.rs",
+            "src/bin/cli.rs"
+          ],
+          "approach": "Extend grok_client with todo.md parsing + gameplan generation prompt, add CLI command",
+          "acceptance_criteria": "Generates valid JSON gameplan from sample todo.md"
+        }
+      ],
+      "rationale": "Core planning capability using existing Grok client infrastructure",
+      "dependencies": [
+        "batch-002"
+      ]
+    },
+    {
+      "id": "batch-004",
+      "title": "Implement single batch execution engine",
+      "priority": "high",
+      "estimated_effort": "large",
+      "items": [
+        {
+          "todo_id": "8377a261",
+          "description": "Execute single batch: read batch JSON, generate code changes via LLM, apply them, update todo.md status markers",
+          "files": [
+            "src/bin/cli.rs"
+          ],
+          "approach": "Implement todo-work command - LLM codegen + git apply + todo.md status updates, replaces 500 lines Python",
+          "acceptance_criteria": "Processes batch JSON, generates/applies patches, updates todo.md successfully"
+        }
+      ],
+      "rationale": "The big one - core execution engine replacing massive Python workflow",
+      "dependencies": [
+        "batch-002",
+        "batch-003"
+      ]
+    },
+    {
+      "id": "batch-005",
+      "title": "Replace Python workflow steps with Rust CLI",
+      "priority": "high",
+      "estimated_effort": "small",
+      "items": [
+        {
+          "todo_id": "3398f310",
+          "description": "Update llm-audit.yml to call rustassistant todo-scan/todo-plan/todo-work instead of Python steps, fallback to Python if image pull fails",
+          "files": [
+            "llm-audit.yml"
+          ],
+          "approach": "Replace Python todo-analyze/plan/work steps with ./rustassistant-bin calls in GitHub Actions",
+          "acceptance_criteria": "Workflow runs end-to-end using Rust binary instead of Python"
+        }
+      ],
+      "rationale": "Integrates new Rust CLI into production workflow once commands exist",
+      "dependencies": [
+        "batch-004"
+      ]
+    },
+    {
+      "id": "batch-006",
+      "title": "Fix core API handlers - document listing and stats",
+      "priority": "high",
+      "estimated_effort": "medium",
+      "items": [
+        {
+          "todo_id": "12542b08",
+          "description": "Implement proper document listing with filters - fix empty vec placeholder",
+          "files": [
+            "src/api/handlers.rs:345"
+          ],
+          "approach": "Query documents from DB with filter params",
+          "acceptance_criteria": "Returns actual documents with working filters"
+        },
+        {
+          "todo_id": "7048cea1",
+          "description": "Implement document stats by_type counts - fix empty vec",
+          "files": [
+            "src/api/handlers.rs:132"
+          ],
+          "approach": "Group documents by type field from DB",
+          "acceptance_criteria": "Returns correct type counts"
+        },
+        {
+          "todo_id": "7167a7b9",
+          "description": "Calculate average chunk size - fix hardcoded 0.0",
+          "files": [
+            "src/api/handlers.rs:137"
+          ],
+          "approach": "Query chunks table, compute avg(chunk_size)",
+          "acceptance_criteria": "Returns actual average chunk size > 0"
+        }
+      ],
+      "rationale": "All related API handler fixes in same file - quick DB query implementations",
+      "dependencies": [
+        "batch-001"
+      ]
+    },
+    {
+      "id": "batch-007",
+      "title": "Fix RAG integration and indexing concurrency",
+      "priority": "high",
+      "estimated_effort": "medium",
+      "items": [
+        {
+          "todo_id": "f56eeb38",
+          "description": "Integrate RAG context search with LanceDB vector search - fix empty results",
+          "files": [
+            "src/research/worker.rs:275"
+          ],
+          "approach": "Replace empty vec with actual LanceDB vector similarity search",
+          "acceptance_criteria": "search_rag_context returns non-empty relevant results"
+        },
+        {
+          "todo_id": "5fd10bdb",
+          "description": "Implement concurrent batch indexing with semaphore - fix sequential only",
+          "files": [
+            "src/indexing.rs:395"
+          ],
+          "approach": "Use tokio::spawn with semaphore to parallelize document indexing",
+          "acceptance_criteria": "Multiple documents index concurrently without overwhelming resources"
+        }
+      ],
+      "rationale": "Core search/indexing performance fixes - related to RAG pipeline",
+      "dependencies": [
+        "batch-001"
+      ]
+    },
+    {
+      "id": "batch-008",
+      "title": "Fix XAI API testing and test result parsing",
+      "priority": "medium",
+      "estimated_effort": "small",
+      "items": [
+        {
+          "todo_id": "aa2df73b",
+          "description": "Actually test XAI API connection in test-api command - don't just check key exists",
+          "files": [
+            "src/bin/cli.rs:726"
+          ],
+          "approach": "Make real API call with healthcheck endpoint, verify response",
+          "acceptance_criteria": "test-api reports actual API connectivity status"
+        },
+        {
+          "todo_id": "76987101",
+          "description": "Parse detailed per-file test results in TestRunner - fix empty results_by_file HashMap",
+          "files": [
+            "src/tests_runner.rs:184"
+          ],
+          "approach": "Parse test output to populate file→results mapping",
+          "acceptance_criteria": "results_by_file contains actual test results grouped by file"
+        }
+      ],
+      "rationale": "Both improve testing/debugging capabilities - related to validation",
+      "dependencies": []
+    },
+    {
+      "id": "batch-009",
+      "title": "UI and queue processor improvements",
+      "priority": "medium",
+      "estimated_effort": "small",
+      "items": [
+        {
+          "todo_id": "eae6b157",
+          "description": "Add pinned field to Document struct for docs list and detail views",
+          "files": [
+            "src/web_ui_extensions.rs:375",
+            "src/web_ui_extensions.rs:719"
+          ],
+          "approach": "Add pinned: bool to Document, update DB schema, fix pin_icon rendering",
+          "acceptance_criteria": "Pin icons render correctly in document list"
+        },
+        {
+          "todo_id": "77723d52",
+          "description": "Implement tag refinement and project linking in queue processor tagging stage",
+          "files": [
+            "src/queue/processor.rs:430"
+          ],
+          "approach": "Add tag analysis logic and project association before advancing stage",
+          "acceptance_criteria": "Items get refined tags and project links before ready state"
+        }
+      ],
+      "rationale": "Both enhance UI/queue maturity - small interconnected changes",
+      "dependencies": [
+        "batch-001"
+      ]
+    },
+    {
+      "id": "batch-010",
+      "title": "Low priority config and DB cleanup",
+      "priority": "low",
+      "estimated_effort": "small",
+      "items": [
+        {
+          "todo_id": "4f2056d8",
+          "description": "Make skip-extensions list configurable per-repo instead of hardcoded",
+          "files": [],
+          "approach": "Read skip_extensions from repo config or env",
+          "acceptance_criteria": "Different repos can have custom skip lists"
+        },
+        {
+          "todo_id": "b5fa896d",
+          "description": "Consolidate todo_items DB table usage with tasks table - remove parallel systems",
+          "files": [
+            "src/db/queue.rs:13"
+          ],
+          "approach": "Migrate todo_items logic to use tasks table exclusively",
+          "acceptance_criteria": "Single tasks table handles all queue operations"
+        }
+      ],
+      "rationale": "Config flexibility + DB cleanup - low risk housekeeping",
+      "dependencies": [
+        "batch-001"
+      ]
+    }
+  ],
+  "total_items_planned": 17,
+  "skipped_items": [
+    "Add `docker-compose.yml` healthcheck for Redis connectivity from rustassistant container",
+    "Expose an `/api/audit` endpoint so the LLM audit workflow can leverage the Rust API + Redis cache instead of raw Python API calls",
+    "Add `todo.md` generation to the `regular` audit mode — after the LLM audit, auto-append new findings as TODO items to the target repo's `todo.md`",
+    "Standardise error handling across API handlers (mix of `anyhow` and manual error responses)"
+  ],
+  "raw_llm_response": "```json\n{\n  \"batches\": [\n    {\n      \"id\": \"batch-001\",\n      \"title\": \"Fix GH_PAT permissions and core admin API issues\",\n      \"priority\": \"high\",\n      \"estimated_effort\": \"trivial\",\n      \"items\": [\n        {\n          \"todo_id\": \"f225916b\",\n          \"description\": \"Configure GH_PAT with repo scope or fine-grained Contents: Read and write on target repos\",\n          \"files\": [],\n          \"approach\": \"Update GitHub token settings - no code changes needed\",\n          \"acceptance_criteria\": \"No more 403 errors on nuniesmith/futures.git\"\n        },\n        {\n          \"todo_id\": \"4068a4e2\",\n          \"description\": \"Uncomment and fix pub mod admin - resolve ApiState field access issues\",\n          \"files\": [\"src/api/mod.rs\"],\n          \"approach\": \"Add missing ApiState fields or update admin module to use existing fields\",\n          \"acceptance_criteria\": \"pub mod admin compiles and doesn't panic\"\n        }\n      ],\n      \"rationale\": \"Both are blocking high-priority issues with minimal code risk - quick config + simple module fix\",\n      \"dependencies\": []\n    },\n    {\n      \"id\": \"batch-002\",\n      \"title\": \"Implement todo-scan CLI command\",\n      \"priority\": \"high\",\n      \"estimated_effort\": \"medium\",\n      \"items\": [\n        {\n          \"todo_id\": \"997dd726\",\n          \"description\": \"Add rustassistant todo-scan <repo-path> command to parse TODO/FIXME/HACK/XXX comments into structured JSON\",\n          \"files\": [\"src/bin/cli.rs\"],\n          \"approach\": \"Parse source files, extract comment contexts, output structured JSON replacing Python grep+LLM\",\n          \"acceptance_criteria\": \"Command scans repo and outputs parseable JSON with comment contexts\"\n        }\n      ],\n      \"rationale\": \"Standalone CLI command - foundation for replacing Python workflow steps\",\n      \"dependencies\": [\"batch-001\"]\n    },\n    {\n      \"id\": \"batch-003\",\n      \"title\": \"Generate GAMEPLAN using Grok client\",\n      \"priority\": \"high\",\n      \"estimated_effort\": \"medium\",\n      \"items\": [\n        {\n          \"todo_id\": \"bcd3fc37\",\n          \"description\": \"Implement GAMEPLAN generation from todo.md using src/grok_client.rs - read todo.md + source context, call xAI, output JSON batches\",\n          \"files\": [\"src/grok_client.rs\", \"src/bin/cli.rs\"],\n          \"approach\": \"Extend grok_client with todo.md parsing + gameplan generation prompt, add CLI command\",\n          \"acceptance_criteria\": \"Generates valid JSON gameplan from sample todo.md\"\n        }\n      ],\n      \"rationale\": \"Core planning capability using existing Grok client infrastructure\",\n      \"dependencies\": [\"batch-002\"]\n    },\n    {\n      \"id\": \"batch-004\",\n      \"title\": \"Implement single batch execution engine\",\n      \"priority\": \"high\",\n      \"estimated_effort\": \"large\",\n      \"items\": [\n        {\n          \"todo_id\": \"8377a261\",\n          \"description\": \"Execute single batch: read batch JSON, generate code changes via LLM, apply them, update todo.md status markers\",\n          \"files\": [\"src/bin/cli.rs\"],\n          \"approach\": \"Implement todo-work command - LLM codegen + git apply + todo.md status updates, replaces 500 lines Python\",\n          \"acceptance_criteria\": \"Processes batch JSON, generates/applies patches, updates todo.md successfully\"\n        }\n      ],\n      \"rationale\": \"The big one - core execution engine replacing massive Python workflow\",\n      \"dependencies\": [\"batch-002\", \"batch-003\"]\n    },\n    {\n      \"id\": \"batch-005\",\n      \"title\": \"Replace Python workflow steps with Rust CLI\",\n      \"priority\": \"high\",\n      \"estimated_effort\": \"small\",\n      \"items\": [\n        {\n          \"todo_id\": \"3398f310\",\n          \"description\": \"Update llm-audit.yml to call rustassistant todo-scan/todo-plan/todo-work instead of Python steps, fallback to Python if image pull fails\",\n          \"files\": [\"llm-audit.yml\"],\n          \"approach\": \"Replace Python todo-analyze/plan/work steps with ./rustassistant-bin calls in GitHub Actions\",\n          \"acceptance_criteria\": \"Workflow runs end-to-end using Rust binary instead of Python\"\n        }\n      ],\n      \"rationale\": \"Integrates new Rust CLI into production workflow once commands exist\",\n      \"dependencies\": [\"batch-004\"]\n    },\n    {\n      \"id\": \"batch-006\",\n      \"title\": \"Fix core API handlers - document listing and stats\",\n      \"priority\": \"high\",\n      \"estimated_effort\": \"medium\",\n      \"items\": [\n        {\n          \"todo_id\": \"12542b08\",\n          \"description\": \"Implement proper document listing with filters - fix empty vec placeholder\",\n          \"files\": [\"src/api/handlers.rs:345\"],\n          \"approach\": \"Query documents from DB with filter params\",\n          \"acceptance_criteria\": \"Returns actual documents with working filters\"\n        },\n        {\n          \"todo_id\": \"7048cea1\",\n          \"description\": \"Implement document stats by_type counts - fix empty vec\",\n          \"files\": [\"src/api/handlers.rs:132\"],\n          \"approach\": \"Group documents by type field from DB\",\n          \"acceptance_criteria\": \"Returns correct type counts\"\n        },\n        {\n          \"todo_id\": \"7167a7b9\",\n          \"description\": \"Calculate average chunk size - fix hardcoded 0.0\",\n          \"files\": [\"src/api/handlers.rs:137\"],\n          \"approach\": \"Query chunks table, compute avg(chunk_size)\",\n          \"acceptance_criteria\": \"Returns actual average chunk size > 0\"\n        }\n      ],\n      \"rationale\": \"All related API handler fixes in same file - quick DB query implementations\",\n      \"dependencies\": [\"batch-001\"]\n    },\n    {\n      \"id\": \"batch-007\",\n      \"title\": \"Fix RAG integration and indexing concurrency\",\n      \"priority\": \"high\",\n      \"estimated_effort\": \"medium\",\n      \"items\": [\n        {\n          \"todo_id\": \"f56eeb38\",\n          \"description\": \"Integrate RAG context search with LanceDB vector search - fix empty results\",\n          \"files\": [\"src/research/worker.rs:275\"],\n          \"approach\": \"Replace empty vec with actual LanceDB vector similarity search\",\n          \"acceptance_criteria\": \"search_rag_context returns non-empty relevant results\"\n        },\n        {\n          \"todo_id\": \"5fd10bdb\",\n          \"description\": \"Implement concurrent batch indexing with semaphore - fix sequential only\",\n          \"files\": [\"src/indexing.rs:395\"],\n          \"approach\": \"Use tokio::spawn with semaphore to parallelize document indexing\",\n          \"acceptance_criteria\": \"Multiple documents index concurrently without overwhelming resources\"\n        }\n      ],\n      \"rationale\": \"Core search/indexing performance fixes - related to RAG pipeline\",\n      \"dependencies\": [\"batch-001\"]\n    },\n    {\n      \"id\": \"batch-008\",\n      \"title\": \"Fix XAI API testing and test result parsing\",\n      \"priority\": \"medium\",\n      \"estimated_effort\": \"small\",\n      \"items\": [\n        {\n          \"todo_id\": \"aa2df73b\",\n          \"description\": \"Actually test XAI API connection in test-api command - don't just check key exists\",\n          \"files\": [\"src/bin/cli.rs:726\"],\n          \"approach\": \"Make real API call with healthcheck endpoint, verify response\",\n          \"acceptance_criteria\": \"test-api reports actual API connectivity status\"\n        },\n        {\n          \"todo_id\": \"76987101\",\n          \"description\": \"Parse detailed per-file test results in TestRunner - fix empty results_by_file HashMap\",\n          \"files\": [\"src/tests_runner.rs:184\"],\n          \"approach\": \"Parse test output to populate file→results mapping\",\n          \"acceptance_criteria\": \"results_by_file contains actual test results grouped by file\"\n        }\n      ],\n      \"rationale\": \"Both improve testing/debugging capabilities - related to validation\",\n      \"dependencies\": []\n    },\n    {\n      \"id\": \"batch-009\",\n      \"title\": \"UI and queue processor improvements\",\n      \"priority\": \"medium\",\n      \"estimated_effort\": \"small\",\n      \"items\": [\n        {\n          \"todo_id\": \"eae6b157\",\n          \"description\": \"Add pinned field to Document struct for docs list and detail views\",\n          \"files\": [\"src/web_ui_extensions.rs:375\", \"src/web_ui_extensions.rs:719\"],\n          \"approach\": \"Add pinned: bool to Document, update DB schema, fix pin_icon rendering\",\n          \"acceptance_criteria\": \"Pin icons render correctly in document list\"\n        },\n        {\n          \"todo_id\": \"77723d52\",\n          \"description\": \"Implement tag refinement and project linking in queue processor tagging stage\",\n          \"files\": [\"src/queue/processor.rs:430\"],\n          \"approach\": \"Add tag analysis logic and project association before advancing stage\",\n          \"acceptance_criteria\": \"Items get refined tags and project links before ready state\"\n        }\n      ],\n      \"rationale\": \"Both enhance UI/queue maturity - small interconnected changes\",\n      \"dependencies\": [\"batch-001\"]\n    },\n    {\n      \"id\": \"batch-010\",\n      \"title\": \"Low priority config and DB cleanup\",\n      \"priority\": \"low\",\n      \"estimated_effort\": \"small\",\n      \"items\": [\n        {\n          \"todo_id\": \"4f2056d8\",\n          \"description\": \"Make skip-extensions list configurable per-repo instead of hardcoded\",\n          \"files\": [],\n          \"approach\": \"Read skip_extensions from repo config or env\",\n          \"acceptance_criteria\": \"Different repos can have custom skip lists\"\n        },\n        {\n          \"todo_id\": \"b5fa896d\",\n          \"description\": \"Consolidate todo_items DB table usage with tasks table - remove parallel systems\",\n          \"files\": [\"src/db/queue.rs:13\"],\n          \"approach\": \"Migrate todo_items logic to use tasks table exclusively\",\n          \"acceptance_criteria\": \"Single tasks table handles all queue operations\"\n        }\n      ],\n      \"rationale\": \"Config flexibility + DB cleanup - low risk housekeeping\",\n      \"dependencies\": [\"batch-001\"]\n    }\n  ],\n  \"skipped_items\": [\n    \"[LOW] [id:14d0a61f] Add `docker-compose.yml` healthcheck for Redis connectivity from rustassistant container\",\n    \"[LOW] [id:5a59f791] Expose an `/api/audit` endpoint so the LLM audit workflow can leverage the Rust API + Redis cache instead of raw Python API calls\",\n    \"[LOW] [id:25900267] Add `todo.md` generation to the `regular` audit mode — after the LLM audit, auto-append new findings as TODO items to the target repo's `todo.md`\",\n    \"[LOW] [id:37d05d26] Standardise error handling across API handlers (mix of `anyhow` and manual error responses)\"\n  ]\n}\n```"
+}

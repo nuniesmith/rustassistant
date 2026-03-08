@@ -3662,6 +3662,7 @@ dependencies = [
  "sha2",
  "shellexpand",
  "sqlx",
+ "syn 2.0.114",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",

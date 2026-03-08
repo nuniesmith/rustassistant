@@ -19,6 +19,12 @@ use rustassistant::db::{
 use rustassistant::repo_cache::{CacheType, RepoCache};
 use rustassistant::repo_cache_sql::{CacheSetParams as SqlCacheSetParams, RepoCacheSql};
 
+// Todo pipeline imports
+use rustassistant::todo::{
+    PlannerConfig, ScaffoldConfig, ScanConfig, SyncConfig, TodoCommentScanner, TodoPlanner,
+    TodoScaffolder, TodoSyncer, TodoWorker, WorkBatch, WorkConfig,
+};
+
 // ============================================================================
 // CLI Structure
 // ============================================================================
@@ -101,6 +107,152 @@ enum Commands {
     Github {
         #[command(subcommand)]
         action: GithubCommands,
+    },
+
+    /// Rust-native TODO pipeline (scan → scaffold → plan → work → sync)
+    Todo {
+        #[command(subcommand)]
+        action: TodoCommands,
+    },
+}
+
+// ============================================================================
+// Todo Pipeline Subcommands
+// ============================================================================
+
+#[derive(Subcommand)]
+enum TodoCommands {
+    /// STEP 0 — Scan source code for inline TODO/FIXME/HACK/XXX comments
+    ///
+    /// Walks the repo tree and extracts every TODO-style comment into
+    /// structured JSON.  No LLM calls — purely static.
+    ///
+    /// Examples:
+    ///   rustassistant todo scan .
+    ///   rustassistant todo scan . --json
+    ///   rustassistant todo scan . --filter high --output scan.json
+    Scan {
+        /// Path to the repository root (default: current directory)
+        #[arg(default_value = ".")]
+        repo: String,
+
+        /// Emit raw JSON instead of a human-readable table
+        #[arg(long)]
+        json: bool,
+
+        /// Minimum priority to include: low | medium | high
+        #[arg(long, default_value = "low")]
+        filter: String,
+
+        /// Write output to a file instead of stdout
+        #[arg(short, long)]
+        output: Option<String>,
+    },
+
+    /// STEP 1 — Scaffold files/folders/stubs described in todo.md
+    ///
+    /// Reads todo.md, asks the LLM which files/dirs need to exist, creates
+    /// stubs on disk, and writes a "Scaffolded files" section back into
+    /// todo.md.  Idempotent — safe to re-run.
+    ///
+    /// Examples:
+    ///   rustassistant todo scaffold .
+    ///   rustassistant todo scaffold . --dry-run
+    ///   rustassistant todo scaffold . --overwrite --output scaffold.json
+    Scaffold {
+        /// Path to the repository root (default: current directory)
+        #[arg(default_value = ".")]
+        repo: String,
+
+        /// Preview what would be created without touching the file system
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Overwrite existing stubs (default: skip)
+        #[arg(long)]
+        overwrite: bool,
+
+        /// Write the ScaffoldPlan JSON to a file
+        #[arg(short, long)]
+        output: Option<String>,
+    },
+
+    /// STEP 2 — Generate a batched GAMEPLAN from todo.md via the LLM
+    ///
+    /// Reads todo.md plus optional source-context snippets and asks the
+    /// LLM to produce a prioritised, dependency-aware GamePlan JSON.
+    ///
+    /// Examples:
+    ///   rustassistant todo plan todo.md
+    ///   rustassistant todo plan todo.md --context . --output .rustassistant/gameplan.json
+    Plan {
+        /// Path to todo.md
+        todo_md: String,
+
+        /// Optional repo root for source-context snippets
+        #[arg(long)]
+        context: Option<String>,
+
+        /// Write the GamePlan JSON to this file
+        #[arg(short, long)]
+        output: Option<String>,
+    },
+
+    /// STEP 3 — Execute a single batch from a GamePlan
+    ///
+    /// Reads a GamePlan JSON (or a single batch JSON), calls the LLM to
+    /// generate real code for each item, applies hunks/replacements to disk,
+    /// creates backups, and writes a WorkResult JSON.
+    ///
+    /// Examples:
+    ///   rustassistant todo work .rustassistant/gameplan.json --batch batch-001 --dry-run
+    ///   rustassistant todo work .rustassistant/gameplan.json --batch batch-001
+    Work {
+        /// Path to a GamePlan JSON file (or a single-batch JSON)
+        gameplan: String,
+
+        /// Batch ID to execute (required when file is a full GamePlan)
+        #[arg(long)]
+        batch: Option<String>,
+
+        /// Dry-run: build prompts and plan changes but do not write to disk
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Root of the repository being modified (default: current directory)
+        #[arg(long, default_value = ".")]
+        repo: String,
+
+        /// Skip the post-work `cargo check` compile verification and automatic
+        /// rollback on failure.  By default a check is run after applying
+        /// changes; pass this flag to skip it (e.g. for non-Rust repos or
+        /// when you want to review changes manually before checking).
+        #[arg(long)]
+        no_check: bool,
+    },
+
+    /// STEP 4 — Apply a WorkResult back to todo.md (update status markers)
+    ///
+    /// Reads a WorkResult JSON produced by `todo work` and updates the
+    /// corresponding todo.md items with ✅ / ⚠️ / ❌ status markers.
+    ///
+    /// Examples:
+    ///   rustassistant todo sync todo.md .rustassistant/results/batch-001.json
+    ///   rustassistant todo sync todo.md result.json --dry-run --append-summary
+    Sync {
+        /// Path to todo.md
+        todo_md: String,
+
+        /// Path to the WorkResult JSON produced by `todo work`
+        results: String,
+
+        /// Preview changes without writing todo.md
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Append a human-readable summary section to todo.md
+        #[arg(long)]
+        append_summary: bool,
     },
 }
 
@@ -353,6 +505,633 @@ async fn main() -> anyhow::Result<()> {
         Commands::Refactor { action } => handle_refactor_action(&pool, action).await?,
         Commands::Cache { action } => handle_cache_action(action).await?,
         Commands::Github { action } => handle_github_command(action, &pool).await?,
+        Commands::Todo { action } => handle_todo_command(action, &pool).await?,
+    }
+
+    Ok(())
+}
+
+// ============================================================================
+// Todo Pipeline Handlers
+// ============================================================================
+
+async fn handle_todo_command(action: TodoCommands, pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
+    match action {
+        TodoCommands::Scan {
+            repo,
+            json,
+            filter,
+            output,
+        } => handle_todo_scan(repo, json, filter, output).await,
+
+        TodoCommands::Scaffold {
+            repo,
+            dry_run,
+            overwrite,
+            output,
+        } => handle_todo_scaffold(repo, dry_run, overwrite, output, pool).await,
+
+        TodoCommands::Plan {
+            todo_md,
+            context,
+            output,
+        } => handle_todo_plan(todo_md, context, output, pool).await,
+
+        TodoCommands::Work {
+            gameplan,
+            batch,
+            dry_run,
+            repo,
+            no_check,
+        } => handle_todo_work(gameplan, batch, dry_run, no_check, repo, pool).await,
+
+        TodoCommands::Sync {
+            todo_md,
+            results,
+            dry_run,
+            append_summary,
+        } => handle_todo_sync(todo_md, results, dry_run, append_summary).await,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// todo scan
+// ---------------------------------------------------------------------------
+
+async fn handle_todo_scan(
+    repo: String,
+    json: bool,
+    filter: String,
+    output: Option<String>,
+) -> anyhow::Result<()> {
+    use rustassistant::todo::CommentPriority;
+
+    let repo_path = std::path::Path::new(&repo)
+        .canonicalize()
+        .unwrap_or_else(|_| std::path::PathBuf::from(&repo));
+
+    let config = ScanConfig {
+        relative_paths: true,
+        ..ScanConfig::default()
+    };
+
+    let scanner = TodoCommentScanner::with_config(config)?;
+
+    eprintln!(
+        "{}  Scanning {}…",
+        "🔍".bold(),
+        repo_path.display().to_string().cyan()
+    );
+
+    let scan_output = scanner.scan_repo(&repo_path)?;
+
+    // Apply priority filter
+    let min_priority = match filter.to_lowercase().as_str() {
+        "high" => CommentPriority::High,
+        "medium" => CommentPriority::Medium,
+        _ => CommentPriority::Low,
+    };
+    let filtered_items = scan_output.filter_by_priority(min_priority);
+
+    let rendered = if json {
+        // Re-use the full ScanOutput serialisation but only emit the filtered items
+        let filtered_output = rustassistant::todo::ScanOutput {
+            repo_path: scan_output.repo_path.clone(),
+            scanned_at: scan_output.scanned_at.clone(),
+            total_files_scanned: scan_output.total_files_scanned,
+            items: filtered_items.iter().map(|i| (*i).clone()).collect(),
+            summary: scan_output.summary.clone(),
+        };
+        filtered_output.to_json_pretty()?
+    } else {
+        render_scan_table_items(&filtered_items)
+    };
+
+    if let Some(out_path) = output {
+        std::fs::write(&out_path, &rendered)?;
+        eprintln!("{}  Wrote scan output → {}", "✅".bold(), out_path.green());
+    } else {
+        println!("{}", rendered);
+    }
+
+    eprintln!(
+        "\n{}  {} item(s) shown ({} total) across {} file(s) ({} high / {} medium / {} low)",
+        "📊".bold(),
+        filtered_items.len().to_string().bold(),
+        scan_output.items.len().to_string().dimmed(),
+        scan_output.summary.files_with_todos.to_string().cyan(),
+        scan_output
+            .summary
+            .by_priority
+            .get("high")
+            .copied()
+            .unwrap_or(0)
+            .to_string()
+            .red(),
+        scan_output
+            .summary
+            .by_priority
+            .get("medium")
+            .copied()
+            .unwrap_or(0)
+            .to_string()
+            .yellow(),
+        scan_output
+            .summary
+            .by_priority
+            .get("low")
+            .copied()
+            .unwrap_or(0)
+            .to_string()
+            .green(),
+    );
+
+    Ok(())
+}
+
+/// Render a filtered list of scan items as a coloured human-readable table.
+fn render_scan_table_items(items: &[&rustassistant::todo::TodoCommentItem]) -> String {
+    use std::fmt::Write as FmtWrite;
+
+    let mut buf = String::new();
+    let _ = writeln!(
+        buf,
+        "\n{:<8}  {:<12}  {:<40}  {}",
+        "PRIORITY".bold(),
+        "KIND".bold(),
+        "FILE:LINE".bold(),
+        "TEXT".bold()
+    );
+    let _ = writeln!(buf, "{}", "─".repeat(100).dimmed());
+
+    for item in items {
+        let priority_col = match item.priority {
+            rustassistant::todo::CommentPriority::High => "high".red().bold().to_string(),
+            rustassistant::todo::CommentPriority::Medium => "medium".yellow().to_string(),
+            rustassistant::todo::CommentPriority::Low => "low".green().to_string(),
+        };
+        let loc = format!("{}:{}", item.file.display(), item.line);
+        let text = if item.text.chars().count() > 60 {
+            let truncated: String = item.text.chars().take(57).collect();
+            format!("{}…", truncated)
+        } else {
+            item.text.clone()
+        };
+        let _ = writeln!(
+            buf,
+            "{:<17}  {:<12}  {:<40}  {}",
+            priority_col,
+            item.kind.as_str().cyan(),
+            loc.dimmed(),
+            text
+        );
+    }
+
+    buf
+}
+
+// ---------------------------------------------------------------------------
+// todo scaffold
+// ---------------------------------------------------------------------------
+
+async fn handle_todo_scaffold(
+    repo: String,
+    dry_run: bool,
+    overwrite: bool,
+    output: Option<String>,
+    pool: &sqlx::SqlitePool,
+) -> anyhow::Result<()> {
+    let repo_path = std::path::Path::new(&repo)
+        .canonicalize()
+        .unwrap_or_else(|_| std::path::PathBuf::from(&repo));
+
+    let config = ScaffoldConfig {
+        dry_run,
+        overwrite,
+        ..ScaffoldConfig::default()
+    };
+
+    let db = rustassistant::db::Database::from_pool(pool.clone());
+
+    if dry_run {
+        eprintln!(
+            "{}  [dry-run] Scaffolding {}…",
+            "🔧".bold(),
+            repo_path.display().to_string().cyan()
+        );
+    } else {
+        eprintln!(
+            "{}  Scaffolding {}…",
+            "🔧".bold(),
+            repo_path.display().to_string().cyan()
+        );
+    }
+
+    let scaffolder = TodoScaffolder::from_env(config, db).await?;
+    let result = scaffolder.scaffold(&repo_path).await?;
+
+    // Optionally write the plan to disk
+    if let Some(out_path) = &output {
+        let plan_json = result.plan.to_json_pretty()?;
+        std::fs::write(out_path, &plan_json)?;
+        eprintln!(
+            "{}  Wrote scaffold plan → {}",
+            "📄".bold(),
+            out_path.green()
+        );
+    }
+
+    result.print_summary();
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// todo plan
+// ---------------------------------------------------------------------------
+
+async fn handle_todo_plan(
+    todo_md: String,
+    context: Option<String>,
+    output: Option<String>,
+    pool: &sqlx::SqlitePool,
+) -> anyhow::Result<()> {
+    let todo_path = std::path::PathBuf::from(&todo_md);
+    let source_root = context.as_deref().map(std::path::Path::new);
+
+    let config = PlannerConfig::default();
+    let db = rustassistant::db::Database::from_pool(pool.clone());
+
+    eprintln!(
+        "{}  Planning from {}…",
+        "📋".bold(),
+        todo_path.display().to_string().cyan()
+    );
+
+    let planner = TodoPlanner::from_env(config, db).await?;
+    let gameplan = planner.plan(&todo_path, source_root).await?;
+
+    let json = gameplan.to_json_pretty()?;
+
+    if let Some(out_path) = &output {
+        // Ensure parent directory exists
+        if let Some(parent) = std::path::Path::new(out_path).parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(out_path, &json)?;
+        eprintln!("{}  Wrote gameplan → {}", "✅".bold(), out_path.green());
+    } else {
+        println!("{}", json);
+    }
+
+    // Human-readable summary
+    eprintln!(
+        "\n{}  {} batch(es), {} item(s) planned, {} item(s) skipped",
+        "📊".bold(),
+        gameplan.batches.len().to_string().bold(),
+        gameplan.total_items_planned.to_string().cyan(),
+        gameplan.skipped_items.len().to_string().yellow(),
+    );
+
+    for batch in gameplan.ordered_batches() {
+        eprintln!(
+            "   {} [{}] {} — {} item(s), effort: {}",
+            "▸".dimmed(),
+            batch.id.cyan(),
+            batch.title.bold(),
+            batch.items.len().to_string().yellow(),
+            batch.estimated_effort.to_string().green(),
+        );
+    }
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// todo work
+// ---------------------------------------------------------------------------
+
+async fn handle_todo_work(
+    gameplan: String,
+    batch: Option<String>,
+    dry_run: bool,
+    no_check: bool,
+    repo: String,
+    pool: &sqlx::SqlitePool,
+) -> anyhow::Result<()> {
+    let repo_path = std::path::Path::new(&repo)
+        .canonicalize()
+        .unwrap_or_else(|_| std::path::PathBuf::from(&repo));
+
+    // Load the work batch — either from a standalone batch JSON or from a full GamePlan
+    let work_batch: WorkBatch = if let Some(batch_id) = &batch {
+        WorkBatch::load_from_gameplan(std::path::Path::new(&gameplan), batch_id)?
+    } else {
+        WorkBatch::load(std::path::Path::new(&gameplan))?
+    };
+
+    let mut config = WorkConfig::for_repo(&repo_path).with_skip_todo_md_update();
+    if dry_run {
+        config = config.as_dry_run();
+    }
+
+    let db = rustassistant::db::Database::from_pool(pool.clone());
+
+    if dry_run {
+        eprintln!(
+            "{}  [dry-run] Executing batch {} in {}…",
+            "⚙️ ".bold(),
+            work_batch.batch.id.cyan(),
+            repo_path.display().to_string().cyan()
+        );
+    } else {
+        eprintln!(
+            "{}  Executing batch {} in {}…",
+            "⚙️ ".bold(),
+            work_batch.batch.id.cyan(),
+            repo_path.display().to_string().cyan()
+        );
+    }
+
+    // Snapshot the files the batch intends to touch *before* applying changes
+    // so we can roll back if the post-work compile check fails.
+    let pre_snapshots: std::collections::HashMap<String, Option<Vec<u8>>> = if !dry_run {
+        work_batch
+            .batch
+            .items
+            .iter()
+            .flat_map(|i| i.files.iter())
+            .map(|f| {
+                let abs = repo_path.join(f);
+                let contents = std::fs::read(&abs).ok();
+                (f.clone(), contents)
+            })
+            .collect()
+    } else {
+        Default::default()
+    };
+
+    let worker = TodoWorker::from_env(config, db).await?;
+    let result = worker.execute(&work_batch).await?;
+
+    // -----------------------------------------------------------------------
+    // Post-work compile check (Rust repos only, skipped with --no-check or
+    // --dry-run).  Detects whether the LLM-generated changes introduced any
+    // compile errors and, if so, rolls every touched file back to its
+    // pre-change snapshot.
+    // -----------------------------------------------------------------------
+    let check_passed = if !dry_run && !no_check && result.items_succeeded > 0 {
+        let is_rust_repo = repo_path.join("Cargo.toml").exists();
+        if is_rust_repo {
+            eprintln!("\n{}  Running compile check on changed files…", "🔬".bold());
+
+            let check_output = std::process::Command::new("cargo")
+                .arg("check")
+                .env("SQLX_OFFLINE", "true")
+                // Suppress the full warning wall — we only care about errors.
+                .env("RUSTFLAGS", "-A warnings")
+                .current_dir(&repo_path)
+                .output();
+
+            match check_output {
+                Ok(out) if out.status.success() => {
+                    eprintln!("{}  Compile check passed ✅", "🔬".bold());
+                    true
+                }
+                Ok(out) => {
+                    let stderr = String::from_utf8_lossy(&out.stderr);
+                    // Extract just the error lines for a concise report.
+                    let error_lines: Vec<&str> = stderr
+                        .lines()
+                        .filter(|l| l.starts_with("error") || l.contains("^"))
+                        .take(20)
+                        .collect();
+
+                    eprintln!(
+                        "\n{}  Compile check FAILED — rolling back {} touched file(s)…",
+                        "🔴".bold(),
+                        pre_snapshots.len()
+                    );
+
+                    // Print the first batch of errors so the user can review.
+                    for line in &error_lines {
+                        eprintln!("   {}", line.red());
+                    }
+                    if stderr.lines().filter(|l| l.starts_with("error")).count() > 20 {
+                        eprintln!(
+                            "   {} (truncated — run `cargo check` for full output)",
+                            "…".dimmed()
+                        );
+                    }
+
+                    // Roll back every file the batch touched.
+                    let mut rolled_back = 0usize;
+                    let mut rollback_errors = Vec::new();
+
+                    for (rel_path, maybe_original) in &pre_snapshots {
+                        let abs = repo_path.join(rel_path);
+                        match maybe_original {
+                            Some(original_bytes) => {
+                                // File existed before — restore it.
+                                match std::fs::write(&abs, original_bytes) {
+                                    Ok(_) => {
+                                        eprintln!("   ↩  Restored {}", rel_path.yellow());
+                                        rolled_back += 1;
+                                    }
+                                    Err(e) => {
+                                        rollback_errors
+                                            .push(format!("  restore {}: {}", rel_path, e));
+                                    }
+                                }
+                            }
+                            None => {
+                                // File was newly created — remove it.
+                                if abs.exists() {
+                                    match std::fs::remove_file(&abs) {
+                                        Ok(_) => {
+                                            eprintln!(
+                                                "   ↩  Removed new file {}",
+                                                rel_path.yellow()
+                                            );
+                                            rolled_back += 1;
+                                        }
+                                        Err(e) => {
+                                            rollback_errors
+                                                .push(format!("  remove {}: {}", rel_path, e));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    eprintln!(
+                        "{}  Rollback complete — {} file(s) restored. WorkResult NOT written.",
+                        if rollback_errors.is_empty() {
+                            "↩ ".bold()
+                        } else {
+                            "⚠️ ".bold()
+                        },
+                        rolled_back
+                    );
+
+                    if !rollback_errors.is_empty() {
+                        eprintln!("{}  Some rollbacks failed:", "⚠️ ".bold());
+                        for e in &rollback_errors {
+                            eprintln!("   • {}", e.red());
+                        }
+                        eprintln!(
+                            "{}  Check {} for manual restoration.",
+                            "💡".bold(),
+                            repo_path
+                                .join(".rustassistant/backups")
+                                .display()
+                                .to_string()
+                                .cyan()
+                        );
+                    }
+
+                    false
+                }
+                Err(e) => {
+                    // cargo not on PATH or some other OS error — warn but don't
+                    // fail the whole command, since this may be a non-Rust env.
+                    eprintln!(
+                        "{}  Could not run `cargo check` ({}). Skipping compile verification.",
+                        "⚠️ ".bold(),
+                        e
+                    );
+                    true // treat as passed so we still write the result
+                }
+            }
+        } else {
+            // Not a Rust repo — skip compile check silently.
+            true
+        }
+    } else {
+        true
+    };
+
+    // Only persist the WorkResult when the compile check passed (or was skipped).
+    if check_passed {
+        let results_dir = repo_path.join(".rustassistant").join("results");
+        std::fs::create_dir_all(&results_dir)?;
+        let result_path = results_dir.join(format!("{}.json", result.batch_id));
+        let result_path_str = result_path.display().to_string();
+        let result_json = result.to_json_pretty()?;
+
+        if !dry_run {
+            std::fs::write(&result_path, &result_json)?;
+            eprintln!(
+                "{}  Wrote work result → {}",
+                "📄".bold(),
+                result_path_str.green()
+            );
+        }
+
+        // Human-readable summary
+        let status_icon = if result.is_fully_successful() {
+            "✅".to_string()
+        } else if result.items_failed > 0 {
+            "⚠️ ".to_string()
+        } else {
+            "ℹ️ ".to_string()
+        };
+
+        eprintln!(
+            "\n{}  batch {} — {} succeeded / {} failed / {} skipped",
+            status_icon,
+            result.batch_id.cyan(),
+            result.items_succeeded.to_string().green(),
+            result.items_failed.to_string().red(),
+            result.items_skipped.to_string().yellow(),
+        );
+
+        for fc in &result.file_changes {
+            eprintln!(
+                "   {} {} (+{} / -{})",
+                match fc.change_type {
+                    rustassistant::todo::FileChangeType::Created => "➕".to_string(),
+                    rustassistant::todo::FileChangeType::Modified => "✏️ ".to_string(),
+                    rustassistant::todo::FileChangeType::Deleted => "🗑️ ".to_string(),
+                },
+                fc.file.cyan(),
+                fc.lines_added.to_string().green(),
+                fc.lines_removed.to_string().red(),
+            );
+        }
+
+        if !result.errors.is_empty() {
+            eprintln!("\n{}  Errors:", "❌".bold());
+            for e in &result.errors {
+                eprintln!("   • {}", e.red());
+            }
+        }
+
+        if dry_run {
+            eprintln!(
+                "\n{}  Dry-run complete — no files were written.",
+                "ℹ️ ".bold()
+            );
+            println!("{}", result_json);
+        } else {
+            eprintln!(
+                "\n{}  Run `rustassistant todo sync {} {}` to update todo.md",
+                "💡".bold(),
+                "todo.md".cyan(),
+                result_path_str.green(),
+            );
+        }
+    }
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// todo sync
+// ---------------------------------------------------------------------------
+
+async fn handle_todo_sync(
+    todo_md: String,
+    results: String,
+    dry_run: bool,
+    append_summary: bool,
+) -> anyhow::Result<()> {
+    let todo_path = std::path::PathBuf::from(&todo_md);
+    let results_path = std::path::PathBuf::from(&results);
+
+    let config = SyncConfig {
+        dry_run,
+        append_summary,
+        ..SyncConfig::default()
+    };
+
+    if dry_run {
+        eprintln!(
+            "{}  [dry-run] Syncing {} ← {}…",
+            "🔄".bold(),
+            todo_path.display().to_string().cyan(),
+            results_path.display().to_string().cyan()
+        );
+    } else {
+        eprintln!(
+            "{}  Syncing {} ← {}…",
+            "🔄".bold(),
+            todo_path.display().to_string().cyan(),
+            results_path.display().to_string().cyan()
+        );
+    }
+
+    let syncer = TodoSyncer::new(config);
+    let sync_result = syncer.sync_from_file(&todo_path, &results_path)?;
+
+    sync_result.print_summary();
+
+    if dry_run {
+        eprintln!(
+            "\n{}  Dry-run complete — todo.md was not modified.",
+            "ℹ️ ".bold()
+        );
     }
 
     Ok(())

@@ -102,7 +102,7 @@ pub async fn get_stats(State(state): State<Arc<ApiState>>) -> impl IntoResponse 
         .unwrap_or(0);
 
     let indexed_docs =
-        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM documents WHERE indexed_at IS NOT NULL")
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM documents WHERE is_indexed = 1")
             .fetch_one(&state.db_pool)
             .await
             .unwrap_or(0);
@@ -111,7 +111,7 @@ pub async fn get_stats(State(state): State<Arc<ApiState>>) -> impl IntoResponse 
 
     // Get document stats by_type counts
     let by_type: Vec<TypeCount> = sqlx::query_as::<_, (String, i64)>(
-        "SELECT content_type, COUNT(*) FROM documents GROUP BY content_type",
+        "SELECT content_type, COUNT(*) FROM documents GROUP BY content_type"
     )
     .fetch_all(&state.db_pool)
     .await
@@ -133,15 +133,12 @@ pub async fn get_stats(State(state): State<Arc<ApiState>>) -> impl IntoResponse 
         0.0
     };
 
-    // Get average chunk size - computed from char_end - char_start per chunk
-    let avg_chunk_size = if total_chunks > 0 {
-        sqlx::query_scalar::<_, f64>("SELECT AVG(char_end - char_start) FROM document_chunks")
+    // Get average chunk size
+    let avg_chunk_size =
+        sqlx::query_scalar::<_, f64>("SELECT AVG(chunk_size) FROM document_chunks")
             .fetch_one(&state.db_pool)
             .await
-            .unwrap_or(0.0)
-    } else {
-        0.0
-    };
+            .unwrap_or(0.0);
 
     // Get job stats
     let job_stats = state.job_queue.get_stats().await;

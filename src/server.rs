@@ -2,7 +2,8 @@
 
 use crate::api::repos::{repo_router, RepoAppState};
 use crate::config::Config;
-use crate::db::{self, Repository};
+use crate::db::Database;
+use crate::db::{self, init_db, Repository};
 use crate::error::{AuditError, Result};
 use crate::git::GitManager;
 use crate::llm::LlmClient;
@@ -36,7 +37,7 @@ use tokio::fs;
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
-use tracing::info;
+use tracing::{info, warn};
 
 /// Application state shared across handlers
 #[derive(Clone)]
@@ -122,7 +123,31 @@ pub async fn run_server(config: Config) -> Result<()> {
     // ------------------------------------------------------------------
     // Build RepoSyncService + ModelRouter + SyncScheduler
     // ------------------------------------------------------------------
-    let sync_service = Arc::new(tokio::sync::RwLock::new(RepoSyncService::new()));
+
+    // Re-use the same SQLite pool that the rest of the app already has.
+    // This ensures registered_repos rows land in the same database file.
+    let sync_repo_service = {
+        let db_url = std::env::var("DATABASE_URL")
+            .unwrap_or_else(|_| "sqlite:data/rustassistant.db".to_string());
+        match init_db(&db_url).await {
+            Ok(pool) => {
+                let mut svc = RepoSyncService::with_db(pool);
+                match svc.load_from_db().await {
+                    Ok(n) => info!(count = n, "Loaded persisted repos from SQLite"),
+                    Err(e) => {
+                        warn!(error = %e, "Failed to load repos from SQLite — starting empty")
+                    }
+                }
+                svc
+            }
+            Err(e) => {
+                warn!(error = %e, "Could not open DB for RepoSyncService — using in-memory only");
+                RepoSyncService::new()
+            }
+        }
+    };
+
+    let sync_service = Arc::new(tokio::sync::RwLock::new(sync_repo_service));
 
     let model_router = Arc::new(ModelRouter::new(ModelRouterConfig {
         remote_api_key: std::env::var("XAI_API_KEY").unwrap_or_default(),
@@ -137,10 +162,40 @@ pub async fn run_server(config: Config) -> Result<()> {
         fallback_to_remote: true,
     }));
 
-    let repo_app_state = RepoAppState {
-        sync_service: Arc::clone(&sync_service),
-        model_router: Arc::clone(&model_router),
+    // Build GrokClient for the repo chat handler (None when XAI_API_KEY is unset).
+    let grok_for_repo: Option<Arc<crate::grok_client::GrokClient>> = match std::env::var(
+        "XAI_API_KEY",
+    ) {
+        Ok(api_key) if !api_key.is_empty() => {
+            let db_url = std::env::var("DATABASE_URL")
+                .unwrap_or_else(|_| "data/rustassistant.db".to_string());
+            let db_path = db_url
+                .trim_start_matches("sqlite://")
+                .trim_start_matches("sqlite:");
+            match Database::new(db_path).await {
+                Ok(db) => {
+                    let client = crate::grok_client::GrokClient::new(api_key, db);
+                    info!("GrokClient ready for repo chat handler");
+                    Some(Arc::new(client))
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "Failed to init DB for repo GrokClient — remote model unavailable");
+                    None
+                }
+            }
+        }
+        _ => {
+            info!("XAI_API_KEY not set — repo chat will use local model only");
+            None
+        }
     };
+
+    let repo_app_state = RepoAppState::from_env(
+        Arc::clone(&sync_service),
+        Arc::clone(&model_router),
+        grok_for_repo,
+    )
+    .await;
 
     // Start background sync scheduler
     let sync_interval_secs = std::env::var("REPO_SYNC_INTERVAL_SECS")

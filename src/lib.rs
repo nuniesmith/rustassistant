@@ -55,6 +55,7 @@ pub mod llm_config;
 pub mod metrics;
 pub mod model_router;
 pub mod multi_tenant;
+pub mod ollama_client;
 pub mod parser;
 pub mod prompt_hashes;
 pub mod prompt_router;
@@ -98,10 +99,11 @@ pub mod web_ui_scan_progress;
 pub mod webhooks;
 
 pub use api::{
-    create_api_router, create_default_api_router, generate_api_key, ApiConfig, ApiResponse,
-    ApiState, AuthConfig, AuthResult, IndexJobResponse, IndexJobStatus, IndexStatusResponse,
-    JobQueue, JobQueueConfig, JobStatus, PaginatedResponse, RateLimitConfig, RateLimiter,
-    SearchRequest, SearchResponse, SearchType, UploadDocumentRequest, UploadDocumentResponse,
+    create_api_router, create_default_api_router, generate_api_key, hash_api_key, ApiConfig,
+    ApiResponse, ApiState, AuthConfig, AuthResult, IndexJobResponse, IndexJobStatus,
+    IndexStatusResponse, JobQueue, JobQueueConfig, JobStatus, PaginatedResponse, RateLimitConfig,
+    RateLimiter, SearchRequest, SearchResponse, SearchType, UploadDocumentRequest,
+    UploadDocumentResponse,
 };
 pub use cache::{AuditCache, CacheEntry, CacheStats};
 pub use cache_layer::{

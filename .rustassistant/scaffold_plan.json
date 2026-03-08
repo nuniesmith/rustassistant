@@ -1,0 +1,7 @@
+{
+  "generated_at": "2026-03-08T00:51:29.618727130Z",
+  "model": "grok-4-turbo",
+  "entries": [],
+  "no_action_items": [],
+  "raw_llm_response": "{\n  \"entries\": [],\n  \"no_action_items\": [\n    \"[HIGH] [id:f6837d1b] `src/todo/todo_file.rs` has the full parser, mutator, and writer. Needs integration tests that run the full round-trip: parse `rustassistant/todo.md` → mark items → save → re-parse and verify. Confirm `crc32_simple` IDs are stable across re-parses on the same file.\",\n    \"[HIGH] [id:a8e2c65b] Replace the Python `todo-analyze`, `todo-plan`, and `todo"
+}

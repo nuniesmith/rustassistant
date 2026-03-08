@@ -182,6 +182,19 @@ impl JobQueue {
         job_id
     }
 
+    /// Return the number of queued (pending) jobs without async overhead.
+    ///
+    /// Uses `try_read` so it never blocks; returns 0 if the lock is contended.
+    pub fn pending_count(&self) -> usize {
+        match self.jobs.try_read() {
+            Ok(jobs) => jobs
+                .values()
+                .filter(|j| j.status == JobStatus::Queued)
+                .count(),
+            Err(_) => 0,
+        }
+    }
+
     /// Get job status
     pub async fn get_job(&self, job_id: &str) -> Option<IndexJob> {
         let jobs = self.jobs.read().await;

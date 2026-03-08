@@ -311,7 +311,12 @@ pub struct DocumentTag {
 pub async fn init_db(database_url: &str) -> DbResult<SqlitePool> {
     // Create the database file directory if needed
     if database_url.starts_with("sqlite:") {
-        let path = database_url.trim_start_matches("sqlite:");
+        // Handle both sqlite:path and sqlite://path (and sqlite:///abs/path)
+        let raw = database_url.trim_start_matches("sqlite:");
+        let path = raw.trim_start_matches("//");
+        // For absolute paths sqlite:///abs/path the triple-slash leaves a leading /
+        // after the double-slash strip — that's correct. For sqlite://data/foo we
+        // want "data/foo", which is what trim_start_matches("//") gives us.
         let file_path = std::path::Path::new(path);
 
         // Create parent directory if needed

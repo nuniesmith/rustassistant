@@ -7,7 +7,7 @@
 //! - Authentication and rate limiting
 //! - System statistics and health checks
 
-// pub mod admin; // TODO: Fix - accessing non-existent ApiState fields
+pub mod admin;
 pub mod auth;
 pub mod handlers;
 pub mod jobs;
@@ -26,7 +26,7 @@ use crate::embeddings::{EmbeddingConfig, EmbeddingGenerator};
 use crate::indexing::IndexingConfig;
 use sqlx::SqlitePool;
 
-pub use auth::{generate_api_key, AuthConfig, AuthResult};
+pub use auth::{generate_api_key, hash_api_key, AuthConfig, AuthResult};
 pub use handlers::ApiState;
 pub use jobs::{JobQueue, JobQueueConfig, JobStatus};
 pub use rate_limit::{RateLimitConfig, RateLimiter};
@@ -88,6 +88,7 @@ pub async fn create_api_router(
             "/index/jobs/:job_id/cancel",
             post(handlers::cancel_index_job),
         )
+        .merge(admin::admin_router())
         .with_state(api_state);
 
     // Apply middleware (rate limiting, then auth)

@@ -1,11 +1,10 @@
 // src/repo_sync.rs
-// RustAssistant RepoSyncService
+// STUB: RustAssistant RepoSyncService
 // Handles repo registration, tree snapshots, TODO extraction, and .rustassistant/ cache management
 // TODO: integrate with existing document indexing pipeline in src/search.rs
 
 use serde::{Deserialize, Serialize};
-use sqlx::Row;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::fs;
@@ -93,7 +92,7 @@ pub struct RepoManifest {
 pub struct TodoItem {
     pub kind: TodoKind,
     pub message: String,
-    pub file: String, // relative path from repo root
+    pub file: String,   // relative path from repo root
     pub line: usize,
 }
 
@@ -165,10 +164,8 @@ pub struct SyncResult {
 
 #[derive(Debug)]
 pub struct RepoSyncService {
-    /// In-memory registry (always authoritative; SQLite is the persistence backing store).
+    /// In-memory registry — TODO: back this with SQLite via sqlx
     repos: HashMap<String, RegisteredRepo>,
-    /// Optional SQLite pool for persistent repo registration.
-    db: Option<sqlx::SqlitePool>,
     /// File extensions to index (skip target/, .git/, node_modules/ etc.)
     include_extensions: Vec<String>,
     /// Directories to always skip
@@ -179,99 +176,29 @@ impl Default for RepoSyncService {
     fn default() -> Self {
         Self {
             repos: HashMap::new(),
-            db: None,
             include_extensions: vec![
-                "rs".into(),
-                "toml".into(),
-                "md".into(),
-                "sh".into(),
-                "yml".into(),
-                "yaml".into(),
-                "json".into(),
-                "sql".into(),
+                "rs".into(), "toml".into(), "md".into(),
+                "sh".into(), "yml".into(), "yaml".into(),
+                "json".into(), "sql".into(),
             ],
             skip_dirs: vec![
-                "target".into(),
-                ".git".into(),
-                "node_modules".into(),
-                ".sqlx".into(),
-                "dist".into(),
+                "target".into(), ".git".into(), "node_modules".into(),
+                ".sqlx".into(), "dist".into(),
             ],
         }
     }
 }
 
 impl RepoSyncService {
-    /// Create an in-memory-only service (no persistence across restarts).
     pub fn new() -> Self {
         Self::default()
-    }
-
-    /// Create a service backed by an existing `SqlitePool`.
-    ///
-    /// Call [`load_from_db`] afterwards to populate the in-memory map from
-    /// any rows already in the `registered_repos` table.
-    pub fn with_db(pool: sqlx::SqlitePool) -> Self {
-        Self {
-            db: Some(pool),
-            ..Self::default()
-        }
-    }
-
-    /// Load all active repos from `registered_repos` into the in-memory map.
-    ///
-    /// Safe to call at startup; silently skips rows whose `local_path` cannot
-    /// be parsed as a valid UTF-8 path.
-    pub async fn load_from_db(&mut self) -> anyhow::Result<usize> {
-        let pool = match &self.db {
-            Some(p) => p,
-            None => return Ok(0),
-        };
-
-        let rows = sqlx::query(
-            r#"
-            SELECT id, name, local_path, remote_url, branch, last_synced, active
-            FROM registered_repos
-            WHERE active = 1
-            "#,
-        )
-        .fetch_all(pool)
-        .await?;
-
-        let count = rows.len();
-        for row in rows {
-            let id: String = row.try_get("id")?;
-            let name: String = row.try_get("name")?;
-            let local_path: String = row.try_get("local_path")?;
-            let remote_url: Option<String> = row.try_get("remote_url")?;
-            let branch: String = row.try_get("branch")?;
-            let last_synced: Option<i64> = row.try_get("last_synced")?;
-            let active: i64 = row.try_get("active")?;
-
-            let repo = RegisteredRepo {
-                id: id.clone(),
-                name,
-                local_path: PathBuf::from(&local_path),
-                remote_url,
-                branch,
-                last_synced: last_synced.map(|v| v as u64),
-                active: active != 0,
-            };
-            self.repos.insert(repo.id.clone(), repo);
-        }
-
-        info!(count, "Loaded registered repos from SQLite");
-        Ok(count)
     }
 
     // -----------------------------------------------------------------------
     // Registration
     // -----------------------------------------------------------------------
 
-    /// Register a repo by local path. Creates `.rustassistant/` dir if missing.
-    ///
-    /// Persists to SQLite when a pool is configured (upsert semantics — re-registering
-    /// an existing path is safe and updates the name / branch).
+    /// Register a repo by local path. Creates .rustassistant/ dir if missing.
     pub async fn register(&mut self, repo: RegisteredRepo) -> anyhow::Result<String> {
         let id = repo.id.clone();
         info!(repo = %id, path = ?repo.local_path, "Registering repo");
@@ -289,38 +216,6 @@ impl RepoSyncService {
             fs::write(&gitignore, "embeddings.bin\n").await?;
         }
 
-        // Persist to SQLite (upsert — safe to call repeatedly)
-        if let Some(ref pool) = self.db {
-            let local_path = repo.local_path.to_string_lossy().to_string();
-            let last_synced: Option<i64> = repo.last_synced.map(|v| v as i64);
-            let active: i64 = repo.active as i64;
-            if let Err(e) = sqlx::query(
-                r#"
-                INSERT INTO registered_repos (id, name, local_path, remote_url, branch, last_synced, active)
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-                ON CONFLICT(id) DO UPDATE SET
-                    name       = excluded.name,
-                    local_path = excluded.local_path,
-                    remote_url = excluded.remote_url,
-                    branch     = excluded.branch,
-                    active     = excluded.active
-                "#,
-            )
-            .bind(&repo.id)
-            .bind(&repo.name)
-            .bind(&local_path)
-            .bind(&repo.remote_url)
-            .bind(&repo.branch)
-            .bind(last_synced)
-            .bind(active)
-            .execute(pool)
-            .await
-            {
-                error!(repo = %id, error = %e, "Failed to persist repo registration to SQLite");
-                // Continue — the in-memory map is the source of truth; DB failure is non-fatal.
-            }
-        }
-
         self.repos.insert(id.clone(), repo);
         Ok(id)
     }
@@ -333,26 +228,8 @@ impl RepoSyncService {
         self.repos.values().filter(|r| r.active).collect()
     }
 
-    /// Remove a repo from the in-memory map and soft-delete it in SQLite.
     pub fn remove_repo(&mut self, id: &str) -> bool {
         self.repos.remove(id).is_some()
-    }
-
-    /// Async version of `remove_repo` that also soft-deletes in SQLite.
-    pub async fn remove_repo_async(&mut self, id: &str) -> bool {
-        let existed = self.repos.remove(id).is_some();
-        if existed {
-            if let Some(ref pool) = self.db {
-                if let Err(e) = sqlx::query("UPDATE registered_repos SET active = 0 WHERE id = ?1")
-                    .bind(id)
-                    .execute(pool)
-                    .await
-                {
-                    error!(repo = %id, error = %e, "Failed to soft-delete repo in SQLite");
-                }
-            }
-        }
-        existed
     }
 
     // -----------------------------------------------------------------------
@@ -378,30 +255,23 @@ impl RepoSyncService {
         });
 
         // 2. Extract TODOs
-        let todos = self
-            .extract_todos(&repo, &walked_files)
-            .await
-            .unwrap_or_else(|e| {
-                errors.push(format!("todo extraction failed: {e}"));
-                vec![]
-            });
+        let todos = self.extract_todos(&repo, &walked_files).await.unwrap_or_else(|e| {
+            errors.push(format!("todo extraction failed: {e}"));
+            vec![]
+        });
 
         // 3. Extract symbols
-        let symbols = self
-            .extract_symbols(&repo, &walked_files)
-            .await
-            .unwrap_or_else(|e| {
-                errors.push(format!("symbol extraction failed: {e}"));
-                vec![]
-            });
+        let symbols = self.extract_symbols(&repo, &walked_files).await.unwrap_or_else(|e| {
+            errors.push(format!("symbol extraction failed: {e}"));
+            vec![]
+        });
 
-        let rust_files = walked_files
-            .iter()
-            .filter(|p| p.extension().map(|e| e == "rs").unwrap_or(false))
-            .count();
+        let rust_files = walked_files.iter().filter(|p| {
+            p.extension().map(|e| e == "rs").unwrap_or(false)
+        }).count();
 
         // 4. Write cache files
-        let _cache_dir = repo.cache_dir();
+        let cache_dir = repo.cache_dir();
 
         write_file(&repo.tree_path(), &tree_txt).await?;
         write_json(&repo.todos_path(), &todos).await?;
@@ -425,22 +295,9 @@ impl RepoSyncService {
         let context = build_context_md(&repo, &manifest, &todos, &symbols);
         write_file(&repo.context_path(), &context).await?;
 
-        // 7. Update last_synced timestamp in memory and SQLite
-        let now = unix_now();
+        // 7. Update last_synced timestamp
         if let Some(r) = self.repos.get_mut(repo_id) {
-            r.last_synced = Some(now);
-        }
-        if let Some(ref pool) = self.db {
-            let ts = now as i64;
-            if let Err(e) =
-                sqlx::query("UPDATE registered_repos SET last_synced = ?1 WHERE id = ?2")
-                    .bind(ts)
-                    .bind(repo_id)
-                    .execute(pool)
-                    .await
-            {
-                warn!(repo = %repo_id, error = %e, "Failed to update last_synced in SQLite");
-            }
+            r.last_synced = Some(unix_now());
         }
 
         let duration_ms = start.elapsed().as_millis() as u64;
@@ -472,15 +329,7 @@ impl RepoSyncService {
         let mut lines = Vec::new();
         let mut files = Vec::new();
 
-        walk_dir(
-            root,
-            root,
-            &self.skip_dirs,
-            &self.include_extensions,
-            &mut lines,
-            &mut files,
-        )
-        .await?;
+        walk_dir(root, root, &self.skip_dirs, &self.include_extensions, &mut lines, &mut files).await?;
 
         lines.sort();
         let tree_txt = format!(
@@ -503,8 +352,6 @@ impl RepoSyncService {
         files: &[PathBuf],
     ) -> anyhow::Result<Vec<TodoItem>> {
         let mut todos = Vec::new();
-        // Deduplication key: (file, line) — prevents duplicates on repeat syncs.
-        let mut seen: HashSet<(String, usize)> = HashSet::new();
         let root = &repo.local_path;
 
         for path in files {
@@ -523,16 +370,11 @@ impl RepoSyncService {
             };
 
             let relative = path.strip_prefix(root).unwrap_or(path);
-            let rel_str = relative.to_string_lossy();
 
             for (line_idx, line) in content.lines().enumerate() {
-                let line_num = line_idx + 1;
                 // Match: // TODO: ..., // FIXME: ..., // STUB: ..., # TODO: ...
-                if let Some(item) = parse_todo_line(line, &rel_str, line_num) {
-                    let key = (item.file.clone(), item.line);
-                    if seen.insert(key) {
-                        todos.push(item);
-                    }
+                if let Some(item) = parse_todo_line(line, relative.to_string_lossy().as_ref(), line_idx + 1) {
+                    todos.push(item);
                 }
             }
         }
@@ -542,7 +384,7 @@ impl RepoSyncService {
     }
 
     // -----------------------------------------------------------------------
-    // Symbol extractor — syn AST parser with line-scanner fallback
+    // Symbol extractor (naive regex-free line scanner)
     // -----------------------------------------------------------------------
 
     async fn extract_symbols(
@@ -565,14 +407,13 @@ impl RepoSyncService {
             };
 
             let relative = path.strip_prefix(root).unwrap_or(path);
-            let rel_str = relative.to_string_lossy();
 
-            // Try syn AST parsing first; fall back to the line scanner if the
-            // file doesn't parse (e.g. macro-heavy or generated code).
-            let file_syms = extract_symbols_syn(&content, &rel_str)
-                .unwrap_or_else(|| extract_symbols_lines(&content, &rel_str));
-
-            symbols.extend(file_syms);
+            for (line_idx, line) in content.lines().enumerate() {
+                let trimmed = line.trim();
+                if let Some(sym) = parse_symbol_line(trimmed, relative.to_string_lossy().as_ref(), line_idx + 1) {
+                    symbols.push(sym);
+                }
+            }
         }
 
         debug!(count = symbols.len(), "Extracted symbols");
@@ -584,89 +425,31 @@ impl RepoSyncService {
     // -----------------------------------------------------------------------
 
     /// Build a compact context string suitable for LLM prompt injection.
-    ///
-    /// Sections (kept under ~3000 chars total to avoid context bloat):
-    /// - Crate name from manifest
-    /// - Project tree (first 80 lines)
-    /// - Top 10 open TODOs
-    /// - Top 5 public symbols (functions + structs)
+    /// Keeps it under ~2000 chars to avoid context bloat.
     pub async fn build_prompt_context(&self, repo_id: &str) -> anyhow::Result<String> {
         let repo = self
             .repos
             .get(repo_id)
             .ok_or_else(|| anyhow::anyhow!("Repo not found: {}", repo_id))?;
 
-        let tree = fs::read_to_string(repo.tree_path())
-            .await
-            .unwrap_or_default();
-        let todos_raw = fs::read_to_string(repo.todos_path())
-            .await
-            .unwrap_or_default();
-        let symbols_raw = fs::read_to_string(repo.symbols_path())
-            .await
-            .unwrap_or_default();
-        let manifest_raw = fs::read_to_string(repo.manifest_path())
-            .await
-            .unwrap_or_default();
-
+        let tree = fs::read_to_string(repo.tree_path()).await.unwrap_or_default();
+        let todos_raw = fs::read_to_string(repo.todos_path()).await.unwrap_or_default();
         let todos: Vec<TodoItem> = serde_json::from_str(&todos_raw).unwrap_or_default();
-        let symbols: Vec<Symbol> = serde_json::from_str(&symbols_raw).unwrap_or_default();
-        let manifest: Option<RepoManifest> = serde_json::from_str(&manifest_raw).ok();
-
-        // Crate name header
-        let crate_name = manifest
-            .as_ref()
-            .and_then(|m| m.cargo_crate_name.as_deref())
-            .unwrap_or(&repo.name);
 
         // Truncate tree to first 80 lines
         let tree_snippet: String = tree.lines().take(80).collect::<Vec<_>>().join("\n");
 
         // Top 10 TODOs
-        let todo_snippet: String = if todos.is_empty() {
-            "  (none)".to_string()
-        } else {
-            todos
-                .iter()
-                .take(10)
-                .map(|t| format!("  [{:?}] {}:{} — {}", t.kind, t.file, t.line, t.message))
-                .collect::<Vec<_>>()
-                .join("\n")
-        };
-
-        // Top 5 public symbols (fns first, then structs/enums/traits)
-        let sym_snippet: String = {
-            let mut pub_syms: Vec<&Symbol> = symbols.iter().filter(|s| s.is_pub).collect();
-            // Put functions first, then types
-            pub_syms.sort_by_key(|s| match s.kind {
-                SymbolKind::Function => 0,
-                SymbolKind::Struct | SymbolKind::Enum | SymbolKind::Trait => 1,
-                _ => 2,
-            });
-            if pub_syms.is_empty() {
-                "  (none)".to_string()
-            } else {
-                pub_syms
-                    .iter()
-                    .take(5)
-                    .map(|s| {
-                        let async_tag = if s.is_async { "async " } else { "" };
-                        format!(
-                            "  {}{:?} {} ({}:{})",
-                            async_tag, s.kind, s.name, s.file, s.line
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            }
-        };
+        let todo_snippet: String = todos
+            .iter()
+            .take(10)
+            .map(|t| format!("  [{:?}] {}:{} — {}", t.kind, t.file, t.line, t.message))
+            .collect::<Vec<_>>()
+            .join("\n");
 
         Ok(format!(
-            "### Repo: {} (crate: `{}`)\n\n\
-             #### Project Tree (truncated)\n```\n{}\n```\n\n\
-             #### Open TODOs\n{}\n\n\
-             #### Key Public Symbols\n{}\n",
-            repo.name, crate_name, tree_snippet, todo_snippet, sym_snippet
+            "### Repo: {}\n\n#### Project Tree (truncated)\n```\n{}\n```\n\n#### Open TODOs\n{}\n",
+            repo.name, tree_snippet, todo_snippet
         ))
     }
 }
@@ -743,205 +526,9 @@ fn parse_todo_line(line: &str, file: &str, line_num: usize) -> Option<TodoItem> 
     None
 }
 
-// ---------------------------------------------------------------------------
-// syn-based symbol extractor
-// ---------------------------------------------------------------------------
-
-/// Extract symbols from a Rust source file using the `syn` AST parser.
-///
-/// Returns `None` when the file fails to parse (e.g. heavily macro-generated
-/// or non-standard syntax) so the caller can fall back to the line scanner.
-fn extract_symbols_syn(content: &str, file: &str) -> Option<Vec<Symbol>> {
-    use syn::{Item, Visibility};
-
-    let ast = syn::parse_file(content).ok()?;
-
-    // Build a byte-offset → line-number lookup using the raw source.
-    // syn doesn't expose line numbers directly in its AST nodes, so we
-    // pre-compute a sorted list of newline byte positions.
-    let newline_offsets: Vec<usize> = content
-        .bytes()
-        .enumerate()
-        .filter_map(|(i, b)| if b == b'\n' { Some(i) } else { None })
-        .collect();
-
-    let byte_to_line = |byte_offset: usize| -> usize {
-        // Binary search for the newline immediately before this offset.
-        match newline_offsets.binary_search(&byte_offset) {
-            Ok(idx) => idx + 2,  // exactly on a newline → next line
-            Err(idx) => idx + 1, // idx is the count of newlines before this position
-        }
-    };
-
-    // syn doesn't store byte offsets in the main AST; we approximate line
-    // numbers by scanning the source text for the symbol name.
-    // For most files this is accurate; for files with duplicate names it
-    // may be slightly off — acceptable for context purposes.
-    let find_line = |name: &str, kind_hint: &str| -> usize {
-        let needle_pub = format!("pub {} {}", kind_hint, name);
-        let needle_bare = format!("{} {}", kind_hint, name);
-        for (i, line) in content.lines().enumerate() {
-            let t = line.trim();
-            if t.contains(&needle_pub) || t.contains(&needle_bare) {
-                return i + 1;
-            }
-        }
-        1
-    };
-
-    let _ = byte_to_line; // suppress unused warning — kept for future use
-
-    let mut symbols = Vec::new();
-
-    for item in &ast.items {
-        let sym = match item {
-            Item::Fn(f) => {
-                let name = f.sig.ident.to_string();
-                let is_pub = matches!(f.vis, Visibility::Public(_));
-                let is_async = f.sig.asyncness.is_some();
-                let line = find_line(&name, "fn");
-                Symbol {
-                    kind: SymbolKind::Function,
-                    name,
-                    file: file.to_string(),
-                    line,
-                    is_pub,
-                    is_async,
-                }
-            }
-            Item::Struct(s) => {
-                let name = s.ident.to_string();
-                let is_pub = matches!(s.vis, Visibility::Public(_));
-                let line = find_line(&name, "struct");
-                Symbol {
-                    kind: SymbolKind::Struct,
-                    name,
-                    file: file.to_string(),
-                    line,
-                    is_pub,
-                    is_async: false,
-                }
-            }
-            Item::Enum(e) => {
-                let name = e.ident.to_string();
-                let is_pub = matches!(e.vis, Visibility::Public(_));
-                let line = find_line(&name, "enum");
-                Symbol {
-                    kind: SymbolKind::Enum,
-                    name,
-                    file: file.to_string(),
-                    line,
-                    is_pub,
-                    is_async: false,
-                }
-            }
-            Item::Trait(t) => {
-                let name = t.ident.to_string();
-                let is_pub = matches!(t.vis, Visibility::Public(_));
-                let line = find_line(&name, "trait");
-                Symbol {
-                    kind: SymbolKind::Trait,
-                    name,
-                    file: file.to_string(),
-                    line,
-                    is_pub,
-                    is_async: false,
-                }
-            }
-            Item::Impl(i) => {
-                // impl Trait for Type  →  use the self_ty name
-                let name = match i.self_ty.as_ref() {
-                    syn::Type::Path(tp) => tp
-                        .path
-                        .segments
-                        .last()
-                        .map(|s| s.ident.to_string())
-                        .unwrap_or_else(|| "impl".to_string()),
-                    _ => "impl".to_string(),
-                };
-                let trait_name = i.trait_.as_ref().map(|(_, p, _)| {
-                    p.segments
-                        .last()
-                        .map(|s| s.ident.to_string())
-                        .unwrap_or_default()
-                });
-                let full_name = match trait_name {
-                    Some(t) if !t.is_empty() => format!("{} for {}", t, name),
-                    _ => name.clone(),
-                };
-                let line = find_line(&name, "impl");
-                Symbol {
-                    kind: SymbolKind::Impl,
-                    name: full_name,
-                    file: file.to_string(),
-                    line,
-                    is_pub: false,
-                    is_async: false,
-                }
-            }
-            Item::Type(t) => {
-                let name = t.ident.to_string();
-                let is_pub = matches!(t.vis, Visibility::Public(_));
-                let line = find_line(&name, "type");
-                Symbol {
-                    kind: SymbolKind::TypeAlias,
-                    name,
-                    file: file.to_string(),
-                    line,
-                    is_pub,
-                    is_async: false,
-                }
-            }
-            Item::Const(c) => {
-                let name = c.ident.to_string();
-                let is_pub = matches!(c.vis, Visibility::Public(_));
-                let line = find_line(&name, "const");
-                Symbol {
-                    kind: SymbolKind::Const,
-                    name,
-                    file: file.to_string(),
-                    line,
-                    is_pub,
-                    is_async: false,
-                }
-            }
-            Item::Mod(m) => {
-                let name = m.ident.to_string();
-                let is_pub = matches!(m.vis, Visibility::Public(_));
-                let line = find_line(&name, "mod");
-                Symbol {
-                    kind: SymbolKind::Mod,
-                    name,
-                    file: file.to_string(),
-                    line,
-                    is_pub,
-                    is_async: false,
-                }
-            }
-            _ => continue,
-        };
-        symbols.push(sym);
-    }
-
-    Some(symbols)
-}
-
-// ---------------------------------------------------------------------------
-// Line-scanner fallback (used when syn fails to parse a file)
-// ---------------------------------------------------------------------------
-
-fn extract_symbols_lines(content: &str, file: &str) -> Vec<Symbol> {
-    let mut symbols = Vec::new();
-    for (line_idx, line) in content.lines().enumerate() {
-        let trimmed = line.trim();
-        if let Some(sym) = parse_symbol_line(trimmed, file, line_idx + 1) {
-            symbols.push(sym);
-        }
-    }
-    symbols
-}
-
 fn parse_symbol_line(line: &str, file: &str, line_num: usize) -> Option<Symbol> {
+    // TODO: replace with syn-based AST parsing for accuracy
+    // This naive scanner covers ~90% of top-level declarations
     let is_pub = line.starts_with("pub ");
     let is_async = line.contains("async fn");
 
@@ -994,11 +581,7 @@ fn extract_name(line: &str, prefix: &str) -> Option<String> {
         .chars()
         .take_while(|c| c.is_alphanumeric() || *c == '_')
         .collect();
-    if name.is_empty() {
-        None
-    } else {
-        Some(name)
-    }
+    if name.is_empty() { None } else { Some(name) }
 }
 
 fn extract_impl_name(line: &str) -> Option<String> {
@@ -1023,11 +606,7 @@ fn extract_impl_name(line: &str) -> Option<String> {
         .chars()
         .take_while(|c| c.is_alphanumeric() || *c == '_')
         .collect();
-    if name.is_empty() {
-        None
-    } else {
-        Some(name)
-    }
+    if name.is_empty() { None } else { Some(name) }
 }
 
 async fn read_crate_name(path: &Path) -> Option<String> {
@@ -1053,14 +632,8 @@ fn build_context_md(
     let todo_count = todos.len();
     let stub_count = todos.iter().filter(|t| t.kind == TodoKind::Stub).count();
     let fixme_count = todos.iter().filter(|t| t.kind == TodoKind::Fixme).count();
-    let pub_fn_count = symbols
-        .iter()
-        .filter(|s| s.kind == SymbolKind::Function && s.is_pub)
-        .count();
-    let struct_count = symbols
-        .iter()
-        .filter(|s| s.kind == SymbolKind::Struct)
-        .count();
+    let pub_fn_count = symbols.iter().filter(|s| s.kind == SymbolKind::Function && s.is_pub).count();
+    let struct_count = symbols.iter().filter(|s| s.kind == SymbolKind::Struct).count();
 
     format!(
         r#"# RustAssistant Context: {}
@@ -1086,9 +659,7 @@ fn build_context_md(
         manifest.synced_at,
         manifest.file_count,
         manifest.rust_file_count,
-        todo_count,
-        stub_count,
-        fixme_count,
+        todo_count, stub_count, fixme_count,
         pub_fn_count,
         struct_count,
         repo.remote_url.as_deref().unwrap_or("not set"),
@@ -1142,11 +713,7 @@ mod tests {
 
     #[test]
     fn parse_stub_tag() {
-        let item = parse_todo_line(
-            "// STUB: generated by rustassistant",
-            "src/cache_layer.rs",
-            10,
-        );
+        let item = parse_todo_line("// STUB: generated by rustassistant", "src/cache_layer.rs", 10);
         assert!(item.is_some());
         assert_eq!(item.unwrap().kind, TodoKind::Stub);
     }

@@ -1,0 +1,11 @@
+{
+  "id": "rustassistant",
+  "name": "rustassistant",
+  "remote_url": null,
+  "branch": "main",
+  "synced_at": 1772940807,
+  "file_count": 293,
+  "rust_file_count": 139,
+  "cargo_crate_name": "rustassistant",
+  "rustassistant_version": "0.1.0"
+}

@@ -1,54 +1,64 @@
 // src/api/repos.rs
-// STUB: Repo management + chat endpoints for RustAssistant
-// TODO: wire AppState to real RepoSyncService and ModelRouter instances
+// Repo management + chat endpoints for RustAssistant
 // TODO: add auth middleware (reuse existing API key layer)
 
 use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
-#[allow(unused_imports)]
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{error, info};
+use tracing::{debug, error, info, warn};
 
-use crate::model_router::{CompletionRequest, ModelRouter};
+use crate::cache_layer::{CacheConfig, CacheLayer};
+use crate::model_router::{CompletionRequest, ModelRouter, ModelTarget};
+use crate::ollama_client::OllamaClient;
 use crate::repo_sync::{RegisteredRepo, RepoSyncService, SyncResult};
 
 // ---------------------------------------------------------------------------
-// AppState (extend your existing AppState or create a sub-state)
+// AppState
 // ---------------------------------------------------------------------------
 
 #[derive(Clone)]
 pub struct RepoAppState {
     pub sync_service: Arc<RwLock<RepoSyncService>>,
     pub model_router: Arc<ModelRouter>,
-    // TODO: add redis client for response caching
-    // TODO: add ollama_client: Arc<OllamaClient>
-    // TODO: add xai_client: Arc<XaiClient>
+    pub ollama_client: Arc<OllamaClient>,
+    /// Optional Grok client for remote completions — `None` when XAI_API_KEY is unset.
+    pub grok_client: Option<Arc<crate::grok_client::GrokClient>>,
+    /// Multi-tier cache (in-memory LRU + optional Redis).
+    pub cache: Arc<CacheLayer>,
 }
 
+/// Chat response cache TTL in seconds (1 hour).
+const CHAT_CACHE_TTL_SECS: u64 = 3600;
+
 // ---------------------------------------------------------------------------
-// Router builder — call this from your main router setup
+// Router builder
 // ---------------------------------------------------------------------------
 
 pub fn repo_router(state: RepoAppState) -> Router {
     Router::new()
         // Repo management
         .route("/repos", get(list_repos).post(register_repo))
-        .route("/repos/:id", get(get_repo).delete(remove_repo))
+        .route("/repos/:id", get(get_repo))
+        .route("/repos/:id", delete(remove_repo))
         .route("/repos/:id/sync", post(sync_repo))
         .route("/repos/:id/context", get(get_repo_context))
         .route("/repos/:id/todos", get(get_repo_todos))
         .route("/repos/:id/symbols", get(get_repo_symbols))
         .route("/repos/:id/tree", get(get_repo_tree))
-        // Chat interface
+        // Chat
         .route("/chat", post(chat))
         .route("/chat/repos/:id", post(chat_with_repo))
+        // Ollama status
+        .route("/ollama/health", get(ollama_health))
+        .route("/ollama/models", get(ollama_models))
         .with_state(state)
 }
 
@@ -62,7 +72,7 @@ pub struct RegisterRepoRequest {
     pub local_path: String,
     pub remote_url: Option<String>,
     pub branch: Option<String>,
-    /// If true, immediately run a sync after registration
+    /// If true, immediately run a sync after registration.
     pub sync_on_register: Option<bool>,
 }
 
@@ -77,12 +87,14 @@ pub struct RegisterRepoResponse {
 #[derive(Debug, Deserialize)]
 pub struct ChatRequest {
     pub message: String,
-    /// Optional: inject context from a specific registered repo
+    /// Optional: inject context from a specific registered repo.
     pub repo_id: Option<String>,
-    /// If true, force the remote model regardless of task classification
+    /// If true, force the remote model regardless of task classification.
     pub force_remote: Option<bool>,
-    /// Conversation history for multi-turn chat
+    /// Conversation history for multi-turn chat.
     pub history: Option<Vec<ChatMessage>>,
+    /// If true, bypass cache and always call the model.
+    pub no_cache: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -99,6 +111,8 @@ pub struct ChatResponse {
     pub used_fallback: bool,
     pub repo_context_injected: bool,
     pub tokens_used: Option<u32>,
+    /// True when this response was served from cache.
+    pub cached: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -219,7 +233,7 @@ async fn remove_repo(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     let mut service = state.sync_service.write().await;
-    if service.remove_repo(&id) {
+    if service.remove_repo_async(&id).await {
         Json(serde_json::json!({ "message": format!("Repo '{}' removed", id) })).into_response()
     } else {
         ApiError::not_found(format!("Repo '{}' not found", id)).into_response()
@@ -268,6 +282,26 @@ async fn get_repo_tree(
 }
 
 // ---------------------------------------------------------------------------
+// Ollama status endpoints
+// ---------------------------------------------------------------------------
+
+async fn ollama_health(State(state): State<RepoAppState>) -> impl IntoResponse {
+    let reachable = state.ollama_client.health_check().await;
+    let status = if reachable { "ok" } else { "unreachable" };
+    Json(serde_json::json!({
+        "status": status,
+        "reachable": reachable,
+    }))
+}
+
+async fn ollama_models(State(state): State<RepoAppState>) -> impl IntoResponse {
+    match state.ollama_client.list_models().await {
+        Ok(models) => Json(serde_json::json!({ "models": models })).into_response(),
+        Err(e) => ApiError::internal(e.to_string()).into_response(),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Chat handlers
 // ---------------------------------------------------------------------------
 
@@ -292,9 +326,17 @@ async fn handle_chat(
     repo_id_override: Option<String>,
 ) -> impl IntoResponse {
     let effective_repo_id = repo_id_override.or(req.repo_id.clone());
+    let bypass_cache = req.no_cache.unwrap_or(false);
 
     // 1. Classify and route
-    let (task_kind, target) = state.model_router.route_prompt(&req.message);
+    let (task_kind, mut target) = state.model_router.route_prompt(&req.message);
+
+    // Let the caller force remote
+    if req.force_remote.unwrap_or(false) {
+        target = state
+            .model_router
+            .route(&crate::model_router::TaskKind::ArchitecturalReason);
+    }
 
     // 2. Build repo context if a repo is specified
     let (repo_context, context_injected) = if let Some(ref rid) = effective_repo_id {
@@ -302,7 +344,7 @@ async fn handle_chat(
         match service.build_prompt_context(rid).await {
             Ok(ctx) => (Some(ctx), true),
             Err(e) => {
-                error!(repo = %rid, error = %e, "Failed to build repo context");
+                warn!(repo = %rid, error = %e, "Failed to build repo context — continuing without it");
                 (None, false)
             }
         }
@@ -312,12 +354,54 @@ async fn handle_chat(
 
     // 3. Build completion request
     let completion_req = CompletionRequest::for_stub(&req.message, repo_context);
+    let final_prompt = completion_req.build_prompt();
 
-    // 4. Call model
-    // TODO: replace this stub with real OllamaClient / XaiClient dispatch
-    // TODO: check Redis cache before calling model (key: hash of prompt + repo_id)
-    // TODO: cache response in Redis after successful call
-    let (reply, model_used, used_fallback) = call_model_stub(&completion_req, &target).await;
+    // 4. Build cache key  (SHA-256 of  model_target | prompt | repo_id)
+    let cache_key = build_cache_key(&target, &final_prompt, effective_repo_id.as_deref());
+
+    // 5. Check cache
+    if !bypass_cache {
+        match state.cache.get::<CachedChatResponse>(&cache_key).await {
+            Ok(Some(cached)) => {
+                debug!(cache_key = %cache_key, "Cache hit for chat request");
+                return Json(ChatResponse {
+                    reply: cached.reply,
+                    task_kind: format!("{:?}", task_kind),
+                    model_used: cached.model_used,
+                    used_fallback: cached.used_fallback,
+                    repo_context_injected: context_injected,
+                    tokens_used: cached.tokens_used,
+                    cached: true,
+                })
+                .into_response();
+            }
+            Ok(None) => {}
+            Err(e) => {
+                warn!(error = %e, "Cache read error — proceeding without cache");
+            }
+        }
+    }
+
+    // 6. Dispatch to the appropriate model
+    let (reply, model_used, used_fallback, tokens_used) =
+        dispatch_completion(&state, &completion_req, &target).await;
+
+    // 7. Store in cache (fire-and-forget — don't fail the request on cache write error)
+    let cache_value = CachedChatResponse {
+        reply: reply.clone(),
+        model_used: model_used.clone(),
+        used_fallback,
+        tokens_used,
+    };
+    let cache_clone = Arc::clone(&state.cache);
+    tokio::spawn(async move {
+        if let Err(e) = cache_clone
+            .set(&cache_key, &cache_value, Some(CHAT_CACHE_TTL_SECS))
+            .await
+        {
+            warn!(error = %e, "Failed to write chat response to cache");
+        }
+    });
 
     Json(ChatResponse {
         reply,
@@ -325,40 +409,125 @@ async fn handle_chat(
         model_used,
         used_fallback,
         repo_context_injected: context_injected,
-        tokens_used: None, // TODO: populate from model response
+        tokens_used,
+        cached: false,
     })
     .into_response()
 }
 
 // ---------------------------------------------------------------------------
-// Placeholder model call — replace with real clients
+// Model dispatch — Ollama local or Grok remote
 // ---------------------------------------------------------------------------
 
-// STUB: generated by rustassistant
-// TODO: replace with actual OllamaClient::complete() and XaiClient::complete()
-async fn call_model_stub(
+async fn dispatch_completion(
+    state: &RepoAppState,
     req: &CompletionRequest,
-    target: &crate::model_router::ModelTarget,
-) -> (String, String, bool) {
-    use crate::model_router::ModelTarget;
+    target: &ModelTarget,
+) -> (String, String, bool, Option<u32>) {
+    let final_prompt = req.build_prompt();
+    let system = req.system_prompt.as_deref();
 
-    let model_name = match target {
-        ModelTarget::Local { model, .. } => model.clone(),
-        ModelTarget::Remote { model, .. } => model.clone(),
-    };
+    match target {
+        ModelTarget::Local { model, .. } => {
+            debug!(model = %model, "Dispatching to local Ollama");
+            match state
+                .ollama_client
+                .complete(system, &final_prompt, req.temperature, req.max_tokens)
+                .await
+            {
+                Ok(resp) => {
+                    let tokens = resp
+                        .prompt_tokens
+                        .and_then(|p| resp.completion_tokens.map(|c| p + c));
+                    (resp.content, resp.model_used, resp.used_fallback, tokens)
+                }
+                Err(e) => {
+                    error!(error = %e, "Both Ollama and its fallback failed");
+                    let err_reply = format!(
+                        "// ERROR: model dispatch failed — {}\n// Prompt was: {}...",
+                        e,
+                        &final_prompt.chars().take(80).collect::<String>()
+                    );
+                    (err_reply, model.clone(), false, None)
+                }
+            }
+        }
 
-    // TODO: actual HTTP call to Ollama or xAI API
-    let reply = format!(
-        "// STUB: model call not yet implemented\n// Target: {}\n// Prompt: {}...",
-        model_name,
-        &req.user_prompt.chars().take(80).collect::<String>()
-    );
+        ModelTarget::Remote { model, api_key } => {
+            debug!(model = %model, "Dispatching to remote Grok");
 
-    (reply, model_name, false)
+            // Use the injected GrokClient if available, otherwise fall back to
+            // constructing one from the key in the ModelTarget itself.
+            let result = if let Some(ref grok) = state.grok_client {
+                grok.ask_tracked(&final_prompt, None, "chat").await
+            } else {
+                // Build a one-shot client — no cost-DB tracking, but functional.
+                use crate::db::Database;
+                match Database::new("data/rustassistant.db").await {
+                    Ok(db) => {
+                        let client = crate::grok_client::GrokClient::new(api_key.clone(), db);
+                        client.ask_tracked(&final_prompt, None, "chat").await
+                    }
+                    Err(e) => Err(anyhow::anyhow!("DB init for one-shot Grok failed: {}", e)),
+                }
+            };
+
+            match result {
+                Ok(resp) => {
+                    let tokens = (resp.prompt_tokens + resp.completion_tokens) as u32;
+                    (resp.content, model.clone(), false, Some(tokens))
+                }
+                Err(e) => {
+                    error!(error = %e, "Grok API call failed");
+                    let err_reply = format!(
+                        "// ERROR: remote model call failed — {}\n// Model: {}",
+                        e, model
+                    );
+                    (err_reply, model.clone(), false, None)
+                }
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
-// Helper: serve a .rustassistant/ cache file as JSON or text
+// Cache key builder
+// ---------------------------------------------------------------------------
+
+/// Build a deterministic, URL-safe cache key for a chat request.
+/// Format: `chat:<hex16>` where hex16 is the first 16 chars of
+/// SHA-256( target_label | "\0" | prompt | "\0" | repo_id ).
+fn build_cache_key(target: &ModelTarget, prompt: &str, repo_id: Option<&str>) -> String {
+    let target_label = match target {
+        ModelTarget::Local { model, .. } => format!("local:{}", model),
+        ModelTarget::Remote { model, .. } => format!("remote:{}", model),
+    };
+
+    let mut hasher = Sha256::new();
+    hasher.update(target_label.as_bytes());
+    hasher.update(b"\x00");
+    hasher.update(prompt.as_bytes());
+    hasher.update(b"\x00");
+    hasher.update(repo_id.unwrap_or("").as_bytes());
+    let digest = hasher.finalize();
+
+    format!("chat:{}", hex::encode(&digest[..8]))
+}
+
+// ---------------------------------------------------------------------------
+// Cached response shape (stored in CacheLayer as bincode)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CachedChatResponse {
+    reply: String,
+    model_used: String,
+    used_fallback: bool,
+    tokens_used: Option<u32>,
+}
+
+// ---------------------------------------------------------------------------
+// Helper: serve a .rustassistant/ cache file as text/JSON
 // ---------------------------------------------------------------------------
 
 async fn serve_cache_file<F>(state: &RepoAppState, repo_id: &str, path_fn: F) -> impl IntoResponse
@@ -377,9 +546,65 @@ where
     match tokio::fs::read_to_string(&file_path).await {
         Ok(content) => (StatusCode::OK, content).into_response(),
         Err(_) => ApiError::not_found(format!(
-            "Cache not found at {:?} — run /repos/{}/sync first",
+            "Cache not found at {:?} — run /api/v1/repos/{}/sync first",
             file_path, repo_id
         ))
         .into_response(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// RepoAppState builder helper (used in server.rs startup)
+// ---------------------------------------------------------------------------
+
+impl RepoAppState {
+    /// Construct a `RepoAppState` wiring all clients from environment variables.
+    ///
+    /// * `sync_service` — caller-owned `Arc<RwLock<RepoSyncService>>`
+    /// * `model_router` — caller-owned `Arc<ModelRouter>`
+    /// * `grok_client`  — `None` when `XAI_API_KEY` is unset (local-only mode)
+    pub async fn from_env(
+        sync_service: Arc<RwLock<RepoSyncService>>,
+        model_router: Arc<ModelRouter>,
+        grok_client: Option<Arc<crate::grok_client::GrokClient>>,
+    ) -> Self {
+        // Build Ollama client, attaching Grok as its fallback if available.
+        let ollama_client = {
+            let base = crate::ollama_client::OllamaClient::from_env();
+            if let Some(ref grok) = grok_client {
+                Arc::new(base.with_fallback(Arc::clone(grok)))
+            } else {
+                Arc::new(base)
+            }
+        };
+
+        // Build the cache layer (memory + Redis if REDIS_URL is set).
+        let cache_config = CacheConfig {
+            enable_redis: std::env::var("REDIS_URL").is_ok(),
+            redis_url: std::env::var("REDIS_URL").ok(),
+            redis_prefix: std::env::var("CACHE_PREFIX")
+                .unwrap_or_else(|_| "rustassistant:".to_string()),
+            ..CacheConfig::default()
+        };
+
+        let cache = match CacheLayer::new(cache_config).await {
+            Ok(c) => Arc::new(c),
+            Err(e) => {
+                warn!(error = %e, "Failed to initialise cache layer — using memory-only fallback");
+                Arc::new(
+                    CacheLayer::new(CacheConfig::development())
+                        .await
+                        .expect("In-memory CacheLayer must always succeed"),
+                )
+            }
+        };
+
+        Self {
+            sync_service,
+            model_router,
+            ollama_client,
+            grok_client,
+            cache,
+        }
     }
 }

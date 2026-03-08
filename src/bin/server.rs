@@ -2,6 +2,9 @@
 //!
 //! A clean REST API for notes, repositories, and tasks.
 //! Includes integrated Web UI for repository and queue management.
+//! Also mounts:
+//!   /api/web/*  — pipeline dispatch, chat, SSE streaming, job history
+//!   /api/v1/*   — repo CRUD + chat with repo-context injection
 
 use axum::response::Html;
 use axum::{
@@ -13,20 +16,28 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
 use tower_http::cors::{Any, CorsLayer};
 use tracing::info;
 
 // Import from our crate
+use rustassistant::api::repos::{repo_router, RepoAppState};
 use rustassistant::auto_scanner::{AutoScanner, AutoScannerConfig};
 use rustassistant::db::{
     self, get_next_task, get_stats, list_repositories, list_tasks, update_task_status, Database,
 };
+use rustassistant::git::GitManager;
+use rustassistant::model_router::{ModelRouter, ModelRouterConfig};
+use rustassistant::repo_sync::RepoSyncService;
+use rustassistant::sync_scheduler::{SyncScheduler, SyncSchedulerConfig};
+use rustassistant::web_api::{web_api_router, WebState};
 use rustassistant::web_ui::{create_router as create_web_ui_router, WebAppState};
 use rustassistant::web_ui_cache_viewer::create_cache_viewer_router;
 use rustassistant::web_ui_db_explorer::create_db_explorer_router;
 use rustassistant::web_ui_extensions::create_extension_router;
 use rustassistant::web_ui_scan_progress::create_scan_progress_router;
-use std::sync::Arc;
 
 // ============================================================================
 // Application State
@@ -392,22 +403,93 @@ async fn main() -> anyhow::Result<()> {
     // Ensure repos directory exists
     std::fs::create_dir_all(&repos_dir).expect("Failed to create repos directory");
 
-    // Initialize database with migrations
+    // Initialize database using init_db (CREATE TABLE IF NOT EXISTS — safe on existing DBs)
     info!("Initializing database at {}", database_url);
-    let mut config = db::DatabaseConfig::from_env();
-    // Override path from DATABASE_URL if it's a sqlite URL
-    if database_url.starts_with("sqlite:") {
-        config.path = std::path::PathBuf::from(database_url.trim_start_matches("sqlite:"));
-    }
-    let db = db::init_pool(&config).await?;
+    let db = db::init_db(&database_url)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to initialize database: {}", e))?;
 
     // Create app state for API
     let api_state = AppState { db: db.clone() };
 
+    // ── Web-API pipeline state (pipeline dispatch, chat, SSE, jobs) ──────────
+    let workspace = PathBuf::from(
+        std::env::var("WORKSPACE_DIR").unwrap_or_else(|_| "data/workspaces".to_string()),
+    );
+    std::fs::create_dir_all(&workspace)?;
+
+    let git_manager = Arc::new(
+        GitManager::new(workspace.clone(), true)
+            .map_err(|e| anyhow::anyhow!("GitManager init failed: {}", e))?,
+    );
+    let web_pipeline_state = WebState::new(db.clone(), git_manager, workspace);
+
+    // ── RepoSyncService + ModelRouter + SyncScheduler ─────────────────────
+    let sync_service = Arc::new(tokio::sync::RwLock::new(RepoSyncService::new()));
+    let model_router = Arc::new(ModelRouter::new(ModelRouterConfig {
+        remote_api_key: std::env::var("XAI_API_KEY").unwrap_or_default(),
+        remote_model: std::env::var("REMOTE_MODEL").unwrap_or_else(|_| "grok-2-latest".to_string()),
+        local_model: std::env::var("LOCAL_MODEL")
+            .unwrap_or_else(|_| "qwen2.5-coder:7b".to_string()),
+        local_base_url: std::env::var("OLLAMA_BASE_URL")
+            .unwrap_or_else(|_| "http://localhost:11434".to_string()),
+        force_remote: std::env::var("FORCE_REMOTE_MODEL")
+            .map(|v| v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false),
+        fallback_to_remote: true,
+    }));
+    // Build GrokClient for the repo chat handler (None when XAI_API_KEY is unset).
+    let grok_for_repo: Option<Arc<rustassistant::grok_client::GrokClient>> =
+        match std::env::var("XAI_API_KEY") {
+            Ok(api_key) if !api_key.is_empty() => {
+                let db_path = database_url
+                    .trim_start_matches("sqlite://")
+                    .trim_start_matches("sqlite:");
+                match db::Database::new(db_path).await {
+                    Ok(grok_db) => {
+                        let client = rustassistant::grok_client::GrokClient::new(api_key, grok_db);
+                        info!("GrokClient ready for repo chat handler");
+                        Some(Arc::new(client))
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            error = %e,
+                            "Failed to init DB for repo GrokClient — remote model unavailable"
+                        );
+                        None
+                    }
+                }
+            }
+            _ => {
+                info!("XAI_API_KEY not set — repo chat will use local model only");
+                None
+            }
+        };
+
+    let repo_app_state = RepoAppState::from_env(
+        Arc::clone(&sync_service),
+        Arc::clone(&model_router),
+        grok_for_repo,
+    )
+    .await;
+    let sync_interval_secs = std::env::var("REPO_SYNC_INTERVAL_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(300);
+    SyncScheduler::new(
+        SyncSchedulerConfig {
+            interval: Duration::from_secs(sync_interval_secs),
+            ..SyncSchedulerConfig::default()
+        },
+        Arc::clone(&sync_service),
+    )
+    .start();
+    info!(interval_secs = sync_interval_secs, "SyncScheduler started");
+
     // Create app state for Web UI
     let web_state = WebAppState::new(Database::from_pool(db.clone()), repos_dir.clone());
 
-    // Build combined router with Web UI at root and API at /api
+    // Build combined router
     let api_router = create_api_router(api_state);
     let web_router = create_web_ui_router(web_state.clone());
     let extension_router = create_extension_router(web_state.clone());
@@ -415,14 +497,17 @@ async fn main() -> anyhow::Result<()> {
     let db_explorer_router = create_db_explorer_router(Arc::new(web_state.clone()));
     let scan_progress_router = create_scan_progress_router(Arc::new(web_state.clone()));
 
-    // Merge routers: Web UI gets root paths, extensions add new pages, cache viewer, DB explorer, scan progress, API gets /api/* and /health
     let app = Router::new()
         .merge(web_router)
         .merge(extension_router)
         .merge(cache_viewer_router)
         .merge(db_explorer_router)
         .merge(scan_progress_router)
-        .merge(api_router);
+        .merge(api_router)
+        // Pipeline dispatch + chat + SSE + job history
+        .merge(web_api_router(web_pipeline_state))
+        // Repo CRUD + chat with repo context + /api/v1/repos/:id/sync etc.
+        .nest("/api/v1", repo_router(repo_app_state));
 
     // Start auto-scanner in background if enabled
     let scanner_config = AutoScannerConfig {

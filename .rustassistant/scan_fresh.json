@@ -1,0 +1,3979 @@
+{
+  "repo_path": "/home/jordan/github/rustassistant",
+  "scanned_at": "2026-03-08T01:09:32.454915167Z",
+  "total_files_scanned": 169,
+  "items": [
+    {
+      "id": "d23a994e",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": ".github/workflows/llm-audit.yml",
+      "line": 18,
+      "text": "-full    : Run todo-analyze then todo-plan in sequence — scan every",
+      "context_before": [
+        "# full         : Everything regular does, PLUS the full TODO pipeline",
+        "#                (todo-analyze → todo-plan).  The \"do everything\" option."
+      ],
+      "context_after": [
+        "#                inline TODO/FIXME/HACK/XXX, batch-analyse with Grok, then",
+        "#                generate a batched implementation gameplan from todo.md."
+      ],
+      "raw_comment": "# todo-full    : Run todo-analyze then todo-plan in sequence — scan every",
+      "extension": "yml",
+      "assignee": null
+    },
+    {
+      "id": "82183692",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": ".github/workflows/llm-audit.yml",
+      "line": 21,
+      "text": "-analyze : Scan every TODO/FIXME/HACK/XXX in code, batch-analyse with",
+      "context_before": [
+        "#                inline TODO/FIXME/HACK/XXX, batch-analyse with Grok, then",
+        "#                generate a batched implementation gameplan from todo.md."
+      ],
+      "context_after": [
+        "#                Grok, compile a prioritised implementation plan.",
+        "# todo-plan    : Read the repo's root todo.md, generate a batched gameplan"
+      ],
+      "raw_comment": "# todo-analyze : Scan every TODO/FIXME/HACK/XXX in code, batch-analyse with",
+      "extension": "yml",
+      "assignee": null
+    },
+    {
+      "id": "8b9a0dfc",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": ".github/workflows/llm-audit.yml",
+      "line": 23,
+      "text": "-plan    : Read the repo's root todo.md, generate a batched gameplan",
+      "context_before": [
+        "# todo-analyze : Scan every TODO/FIXME/HACK/XXX in code, batch-analyse with",
+        "#                Grok, compile a prioritised implementation plan."
+      ],
+      "context_after": [
+        "#                with Grok, commit the plan back to the target repo.",
+        "# todo-work    : Execute the gameplan batch-by-batch using Grok to generate"
+      ],
+      "raw_comment": "# todo-plan    : Read the repo's root todo.md, generate a batched gameplan",
+      "extension": "yml",
+      "assignee": null
+    },
+    {
+      "id": "911c404e",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": ".github/workflows/llm-audit.yml",
+      "line": 25,
+      "text": "-work    : Execute the gameplan batch-by-batch using Grok to generate",
+      "context_before": [
+        "# todo-plan    : Read the repo's root todo.md, generate a batched gameplan",
+        "#                with Grok, commit the plan back to the target repo."
+      ],
+      "context_after": [
+        "#                code changes, update todo.md with progress (✅/⚠️/❌), and",
+        "#                open one Pull Request per batch for review."
+      ],
+      "raw_comment": "# todo-work    : Execute the gameplan batch-by-batch using Grok to generate",
+      "extension": "yml",
+      "assignee": null
+    },
+    {
+      "id": "b8946e31",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": ".github/workflows/llm-audit.yml",
+      "line": 52,
+      "text": "-work creates one branch + PR per batch:",
+      "context_before": [
+        "# Pull Request Flow",
+        "# ─────────────────"
+      ],
+      "context_after": [
+        "#   rustassistant/batch-<N>-<slug>",
+        "# Each PR description includes:"
+      ],
+      "raw_comment": "# todo-work creates one branch + PR per batch:",
+      "extension": "yml",
+      "assignee": null
+    },
+    {
+      "id": "93dfa550",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": ".github/workflows/llm-audit.yml",
+      "line": 59,
+      "text": ".md is updated in the SAME commit so the history is always consistent.",
+      "context_before": [
+        "#   - Completion status of each item",
+        "#   - Link to the workflow run"
+      ],
+      "context_after": [
+        "#",
+        "# Required Secrets (set in nuniesmith/actions)"
+      ],
+      "raw_comment": "# todo.md is updated in the SAME commit so the history is always consistent.",
+      "extension": "yml",
+      "assignee": null
+    },
+    {
+      "id": "bb27126a",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": ".github/workflows/llm-audit.yml",
+      "line": 131,
+      "text": "-analyze options",
+      "context_before": [
+        "",
+        "            # ------------------------------------------------------------------"
+      ],
+      "context_after": [
+        "            # ------------------------------------------------------------------",
+        "            todo_priority:"
+      ],
+      "raw_comment": "            # todo-analyze options",
+      "extension": "yml",
+      "assignee": null
+    },
+    {
+      "id": "4477e07e",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": ".github/workflows/llm-audit.yml",
+      "line": 157,
+      "text": "-plan options",
+      "context_before": [
+        "",
+        "            # ------------------------------------------------------------------"
+      ],
+      "context_after": [
+        "            # ------------------------------------------------------------------",
+        "            todo_plan_batch_count:"
+      ],
+      "raw_comment": "            # todo-plan options",
+      "extension": "yml",
+      "assignee": null
+    },
+    {
+      "id": "325da21a",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": ".github/workflows/llm-audit.yml",
+      "line": 166,
+      "text": "-work options",
+      "context_before": [
+        "",
+        "            # ------------------------------------------------------------------"
+      ],
+      "context_after": [
+        "            # ------------------------------------------------------------------",
+        "            work_batch_number:"
+      ],
+      "raw_comment": "            # todo-work options",
+      "extension": "yml",
+      "assignee": null
+    },
+    {
+      "id": "3c98c622",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": ".github/workflows/llm-audit.yml",
+      "line": 966,
+      "text": ".md\\n```markdown\\n{todo_text}\\n```\\n\\n\"",
+      "context_before": [
+        "",
+        "                  user = ("
+      ],
+      "context_after": [
+        "                      + (f\"## Inline code TODOs (first 100)\\n```\\n{inline}\\n```\" if inline else \"\")",
+        "                  )"
+      ],
+      "raw_comment": "                      f\"## todo.md\\n```markdown\\n{todo_text}\\n```\\n\\n\"",
+      "extension": "yml",
+      "assignee": null
+    },
+    {
+      "id": "940ecdd4",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": ".github/workflows/llm-audit.yml",
+      "line": 1687,
+      "text": "Item Status\\n\\n\"",
+      "context_before": [
+        "                  body += f\"**Estimated effort:** {batch.get('estimated_effort','')}\\n\"",
+        "                  body += f\"**Priority:** {batch.get('priority','')}\\n\\n\""
+      ],
+      "context_after": [
+        "                  for u in result.get(\"todo_updates\", []):",
+        "                      emoji = {\"completed\": \"✅\", \"partial\": \"⚠️\", \"blocked\": \"❌\"}.get(u.get(\"status\",\"partial\"), \"⚠️\")"
+      ],
+      "raw_comment": "                  body += \"### TODO Item Status\\n\\n\"",
+      "extension": "yml",
+      "assignee": null
+    },
+    {
+      "id": "bafaf0e3",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": ".github/workflows/llm-audit.yml",
+      "line": 1958,
+      "text": "Item Status\\n\\n\")",
+      "context_before": [
+        "                                 f\"**Effort:** {batch.get('estimated_effort','')}\\n\\n\")",
+        "                          append_to(rf, f\"### Summary\\n\\n{result.get('summary','')}\\n\\n---\\n\\n\")"
+      ],
+      "context_after": [
+        "                          for u in result.get(\"todo_updates\", []):",
+        "                              emoji = {\"completed\":\"✅\",\"partial\":\"⚠️\",\"blocked\":\"❌\"}.get("
+      ],
+      "raw_comment": "                          append_to(rf, \"### TODO Item Status\\n\\n\")",
+      "extension": "yml",
+      "assignee": null
+    },
+    {
+      "id": "466c77f0",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": ".github/workflows/llm-audit.yml",
+      "line": 2009,
+      "text": "-work already committed + pushed on its own branch — skip",
+      "context_before": [
+        "                  GH_PAT: ${{ secrets.GH_PAT }}",
+        "              run: |"
+      ],
+      "context_after": [
+        "                  MODE=\"${{ inputs.audit_mode }}\"",
+        "                  REPO=\"${{ env.REPO_DIR }}\""
+      ],
+      "raw_comment": "                  # todo-work already committed + pushed on its own branch — skip",
+      "extension": "yml",
+      "assignee": null
+    },
+    {
+      "id": "2d1a2c08",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": ".github/workflows/llm-audit.yml",
+      "line": 2143,
+      "text": "analyze (todo-analyze, todo-full, full)",
+      "context_before": [
+        "                  fi",
+        ""
+      ],
+      "context_after": [
+        "                  if [[ \"$MODE\" == \"todo-analyze\" || \"$MODE\" == \"todo-full\" || \"$MODE\" == \"full\" ]]; then",
+        "                      TOTAL=$(python3 -c \"import json; d=json.load(open('audit-workspace/todo-analysis-report.json')); print(d.get('total_todos_found',0))\" 2>/dev/null || echo \"?\")"
+      ],
+      "raw_comment": "                  # TODO analyze (todo-analyze, todo-full, full)",
+      "extension": "yml",
+      "assignee": null
+    },
+    {
+      "id": "fbc2f063",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": ".github/workflows/llm-audit.yml",
+      "line": 2152,
+      "text": "plan (todo-plan, todo-full, full)",
+      "context_before": [
+        "                  fi",
+        ""
+      ],
+      "context_after": [
+        "                  if [[ \"$MODE\" == \"todo-plan\" || \"$MODE\" == \"todo-full\" || \"$MODE\" == \"full\" ]]; then",
+        "                      BATCHES=$(python3 -c \"import json; d=json.load(open('audit-workspace/todo-plan.json')); print(len(d.get('batches',[])))\" 2>/dev/null || echo \"?\")"
+      ],
+      "raw_comment": "                  # TODO plan (todo-plan, todo-full, full)",
+      "extension": "yml",
+      "assignee": null
+    },
+    {
+      "id": "846a8969",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": ".github/workflows/llm-audit.yml",
+      "line": 2161,
+      "text": "work (todo-work only)",
+      "context_before": [
+        "                  fi",
+        ""
+      ],
+      "context_after": [
+        "                  if [[ \"$MODE\" == \"todo-work\" ]]; then",
+        "                      BATCH_NUM=$(python3 -c \"import json; d=json.load(open('audit-workspace/current-batch.json')); print(d.get('batch_number','?'))\" 2>/dev/null || echo \"?\")"
+      ],
+      "raw_comment": "                  # TODO work (todo-work only)",
+      "extension": "yml",
+      "assignee": null
+    },
+    {
+      "id": "f608b13b",
+      "kind": "FIXME",
+      "priority": "high",
+      "file": "config/docs_schema_profile.toml",
+      "line": 75,
+      "text": "",
+      "context_before": [
+        "    [Ww]eek|             # Week",
+        "    [Rr]un|              # Run number"
+      ],
+      "context_after": [
+        "))",
+        ".*?\\.md$"
+      ],
+      "raw_comment": "    [Ff]ix               # Fix",
+      "extension": "toml",
+      "assignee": null
+    },
+    {
+      "id": "1184c0f4",
+      "kind": "OPTIMIZE",
+      "priority": "low",
+      "file": "config/research.toml",
+      "line": 132,
+      "text": "ional: Custom prompt for analyzing papers/articles",
+      "context_before": [
+        "\"\"\"",
+        ""
+      ],
+      "context_after": [
+        "paper_analysis = \"\"\"",
+        "You are analyzing an academic paper or technical article for potential implementation in Project JANUS."
+      ],
+      "raw_comment": "# Optional: Custom prompt for analyzing papers/articles",
+      "extension": "toml",
+      "assignee": null
+    },
+    {
+      "id": "318ed5e5",
+      "kind": "OPTIMIZE",
+      "priority": "low",
+      "file": "config/research.toml",
+      "line": 147,
+      "text": "ional: Custom prompt for analyzing libraries/frameworks",
+      "context_before": [
+        "\"\"\"",
+        ""
+      ],
+      "context_after": [
+        "library_analysis = \"\"\"",
+        "You are evaluating a library or framework for use in Project JANUS."
+      ],
+      "raw_comment": "# Optional: Custom prompt for analyzing libraries/frameworks",
+      "extension": "toml",
+      "assignee": null
+    },
+    {
+      "id": "38229873",
+      "kind": "OPTIMIZE",
+      "priority": "low",
+      "file": "scripts/build-docker.sh",
+      "line": 10,
+      "text": "ions:",
+      "context_before": [
+        "#   ./scripts/build-docker.sh [OPTIONS]",
+        "#"
+      ],
+      "context_after": [
+        "#   --service <api|web|all>  Build specific service (default: all)",
+        "#   --tag <tag>              Tag for the image (default: latest)"
+      ],
+      "raw_comment": "# Options:",
+      "extension": "sh",
+      "assignee": null
+    },
+    {
+      "id": "a3a8bdfa",
+      "kind": "OPTIMIZE",
+      "priority": "low",
+      "file": "scripts/cache_scan_repo.sh",
+      "line": 15,
+      "text": "ions:",
+      "context_before": [
+        "#   REPO_PATH    Path to repository (default: current directory)",
+        "#"
+      ],
+      "context_after": [
+        "#   --refactor   Only run refactor analysis (default: both)",
+        "#   --docs       Only run documentation generation (default: both)"
+      ],
+      "raw_comment": "# Options:",
+      "extension": "sh",
+      "assignee": null
+    },
+    {
+      "id": "aeeb9b23",
+      "kind": "REFACTOR",
+      "priority": "medium",
+      "file": "scripts/cache_scan_repo.sh",
+      "line": 16,
+      "text": "Only run refactor analysis (default: both)",
+      "context_before": [
+        "#",
+        "# Options:"
+      ],
+      "context_after": [
+        "#   --docs       Only run documentation generation (default: both)",
+        "#   --commit     Auto-commit cache files after scan"
+      ],
+      "raw_comment": "#   --refactor   Only run refactor analysis (default: both)",
+      "extension": "sh",
+      "assignee": null
+    },
+    {
+      "id": "d143e229",
+      "kind": "REFACTOR",
+      "priority": "medium",
+      "file": "scripts/cache_scan_repo.sh",
+      "line": 25,
+      "text": "--parallel 3",
+      "context_before": [
+        "# Example:",
+        "#   ./scripts/cache_scan_repo.sh ~/github/fks --commit"
+      ],
+      "context_after": [
+        "#",
+        ""
+      ],
+      "raw_comment": "#   ./scripts/cache_scan_repo.sh . --refactor --parallel 3",
+      "extension": "sh",
+      "assignee": null
+    },
+    {
+      "id": "f588ea8f",
+      "kind": "REFACTOR",
+      "priority": "medium",
+      "file": "scripts/cache_scan_repo.sh",
+      "line": 51,
+      "text": ")",
+      "context_before": [
+        "while [[ $# -gt 0 ]]; do",
+        "  case $1 in"
+      ],
+      "context_after": [
+        "      RUN_REFACTOR=true",
+        "      RUN_DOCS=false"
+      ],
+      "raw_comment": "    --refactor)",
+      "extension": "sh",
+      "assignee": null
+    },
+    {
+      "id": "8e11be4b",
+      "kind": "OPTIMIZE",
+      "priority": "low",
+      "file": "scripts/clean_all.sh",
+      "line": 258,
+      "text": "ional: Clean temp files (simple, non-destructive)",
+      "context_before": [
+        "fi",
+        ""
+      ],
+      "context_after": [
+        "print_status \"Cleaning temporary Docker files...\"",
+        "rm -rf /tmp/docker* 2>/dev/null || true"
+      ],
+      "raw_comment": "# Optional: Clean temp files (simple, non-destructive)",
+      "extension": "sh",
+      "assignee": null
+    },
+    {
+      "id": "c8ec2f30",
+      "kind": "FIXME",
+      "priority": "high",
+      "file": "scripts/fix-permissions.sh",
+      "line": 5,
+      "text": "es the \"unable to open database file\" error on Raspberry Pi",
+      "context_before": [
+        "# RustAssistant - Quick Fix for Database Permissions",
+        "# ============================================================================"
+      ],
+      "context_after": [
+        "#",
+        "# Usage:"
+      ],
+      "raw_comment": "# Fixes the \"unable to open database file\" error on Raspberry Pi",
+      "extension": "sh",
+      "assignee": null
+    },
+    {
+      "id": "7819bf0e",
+      "kind": "OPTIMIZE",
+      "priority": "low",
+      "file": "scripts/generate-secrets.sh",
+      "line": 267,
+      "text": "IONAL:",
+      "context_before": [
+        "#   - DOCKER_USERNAME, DOCKER_TOKEN",
+        "#"
+      ],
+      "context_after": [
+        "#   - DISCORD_WEBHOOK_ACTIONS (for Discord notifications)",
+        "#   - RUSTASSISTANT_API_KEY (if your app needs an API key)"
+      ],
+      "raw_comment": "# OPTIONAL:",
+      "extension": "sh",
+      "assignee": null
+    },
+    {
+      "id": "91f6359c",
+      "kind": "REFACTOR",
+      "priority": "medium",
+      "file": "scripts/migrate_to_centralized.sh",
+      "line": 118,
+      "text": "analyze src/main.rs\"",
+      "context_before": [
+        "echo \"💡 Next steps:\"",
+        "echo \"   - Verify cache works: cargo run --release -- cache status\""
+      ],
+      "context_after": [
+        "echo \"   - Check centralized location: ls -la ~/.rustassistant/cache/repos/\""
+      ],
+      "raw_comment": "echo \"   - Test analysis: cargo run --release -- refactor analyze src/main.rs\"",
+      "extension": "sh",
+      "assignee": null
+    },
+    {
+      "id": "b0f4c2da",
+      "kind": "REFACTOR",
+      "priority": "medium",
+      "file": "scripts/test_cache_versioning.sh",
+      "line": 81,
+      "text": "analyze $TEST_FILE\"",
+      "context_before": [
+        "    echo \"✓ Mock cache entry created\"",
+        "else"
+      ],
+      "context_after": [
+        "    cargo run --release -- refactor analyze \"$TEST_FILE\" >/dev/null 2>&1 || true",
+        "    echo \"✓ Analysis complete\""
+      ],
+      "raw_comment": "    echo \"Running: cargo run --release -- refactor analyze $TEST_FILE\"",
+      "extension": "sh",
+      "assignee": null
+    },
+    {
+      "id": "bdb7e403",
+      "kind": "REFACTOR",
+      "priority": "medium",
+      "file": "scripts/test_cache_versioning.sh",
+      "line": 82,
+      "text": "analyze \"$TEST_FILE\" >/dev/null 2>&1 || true",
+      "context_before": [
+        "else",
+        "    echo \"Running: cargo run --release -- refactor analyze $TEST_FILE\""
+      ],
+      "context_after": [
+        "    echo \"✓ Analysis complete\"",
+        "fi"
+      ],
+      "raw_comment": "    cargo run --release -- refactor analyze \"$TEST_FILE\" >/dev/null 2>&1 || true",
+      "extension": "sh",
+      "assignee": null
+    },
+    {
+      "id": "c11ccc77",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/api/handlers.rs",
+      "line": 132,
+      "text": "Implement type counts",
+      "context_before": [
+        "            indexed: indexed_docs,",
+        "            pending: pending_docs,"
+      ],
+      "context_after": [
+        "        },",
+        "        chunks: ChunkStats {"
+      ],
+      "raw_comment": "            by_type: vec![], // TODO: Implement type counts",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "d6d9a71c",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/api/handlers.rs",
+      "line": 137,
+      "text": "Calculate average size",
+      "context_before": [
+        "            total: total_chunks,",
+        "            avg_per_document: avg_chunks,"
+      ],
+      "context_after": [
+        "        },",
+        "        search: SearchStats {"
+      ],
+      "raw_comment": "            avg_size: 0.0, // TODO: Calculate average size",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "0383c543",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/api/mod.rs",
+      "line": 10,
+      "text": "Fix - accessing non-existent ApiState fields",
+      "context_before": [
+        "//! - System statistics and health checks",
+        ""
+      ],
+      "context_after": [
+        "pub mod auth;",
+        "pub mod handlers;"
+      ],
+      "raw_comment": "// pub mod admin; // TODO: Fix - accessing non-existent ApiState fields",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "8b0ee255",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/audit/cache.rs",
+      "line": 15,
+      "text": "implement",
+      "context_before": [
+        "//! ```",
+        "//!"
+      ],
+      "context_after": [
+        "//!",
+        "//! The structs and trait are fully defined. Implement the Redis I/O in the"
+      ],
+      "raw_comment": "//! # TODO(scaffolder): implement",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "ea1411dd",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/audit/cache.rs",
+      "line": 244,
+      "text": "implement — add `pool: deadpool_redis::Pool` field",
+      "context_before": [
+        "pub struct RedisAuditCache {",
+        "    config: AuditCacheConfig,"
+      ],
+      "context_after": [
+        "    // and initialise it in `RedisAuditCache::new` using `config.redis_url`.",
+        "}"
+      ],
+      "raw_comment": "    // TODO(scaffolder): implement — add `pool: deadpool_redis::Pool` field",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "2fc8bb6a",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/audit/cache.rs",
+      "line": 251,
+      "text": "implement",
+      "context_before": [
+        "    /// Create a new Redis-backed audit cache",
+        "    ///"
+      ],
+      "context_after": [
+        "    ///",
+        "    /// ```rust"
+      ],
+      "raw_comment": "    /// # TODO(scaffolder): implement",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "09c056d2",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/audit/cache.rs",
+      "line": 259,
+      "text": "implement Redis pool initialisation",
+      "context_before": [
+        "    /// ```",
+        "    pub async fn new(config: AuditCacheConfig) -> Result<Self> {"
+      ],
+      "context_after": [
+        "        Ok(Self { config })",
+        "    }"
+      ],
+      "raw_comment": "        // TODO(scaffolder): implement Redis pool initialisation",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "f761b2fa",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/audit/cache.rs",
+      "line": 294,
+      "text": "implement",
+      "context_before": [
+        "        }",
+        "        let _key = self.config.file_key(sha256);"
+      ],
+      "context_after": [
+        "        // let mut conn = self.pool.get().await.map_err(|e| AuditError::other(e.to_string()))?;",
+        "        // let bytes: Option<Vec<u8>> = redis::cmd(\"GET\").arg(&key).query_async(&mut conn).await"
+      ],
+      "raw_comment": "        // TODO(scaffolder): implement",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "6677109d",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/audit/cache.rs",
+      "line": 312,
+      "text": "implement",
+      "context_before": [
+        "        let _bytes = Self::encode(entry)?;",
+        "        let _ttl_secs = self.config.file_entry_ttl.as_secs();"
+      ],
+      "context_after": [
+        "        // let mut conn = self.pool.get().await.map_err(|e| AuditError::other(e.to_string()))?;",
+        "        // redis::cmd(\"SETEX\").arg(&key).arg(ttl_secs).arg(&bytes)"
+      ],
+      "raw_comment": "        // TODO(scaffolder): implement",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "0adb1f4b",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/audit/cache.rs",
+      "line": 325,
+      "text": "implement",
+      "context_before": [
+        "        }",
+        "        let _key = self.config.file_key(sha256);"
+      ],
+      "context_after": [
+        "        // let mut conn = self.pool.get().await.map_err(|e| AuditError::other(e.to_string()))?;",
+        "        // redis::cmd(\"DEL\").arg(&key).query_async(&mut conn).await"
+      ],
+      "raw_comment": "        // TODO(scaffolder): implement",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "fc09d631",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/audit/cache.rs",
+      "line": 341,
+      "text": "implement",
+      "context_before": [
+        "        }",
+        "        let _key = self.config.run_key(repo_id, run_id);"
+      ],
+      "context_after": [
+        "        Ok(None)",
+        "    }"
+      ],
+      "raw_comment": "        // TODO(scaffolder): implement",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "27922c83",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/audit/cache.rs",
+      "line": 353,
+      "text": "implement",
+      "context_before": [
+        "        let _bytes = Self::encode(summary)?;",
+        "        let _ttl_secs = self.config.run_summary_ttl.as_secs();"
+      ],
+      "context_after": [
+        "        // Store the summary under the run key and update the latest pointer:",
+        "        // redis::cmd(\"SETEX\").arg(&key).arg(ttl_secs).arg(&bytes) ..."
+      ],
+      "raw_comment": "        // TODO(scaffolder): implement",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "4fff3ee2",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/audit/cache.rs",
+      "line": 365,
+      "text": "implement",
+      "context_before": [
+        "        }",
+        "        let _latest_key = self.config.latest_key(repo_id);"
+      ],
+      "context_after": [
+        "        // 1. GET latest_key -> run_id string",
+        "        // 2. get_run_summary(repo_id, &run_id).await"
+      ],
+      "raw_comment": "        // TODO(scaffolder): implement",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "83a1af3b",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/audit/cache.rs",
+      "line": 372,
+      "text": "implement",
+      "context_before": [
+        "",
+        "    async fn stats(&self) -> Result<AuditCacheStats> {"
+      ],
+      "context_after": [
+        "        // Use SCAN with MATCH \"{prefix}:file:*\" to count file keys,",
+        "        // SCAN with MATCH \"{prefix}:repo:*:run:*\" for run keys,"
+      ],
+      "raw_comment": "        // TODO(scaffolder): implement",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "3ae78fa4",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/audit/cache.rs",
+      "line": 383,
+      "text": "implement",
+      "context_before": [
+        "            return Ok(0);",
+        "        }"
+      ],
+      "context_after": [
+        "        // SCAN + DEL all keys matching \"{prefix}:*\"",
+        "        // Return the count of deleted keys."
+      ],
+      "raw_comment": "        // TODO(scaffolder): implement",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "13637826",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/audit/endpoint.rs",
+      "line": 19,
+      "text": "implement",
+      "context_before": [
+        "//!   via `TodoFile::append_item` (see `src/todo/todo_file.rs`).",
+        "//!"
+      ],
+      "context_after": [
+        "",
+        "use axum::{"
+      ],
+      "raw_comment": "//! # TODO(scaffolder): implement",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "b8d03859",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/audit/endpoint.rs",
+      "line": 47,
+      "text": "thread shared state (db pool, redis, grok client)",
+      "context_before": [
+        "    S: Send + Sync + 'static,",
+        "{"
+      ],
+      "context_after": [
+        "    // through AuditState and pass it to handlers via .with_state(...)",
+        "    Router::new()"
+      ],
+      "raw_comment": "    // TODO(scaffolder): thread shared state (db pool, redis, grok client)",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "607931c9",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/audit/endpoint.rs",
+      "line": 82,
+      "text": "implement",
+      "context_before": [
+        "/// ```",
+        "pub async fn handle_audit_get() -> impl IntoResponse {"
+      ],
+      "context_after": [
+        "    // 1. Read `docs/audit/` directory listing",
+        "    // 2. Parse report metadata from each `.json` sidecar"
+      ],
+      "raw_comment": "    // TODO(scaffolder): implement",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "b6ced19d",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/audit/endpoint.rs",
+      "line": 122,
+      "text": "implement",
+      "context_before": [
+        "/// ```",
+        "pub async fn handle_audit_post(Json(req): Json<AuditRequest>) -> impl IntoResponse {"
+      ],
+      "context_after": [
+        "    // 1. Validate req.repo exists (or clone if GitHub slug)",
+        "    // 2. Check AuditCache — if all file hashes match, return cached report"
+      ],
+      "raw_comment": "    // TODO(scaffolder): implement",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "9205d93b",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/audit/endpoint.rs",
+      "line": 156,
+      "text": "implement",
+      "context_before": [
+        "/// ```",
+        "pub async fn handle_audit_get_by_id(Path(audit_id): Path<String>) -> impl IntoResponse {"
+      ],
+      "context_after": [
+        "    // 1. Look up docs/audit/<audit_id>.json",
+        "    // 2. Deserialise into AuditReport"
+      ],
+      "raw_comment": "    // TODO(scaffolder): implement",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "19a1d4d5",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/audit/mod.rs",
+      "line": 32,
+      "text": "implement",
+      "context_before": [
+        "//!   (see `src/todo/todo_file.rs`) so new findings automatically enter the pipeline.",
+        "//!"
+      ],
+      "context_after": [
+        "//!",
+        "//! All sub-modules below are stubs. Implement in this order:"
+      ],
+      "raw_comment": "//! # TODO(scaffolder): implement",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "47da7e36",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/audit/report.rs",
+      "line": 14,
+      "text": "implement",
+      "context_before": [
+        "//! ```",
+        "//!"
+      ],
+      "context_after": [
+        "//!",
+        "//! Implement the `render_markdown` and `render_json` methods once"
+      ],
+      "raw_comment": "//! # TODO(scaffolder): implement",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "c95320d3",
+      "kind": "OPTIMIZE",
+      "priority": "low",
+      "file": "src/audit/report.rs",
+      "line": 95,
+      "text": "ional link to the repo (used in Markdown headers)",
+      "context_before": [
+        "    /// Repository name shown in the report header",
+        "    pub repo_name: Option<String>,"
+      ],
+      "context_after": [
+        "    pub repo_url: Option<String>,",
+        "}"
+      ],
+      "raw_comment": "    /// Optional link to the repo (used in Markdown headers)",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "224dcecd",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/audit/report.rs",
+      "line": 165,
+      "text": "implement full Markdown rendering once AuditResponse",
+      "context_before": [
+        "    /// Render to Markdown",
+        "    pub fn render_markdown(&self) -> Result<String> {"
+      ],
+      "context_after": [
+        "        // fields are finalised in src/audit/types.rs.",
+        "        //"
+      ],
+      "raw_comment": "        // TODO(scaffolder): implement full Markdown rendering once AuditResponse",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "98bc3415",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/audit/runner.rs",
+      "line": 18,
+      "text": "implement",
+      "context_before": [
+        "//! ```",
+        "//!"
+      ],
+      "context_after": [
+        "",
+        "use crate::audit::types::{AuditFinding, AuditRequest, AuditResponse};"
+      ],
+      "raw_comment": "//! # TODO(scaffolder): implement",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "f05e33a0",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/audit/runner.rs",
+      "line": 120,
+      "text": "implement",
+      "context_before": [
+        "    /// Run a full audit on a repository.",
+        "    ///"
+      ],
+      "context_after": [
+        "    ///",
+        "    /// Steps to implement:"
+      ],
+      "raw_comment": "    /// # TODO(scaffolder): implement",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "314384a0",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/audit/runner.rs",
+      "line": 134,
+      "text": "implement full pipeline",
+      "context_before": [
+        "    /// 9. Return `AuditResponse`",
+        "    pub async fn run(&self, request: AuditRequest) -> Result<AuditResponse> {"
+      ],
+      "context_after": [
+        "        //",
+        "        // Placeholder: return a stub response so the API compiles and the"
+      ],
+      "raw_comment": "        // TODO(scaffolder): implement full pipeline",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "338061be",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/audit/runner.rs",
+      "line": 148,
+      "text": "implement",
+      "context_before": [
+        "    /// Useful for the `/api/audit?mode=static` fast path.",
+        "    ///"
+      ],
+      "context_after": [
+        "    pub async fn run_static_only(&self, repo_path: impl AsRef<Path>) -> Result<AuditResponse> {",
+        "        // TODO(scaffolder): implement"
+      ],
+      "raw_comment": "    /// # TODO(scaffolder): implement",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "c7914dda",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/audit/runner.rs",
+      "line": 150,
+      "text": "implement",
+      "context_before": [
+        "    /// # TODO(scaffolder): implement",
+        "    pub async fn run_static_only(&self, repo_path: impl AsRef<Path>) -> Result<AuditResponse> {"
+      ],
+      "context_after": [
+        "        let _ = repo_path;",
+        "        Err(AuditError::other("
+      ],
+      "raw_comment": "        // TODO(scaffolder): implement",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "b1bb0fbe",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/audit/runner.rs",
+      "line": 161,
+      "text": "implement",
+      "context_before": [
+        "    /// Returns paths relative to `repo_path`.",
+        "    ///"
+      ],
+      "context_after": [
+        "    fn collect_files(&self, repo_path: &Path) -> Result<Vec<PathBuf>> {",
+        "        // TODO(scaffolder): implement using walkdir"
+      ],
+      "raw_comment": "    /// # TODO(scaffolder): implement",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "b83934d0",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/audit/runner.rs",
+      "line": 163,
+      "text": "implement using walkdir",
+      "context_before": [
+        "    /// # TODO(scaffolder): implement",
+        "    fn collect_files(&self, repo_path: &Path) -> Result<Vec<PathBuf>> {"
+      ],
+      "context_after": [
+        "        // - filter by skip_extensions",
+        "        // - filter by skip_paths"
+      ],
+      "raw_comment": "        // TODO(scaffolder): implement using walkdir",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "792483d0",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/audit/runner.rs",
+      "line": 177,
+      "text": "implement",
+      "context_before": [
+        "    /// escalating to the LLM.",
+        "    ///"
+      ],
+      "context_after": [
+        "    fn static_score(&self, _path: &Path, _content: &str) -> f32 {",
+        "        // TODO(scaffolder): delegate to StaticAnalyzer"
+      ],
+      "raw_comment": "    /// # TODO(scaffolder): implement",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "45aa23da",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/audit/runner.rs",
+      "line": 179,
+      "text": "delegate to StaticAnalyzer",
+      "context_before": [
+        "    /// # TODO(scaffolder): implement",
+        "    fn static_score(&self, _path: &Path, _content: &str) -> f32 {"
+      ],
+      "context_after": [
+        "        // Use src/static_analysis.rs StaticAnalyzer and src/prompt_router.rs PromptRouter",
+        "        0.0"
+      ],
+      "raw_comment": "        // TODO(scaffolder): delegate to StaticAnalyzer",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "c062a34f",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/audit/runner.rs",
+      "line": 186,
+      "text": "implement",
+      "context_before": [
+        "    /// Convert a `FileScoreResult` from GrokClient into an `AuditFinding`.",
+        "    ///"
+      ],
+      "context_after": [
+        "    fn finding_from_score(",
+        "        &self,"
+      ],
+      "raw_comment": "    /// # TODO(scaffolder): implement",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "017f144f",
+      "kind": "TODO",
+      "priority": "high",
+      "file": "src/audit/runner.rs",
+      "line": 192,
+      "text": "map security_score / quality_score / complexity_score",
+      "context_before": [
+        "        _score: &crate::grok_client::FileScoreResult,",
+        "    ) -> Vec<AuditFinding> {"
+      ],
+      "context_after": [
+        "        // to AuditSeverity, extract issues/suggestions into AuditFinding entries",
+        "        Vec::new()"
+      ],
+      "raw_comment": "        // TODO(scaffolder): map security_score / quality_score / complexity_score",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "9ebbba80",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/audit/types.rs",
+      "line": 9,
+      "text": "implement",
+      "context_before": [
+        "//! - `cache`     — keys the Redis cache on `AuditRequest` fields",
+        "//!"
+      ],
+      "context_after": [
+        "//!",
+        "//! The structs below are complete enough for compilation and wiring."
+      ],
+      "raw_comment": "//! # TODO(scaffolder): implement",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "8a342931",
+      "kind": "OPTIMIZE",
+      "priority": "low",
+      "file": "src/audit/types.rs",
+      "line": 242,
+      "text": "ional branch/tag/SHA to check out (defaults to HEAD)",
+      "context_before": [
+        "    /// or a GitHub `owner/repo` slug if the server should clone it.",
+        "    pub repo: String,"
+      ],
+      "context_after": [
+        "    pub git_ref: Option<String>,",
+        "    /// Audit mode: `\"full\"` (all files) or `\"changed\"` (only diff from base)"
+      ],
+      "raw_comment": "    /// Optional branch/tag/SHA to check out (defaults to HEAD)",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "10e6ed16",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/auto_scanner.rs",
+      "line": 140,
+      "text": "Scanner for richer TODO/FIXME priority classification",
+      "context_before": [
+        "    /// Prompt router for tier-based prompt selection (Minimal/Standard/DeepDive)",
+        "    prompt_router: Arc<PromptRouter>,"
+      ],
+      "context_after": [
+        "    todo_scanner: Arc<TodoScanner>,",
+        "    /// Cost tracker for logging static analysis decisions and savings"
+      ],
+      "raw_comment": "    /// TodoScanner for richer TODO/FIXME priority classification",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "e4cacdf8",
+      "kind": "REFACTOR",
+      "priority": "medium",
+      "file": "src/auto_scanner.rs",
+      "line": 1176,
+      "text": "ingSuggestion doesn't have location",
+      "context_before": [
+        "",
+        "            let priority = 3; // Medium priority for refactoring suggestions"
+      ],
+      "context_after": [
+        "",
+        "            let title = format!(\"Refactor: {} in {}\", suggestion.title, file_path);"
+      ],
+      "raw_comment": "            let line_number: Option<i32> = None; // RefactoringSuggestion doesn't have location",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "a5fe2fa1",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/bin/cli.rs",
+      "line": 22,
+      "text": "pipeline imports",
+      "context_before": [
+        "use rustassistant::repo_cache_sql::{CacheSetParams as SqlCacheSetParams, RepoCacheSql};",
+        ""
+      ],
+      "context_after": [
+        "use rustassistant::todo::{",
+        "    PlannerConfig, ScaffoldConfig, ScanConfig, SyncConfig, TodoCommentScanner, TodoPlanner,"
+      ],
+      "raw_comment": "// Todo pipeline imports",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "47db7e92",
+      "kind": "REFACTOR",
+      "priority": "medium",
+      "file": "src/bin/cli.rs",
+      "line": 94,
+      "text": "ing assistant",
+      "context_before": [
+        "    },",
+        ""
+      ],
+      "context_after": [
+        "    Refactor {",
+        "        #[command(subcommand)]"
+      ],
+      "raw_comment": "    /// Refactoring assistant",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "7f694437",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/bin/cli.rs",
+      "line": 120,
+      "text": "Pipeline Subcommands",
+      "context_before": [
+        "",
+        "// ============================================================================"
+      ],
+      "context_after": [
+        "// ============================================================================",
+        ""
+      ],
+      "raw_comment": "// Todo Pipeline Subcommands",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "522077ff",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/bin/cli.rs",
+      "line": 156,
+      "text": ".md.  Idempotent — safe to re-run.",
+      "context_before": [
+        "    /// Reads todo.md, asks the LLM which files/dirs need to exist, creates",
+        "    /// stubs on disk, and writes a \"Scaffolded files\" section back into"
+      ],
+      "context_after": [
+        "    ///",
+        "    /// Examples:"
+      ],
+      "raw_comment": "    /// todo.md.  Idempotent — safe to re-run.",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "8e4863d8",
+      "kind": "OPTIMIZE",
+      "priority": "low",
+      "file": "src/bin/cli.rs",
+      "line": 192,
+      "text": "ional repo root for source-context snippets",
+      "context_before": [
+        "        todo_md: String,",
+        ""
+      ],
+      "context_after": [
+        "        #[arg(long)]",
+        "        context: Option<String>,"
+      ],
+      "raw_comment": "        /// Optional repo root for source-context snippets",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "fef1859c",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/bin/cli.rs",
+      "line": 508,
+      "text": "Pipeline Handlers",
+      "context_before": [
+        "",
+        "// ============================================================================"
+      ],
+      "context_after": [
+        "// ============================================================================",
+        ""
+      ],
+      "raw_comment": "// Todo Pipeline Handlers",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "4fc48851",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/bin/cli.rs",
+      "line": 550,
+      "text": "scan",
+      "context_before": [
+        "",
+        "// ---------------------------------------------------------------------------"
+      ],
+      "context_after": [
+        "// ---------------------------------------------------------------------------",
+        ""
+      ],
+      "raw_comment": "// todo scan",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "4a5e934d",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/bin/cli.rs",
+      "line": 686,
+      "text": "scaffold",
+      "context_before": [
+        "",
+        "// ---------------------------------------------------------------------------"
+      ],
+      "context_after": [
+        "// ---------------------------------------------------------------------------",
+        ""
+      ],
+      "raw_comment": "// todo scaffold",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "6c7fc44e",
+      "kind": "OPTIMIZE",
+      "priority": "low",
+      "file": "src/bin/cli.rs",
+      "line": 725,
+      "text": "ionally write the plan to disk",
+      "context_before": [
+        "    let result = scaffolder.scaffold(&repo_path).await?;",
+        ""
+      ],
+      "context_after": [
+        "    if let Some(out_path) = &output {",
+        "        let plan_json = result.plan.to_json_pretty()?;"
+      ],
+      "raw_comment": "    // Optionally write the plan to disk",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "97ee2bed",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/bin/cli.rs",
+      "line": 742,
+      "text": "plan",
+      "context_before": [
+        "",
+        "// ---------------------------------------------------------------------------"
+      ],
+      "context_after": [
+        "// ---------------------------------------------------------------------------",
+        ""
+      ],
+      "raw_comment": "// todo plan",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "ddc5345e",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/bin/cli.rs",
+      "line": 803,
+      "text": "work",
+      "context_before": [
+        "",
+        "// ---------------------------------------------------------------------------"
+      ],
+      "context_after": [
+        "// ---------------------------------------------------------------------------",
+        ""
+      ],
+      "raw_comment": "// todo work",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "62a856d3",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/bin/cli.rs",
+      "line": 924,
+      "text": "sync",
+      "context_before": [
+        "",
+        "// ---------------------------------------------------------------------------"
+      ],
+      "context_after": [
+        "// ---------------------------------------------------------------------------",
+        ""
+      ],
+      "raw_comment": "// todo sync",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "8141a46d",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/bin/cli.rs",
+      "line": 1338,
+      "text": "Actually test the API connection",
+      "context_before": [
+        "            );",
+        ""
+      ],
+      "context_after": [
+        "            // For now, just check if the key exists",
+        "            println!("
+      ],
+      "raw_comment": "            // TODO: Actually test the API connection",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "09f381b9",
+      "kind": "OPTIMIZE",
+      "priority": "low",
+      "file": "src/chunking.rs",
+      "line": 134,
+      "text": "ional heading context (nearest preceding heading)",
+      "context_before": [
+        "    pub word_count: usize,",
+        ""
+      ],
+      "context_after": [
+        "    pub heading: Option<String>,",
+        ""
+      ],
+      "raw_comment": "    /// Optional heading context (nearest preceding heading)",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "bb1fc544",
+      "kind": "OPTIMIZE",
+      "priority": "low",
+      "file": "src/code_review.rs",
+      "line": 68,
+      "text": "ional line number",
+      "context_before": [
+        "    /// Issue description",
+        "    pub description: String,"
+      ],
+      "context_after": [
+        "    pub line: Option<usize>,",
+        "}"
+      ],
+      "raw_comment": "    /// Optional line number",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "fcf9967b",
+      "kind": "FIXME",
+      "priority": "high",
+      "file": "src/db/config.rs",
+      "line": 171,
+      "text": "permissions on the database file itself",
+      "context_before": [
+        "    }",
+        ""
+      ],
+      "context_after": [
+        "    #[cfg(unix)]",
+        "    fix_db_permissions(&config.path)?;"
+      ],
+      "raw_comment": "    // Fix permissions on the database file itself",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "9e244c56",
+      "kind": "FIXME",
+      "priority": "high",
+      "file": "src/db/config.rs",
+      "line": 192,
+      "text": "database file permissions on Unix",
+      "context_before": [
+        "}",
+        ""
+      ],
+      "context_after": [
+        "#[cfg(unix)]",
+        "fn fix_db_permissions(path: &Path) -> Result<()> {"
+      ],
+      "raw_comment": "/// Fix database file permissions on Unix",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "96e38d6f",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/db/queue.rs",
+      "line": 58,
+      "text": "comment from code",
+      "context_before": [
+        "    /// Manual note input",
+        "    Note,"
+      ],
+      "context_after": [
+        "    TodoComment,",
+        "    /// File from repository"
+      ],
+      "raw_comment": "    /// TODO comment from code",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "28d76035",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/db/queue.rs",
+      "line": 207,
+      "text": "Item (Extracted from Code)",
+      "context_before": [
+        "",
+        "// ============================================================================"
+      ],
+      "context_after": [
+        "// ============================================================================",
+        ""
+      ],
+      "raw_comment": "// TODO Item (Extracted from Code)",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "f496cea9",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/db/queue.rs",
+      "line": 368,
+      "text": "items",
+      "context_before": [
+        "    .await?;",
+        ""
+      ],
+      "context_after": [
+        "    sqlx::query(",
+        "        r#\""
+      ],
+      "raw_comment": "    // TODO items",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "1370fdc6",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/directory_tree.rs",
+      "line": 452,
+      "text": "Add error handling",
+      "context_before": [
+        "    let x = some_func().unwrap();",
+        "    println!(\"Debug: {}\", x);"
+      ],
+      "context_after": [
+        "}",
+        "\"#;"
+      ],
+      "raw_comment": "    // TODO: Add error handling",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "399fc7a0",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/indexing.rs",
+      "line": 395,
+      "text": "Implement concurrent processing with semaphore",
+      "context_before": [
+        "    ) -> Result<Vec<IndexingResult>> {",
+        "        // For now, use sequential processing"
+      ],
+      "context_after": [
+        "        let mut results = Vec::new();",
+        ""
+      ],
+      "raw_comment": "        // TODO: Implement concurrent processing with semaphore",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "f5f6dc7d",
+      "kind": "REFACTOR",
+      "priority": "medium",
+      "file": "src/prompt_hashes.rs",
+      "line": 17,
+      "text": "Prompts",
+      "context_before": [
+        "",
+        "// ============================================================================"
+      ],
+      "context_after": [
+        "// ============================================================================",
+        ""
+      ],
+      "raw_comment": "// Refactor Prompts",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "b422e626",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/prompt_hashes.rs",
+      "line": 181,
+      "text": "scanner doesn't use prompts yet",
+      "context_before": [
+        "        \"docs\" => docs_module_prompt_hash(),",
+        "        \"analysis\" => analysis_prompt_hash(),"
+      ],
+      "context_after": [
+        "        _ => \"default\".to_string(),",
+        "    }"
+      ],
+      "raw_comment": "        \"todos\" => \"default\".to_string(), // TODO scanner doesn't use prompts yet",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "51d284f3",
+      "kind": "OPTIMIZE",
+      "priority": "low",
+      "file": "src/query_templates.rs",
+      "line": 47,
+      "text": "ional variables with defaults",
+      "context_before": [
+        "    /// Required variables",
+        "    pub required_vars: Vec<String>,"
+      ],
+      "context_after": [
+        "    pub optional_vars: HashMap<String, String>,",
+        "    /// Expected operation type"
+      ],
+      "raw_comment": "    /// Optional variables with defaults",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "cfc48379",
+      "kind": "REFACTOR",
+      "priority": "medium",
+      "file": "src/query_templates.rs",
+      "line": 270,
+      "text": "ing templates",
+      "context_before": [
+        "        });",
+        ""
+      ],
+      "context_after": [
+        "        self.add_template(QueryTemplate {",
+        "            name: \"refactor_suggestions\".to_string(),"
+      ],
+      "raw_comment": "        // Refactoring templates",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "62b848ca",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/queue/processor.rs",
+      "line": 430,
+      "text": "Additional tag refinement, linking to projects, etc.",
+      "context_before": [
+        "",
+        "        for item in items {"
+      ],
+      "context_after": [
+        "            // For now, just advance to ready",
+        "            advance_stage(&self.pool, &item.id).await?;"
+      ],
+      "raw_comment": "            // TODO: Additional tag refinement, linking to projects, etc.",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "6ae2df23",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/queue/processor.rs",
+      "line": 532,
+      "text": "s get higher priority",
+      "context_before": [
+        "        content,",
+        "        QueueSource::TodoComment,"
+      ],
+      "context_after": [
+        "        Some(repo_id),",
+        "        Some(file_path),"
+      ],
+      "raw_comment": "        QueuePriority::High, // TODOs get higher priority",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "48d2b21e",
+      "kind": "REFACTOR",
+      "priority": "medium",
+      "file": "src/refactor_assistant.rs",
+      "line": 1,
+      "text": "ing Assistant Module",
+      "context_before": [],
+      "context_after": [
+        "//!",
+        "//! AI-powered code smell detection and refactoring suggestions."
+      ],
+      "raw_comment": "//! # Refactoring Assistant Module",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "2303dda3",
+      "kind": "REFACTOR",
+      "priority": "medium",
+      "file": "src/refactor_assistant.rs",
+      "line": 38,
+      "text": "ing assistant with AI-powered analysis",
+      "context_before": [
+        "use std::path::Path;",
+        ""
+      ],
+      "context_after": [
+        "pub struct RefactorAssistant {",
+        "    grok_client: GrokClient,"
+      ],
+      "raw_comment": "/// Refactoring assistant with AI-powered analysis",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "e0dd8fbd",
+      "kind": "REFACTOR",
+      "priority": "medium",
+      "file": "src/refactor_assistant.rs",
+      "line": 50,
+      "text": "ing suggestions",
+      "context_before": [
+        "    /// Code smells detected",
+        "    pub code_smells: Vec<CodeSmell>,"
+      ],
+      "context_after": [
+        "    pub suggestions: Vec<RefactoringSuggestion>,",
+        "    /// Overall complexity score (0-100, lower is better)"
+      ],
+      "raw_comment": "    /// Refactoring suggestions",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "32e603ce",
+      "kind": "REFACTOR",
+      "priority": "medium",
+      "file": "src/refactor_assistant.rs",
+      "line": 143,
+      "text": "ing suggestion",
+      "context_before": [
+        "}",
+        ""
+      ],
+      "context_after": [
+        "#[derive(Debug, Clone, Serialize, Deserialize)]",
+        "pub struct RefactoringSuggestion {"
+      ],
+      "raw_comment": "/// Refactoring suggestion",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "8c53cdc4",
+      "kind": "REFACTOR",
+      "priority": "medium",
+      "file": "src/refactor_assistant.rs",
+      "line": 164,
+      "text": "ing types",
+      "context_before": [
+        "}",
+        ""
+      ],
+      "context_after": [
+        "#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]",
+        "pub enum RefactoringType {"
+      ],
+      "raw_comment": "/// Refactoring types",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "3c97d635",
+      "kind": "REFACTOR",
+      "priority": "medium",
+      "file": "src/refactor_assistant.rs",
+      "line": 197,
+      "text": "ing priority",
+      "context_before": [
+        "}",
+        ""
+      ],
+      "context_after": [
+        "#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]",
+        "pub enum RefactoringPriority {"
+      ],
+      "raw_comment": "/// Refactoring priority",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "626ebc85",
+      "kind": "OPTIMIZE",
+      "priority": "low",
+      "file": "src/refactor_assistant.rs",
+      "line": 206,
+      "text": "ional (minor improvement)",
+      "context_before": [
+        "    /// Nice to have (code quality)",
+        "    Medium,"
+      ],
+      "context_after": [
+        "    Low,",
+        "}"
+      ],
+      "raw_comment": "    /// Optional (minor improvement)",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "cfdf0453",
+      "kind": "REFACTOR",
+      "priority": "medium",
+      "file": "src/refactor_assistant.rs",
+      "line": 225,
+      "text": "ing example (before/after)",
+      "context_before": [
+        "}",
+        ""
+      ],
+      "context_after": [
+        "#[derive(Debug, Clone, Serialize, Deserialize)]",
+        "pub struct RefactoringExample {"
+      ],
+      "raw_comment": "/// Refactoring example (before/after)",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "1085e356",
+      "kind": "REFACTOR",
+      "priority": "medium",
+      "file": "src/refactor_assistant.rs",
+      "line": 236,
+      "text": "ing plan for multiple files",
+      "context_before": [
+        "}",
+        ""
+      ],
+      "context_after": [
+        "#[derive(Debug, Clone, Serialize, Deserialize)]",
+        "pub struct RefactoringPlan {"
+      ],
+      "raw_comment": "/// Refactoring plan for multiple files",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "6ec22d34",
+      "kind": "REFACTOR",
+      "priority": "medium",
+      "file": "src/refactor_assistant.rs",
+      "line": 906,
+      "text": "ing Analysis: {}\\n\\n\", self.path));",
+      "context_before": [
+        "        let mut output = String::new();",
+        ""
+      ],
+      "context_after": [
+        "",
+        "        // Scores"
+      ],
+      "raw_comment": "        output.push_str(&format!(\"# Refactoring Analysis: {}\\n\\n\", self.path));",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "544e7597",
+      "kind": "REFACTOR",
+      "priority": "medium",
+      "file": "src/refactor_assistant.rs",
+      "line": 975,
+      "text": "ing Suggestions ({})\\n\\n\",",
+      "context_before": [
+        "        if !self.suggestions.is_empty() {",
+        "            output.push_str(&format!("
+      ],
+      "context_after": [
+        "                self.suggestions.len()",
+        "            ));"
+      ],
+      "raw_comment": "                \"## Refactoring Suggestions ({})\\n\\n\",",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "4753573c",
+      "kind": "REFACTOR",
+      "priority": "medium",
+      "file": "src/refactor_assistant.rs",
+      "line": 1037,
+      "text": "ing Plan: {}\\n\\n\", self.title));",
+      "context_before": [
+        "        let mut output = String::new();",
+        ""
+      ],
+      "context_after": [
+        "        output.push_str(&format!(\"**Goal:** {}\\n\\n\", self.goal));",
+        "        output.push_str(&format!(\"**Total Effort:** {:?}\\n\", self.total_effort));"
+      ],
+      "raw_comment": "        output.push_str(&format!(\"# Refactoring Plan: {}\\n\\n\", self.title));",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "77110ca6",
+      "kind": "REFACTOR",
+      "priority": "medium",
+      "file": "src/repo_cache.rs",
+      "line": 13,
+      "text": "ing analysis results",
+      "context_before": [
+        "//!   │   ├── analysis/      # General analysis results",
+        "//!   │   ├── docs/          # Documentation generation results"
+      ],
+      "context_after": [
+        "//!   │   └── todos/         # TODO scan results",
+        "//!   ├── config.toml        # Repo-specific config"
+      ],
+      "raw_comment": "//!   │   ├── refactor/      # Refactoring analysis results",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "69565ca3",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/repo_cache.rs",
+      "line": 14,
+      "text": "scan results",
+      "context_before": [
+        "//!   │   ├── docs/          # Documentation generation results",
+        "//!   │   ├── refactor/      # Refactoring analysis results"
+      ],
+      "context_after": [
+        "//!   ├── config.toml        # Repo-specific config",
+        "//!   └── README.md          # Cache documentation"
+      ],
+      "raw_comment": "//!   │   └── todos/         # TODO scan results",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "d6128495",
+      "kind": "REFACTOR",
+      "priority": "medium",
+      "file": "src/repo_cache.rs",
+      "line": 98,
+      "text": "ing analysis",
+      "context_before": [
+        "    /// Documentation generation",
+        "    Docs,"
+      ],
+      "context_after": [
+        "    Refactor,",
+        "    /// TODO/FIXME scans"
+      ],
+      "raw_comment": "    /// Refactoring analysis",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "f8d199ea",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/repo_cache.rs",
+      "line": 100,
+      "text": "/FIXME scans",
+      "context_before": [
+        "    /// Refactoring analysis",
+        "    Refactor,"
+      ],
+      "context_after": [
+        "    Todos,",
+        "}"
+      ],
+      "raw_comment": "    /// TODO/FIXME scans",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "6fdb578e",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/research/worker.rs",
+      "line": 276,
+      "text": "Integrate with LanceDB vector search",
+      "context_before": [
+        "    _limit: usize,",
+        ") -> Result<Vec<RagResult>> {"
+      ],
+      "context_after": [
+        "    // For now, return empty - this is where you'd query your embeddings",
+        "    info!(\"RAG search for: {}\", query);"
+      ],
+      "raw_comment": "    // TODO: Integrate with LanceDB vector search",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "421f1026",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/scanner/github.rs",
+      "line": 186,
+      "text": "Scanner",
+      "context_before": [
+        "",
+        "// ============================================================================"
+      ],
+      "context_after": [
+        "// ============================================================================",
+        ""
+      ],
+      "raw_comment": "// TODO Scanner",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "037b4d95",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/scoring.rs",
+      "line": 53,
+      "text": "count by priority",
+      "context_before": [
+        "    pub audit_tags: Vec<String>,",
+        ""
+      ],
+      "context_after": [
+        "    pub todos: TodoBreakdown,",
+        ""
+      ],
+      "raw_comment": "    /// TODO count by priority",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "6b165ff4",
+      "kind": "DEPRECATED",
+      "priority": "low",
+      "file": "src/scoring.rs",
+      "line": 65,
+      "text": "tags",
+      "context_before": [
+        "    pub experimental_tags: usize,",
+        ""
+      ],
+      "context_after": [
+        "    pub deprecated_tags: usize,",
+        ""
+      ],
+      "raw_comment": "    /// Deprecated tags",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "178cd5dc",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/scoring.rs",
+      "line": 81,
+      "text": "breakdown by priority",
+      "context_before": [
+        "}",
+        ""
+      ],
+      "context_after": [
+        "#[derive(Debug, Clone, Serialize, Deserialize, Default)]",
+        "pub struct TodoBreakdown {"
+      ],
+      "raw_comment": "/// TODO breakdown by priority",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "a62d78dd",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/scoring.rs",
+      "line": 368,
+      "text": "s reduce quality",
+      "context_before": [
+        "        let mut quality = 100.0;",
+        ""
+      ],
+      "context_after": [
+        "        quality -= breakdown.todos.total as f64 * 2.0;",
+        ""
+      ],
+      "raw_comment": "        // TODOs reduce quality",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "48ba190b",
+      "kind": "DEPRECATED",
+      "priority": "low",
+      "file": "src/scoring.rs",
+      "line": 376,
+      "text": "code reduces quality",
+      "context_before": [
+        "        }",
+        ""
+      ],
+      "context_after": [
+        "        quality -= breakdown.deprecated_tags as f64 * 10.0;",
+        ""
+      ],
+      "raw_comment": "        // Deprecated code reduces quality",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "46f080ee",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/scoring.rs",
+      "line": 408,
+      "text": "s are debt",
+      "context_before": [
+        "        let mut debt = 0.0;",
+        ""
+      ],
+      "context_after": [
+        "        debt += breakdown.todos.total as f64 * 5.0;",
+        "        debt += breakdown.todos.high as f64 * 10.0;"
+      ],
+      "raw_comment": "        // TODOs are debt",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "bb6397e4",
+      "kind": "DEPRECATED",
+      "priority": "low",
+      "file": "src/scoring.rs",
+      "line": 412,
+      "text": "code is debt",
+      "context_before": [
+        "        debt += breakdown.todos.high as f64 * 10.0;",
+        ""
+      ],
+      "context_after": [
+        "        debt += breakdown.deprecated_tags as f64 * self.weights.deprecated_debt;",
+        ""
+      ],
+      "raw_comment": "        // Deprecated code is debt",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "36d83a23",
+      "kind": "DEPRECATED",
+      "priority": "low",
+      "file": "src/scoring.rs",
+      "line": 444,
+      "text": "code should be updated",
+      "context_before": [
+        "        priority += breakdown.security_tags as f64 * 25.0;",
+        ""
+      ],
+      "context_after": [
+        "        priority += breakdown.deprecated_tags as f64 * 15.0;",
+        ""
+      ],
+      "raw_comment": "        // Deprecated code should be updated",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "55cb61be",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/static_analysis.rs",
+      "line": 156,
+      "text": "Scanner integration ---",
+      "context_before": [
+        "    pub xxx_count: usize,",
+        ""
+      ],
+      "context_after": [
+        "    /// High-priority TODOs (FIXME, XXX, security, urgent) from TodoScanner",
+        "    pub high_priority_todos: usize,"
+      ],
+      "raw_comment": "    // --- TodoScanner integration ---",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "20428c71",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/static_analysis.rs",
+      "line": 566,
+      "text": "/FIXME/HACK/XXX/NOTE match by priority using the same",
+      "context_before": [
+        "    /// This avoids the need for a temp file: instead of calling",
+        "    /// `TodoScanner::scan_file`, we iterate lines and classify each"
+      ],
+      "context_after": [
+        "    /// heuristics that `TodoScanner::infer_priority` uses.",
+        "    fn merge_todo_scanner_results("
+      ],
+      "raw_comment": "    /// TODO/FIXME/HACK/XXX/NOTE match by priority using the same",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "c5374e00",
+      "kind": "FIXME",
+      "priority": "high",
+      "file": "src/static_analysis.rs",
+      "line": 1561,
+      "text": "critical security issue here",
+      "context_before": [
+        "        let content = r#\"",
+        "fn process_data() {"
+      ],
+      "context_after": [
+        "    // FIXME: urgent memory leak",
+        "    // FIXME: broken auth check"
+      ],
+      "raw_comment": "    // FIXME: critical security issue here",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "c87468d9",
+      "kind": "FIXME",
+      "priority": "high",
+      "file": "src/static_analysis.rs",
+      "line": 1562,
+      "text": "urgent memory leak",
+      "context_before": [
+        "fn process_data() {",
+        "    // FIXME: critical security issue here"
+      ],
+      "context_after": [
+        "    // FIXME: broken auth check",
+        "    // TODO: refactor this later"
+      ],
+      "raw_comment": "    // FIXME: urgent memory leak",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "ccb5756e",
+      "kind": "FIXME",
+      "priority": "high",
+      "file": "src/static_analysis.rs",
+      "line": 1563,
+      "text": "broken auth check",
+      "context_before": [
+        "    // FIXME: critical security issue here",
+        "    // FIXME: urgent memory leak"
+      ],
+      "context_after": [
+        "    // TODO: refactor this later",
+        "    // NOTE: consider caching"
+      ],
+      "raw_comment": "    // FIXME: broken auth check",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "d2f2256b",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/static_analysis.rs",
+      "line": 1564,
+      "text": "refactor this later",
+      "context_before": [
+        "    // FIXME: urgent memory leak",
+        "    // FIXME: broken auth check"
+      ],
+      "context_after": [
+        "    // NOTE: consider caching",
+        "    let x = 1;"
+      ],
+      "raw_comment": "    // TODO: refactor this later",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "3ccf542a",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/static_analysis.rs",
+      "line": 1606,
+      "text": "refactor later",
+      "context_before": [
+        "    // NOTE: maybe consider this",
+        "    // NOTE: optional improvement"
+      ],
+      "context_after": [
+        "    let x = 1;",
+        "    let y = 2;"
+      ],
+      "raw_comment": "    // TODO: refactor later",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "92ea58b8",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/static_analysis.rs",
+      "line": 1827,
+      "text": "Implement caching",
+      "context_before": [
+        "",
+        "        let content = r#\""
+      ],
+      "context_after": [
+        "pub fn fetch_data() -> Vec<u8> {",
+        "    // FIXME: This is broken on Windows"
+      ],
+      "raw_comment": "// TODO: Implement caching",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "ae64f8b2",
+      "kind": "FIXME",
+      "priority": "high",
+      "file": "src/static_analysis.rs",
+      "line": 1829,
+      "text": "This is broken on Windows",
+      "context_before": [
+        "// TODO: Implement caching",
+        "pub fn fetch_data() -> Vec<u8> {"
+      ],
+      "context_after": [
+        "    let data = vec![];",
+        "    // HACK: Temporary workaround for #123"
+      ],
+      "raw_comment": "    // FIXME: This is broken on Windows",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "5a75d4d6",
+      "kind": "HACK",
+      "priority": "medium",
+      "file": "src/static_analysis.rs",
+      "line": 1831,
+      "text": "Temporary workaround for #123",
+      "context_before": [
+        "    // FIXME: This is broken on Windows",
+        "    let data = vec![];"
+      ],
+      "context_after": [
+        "    // XXX: Race condition here",
+        "    data"
+      ],
+      "raw_comment": "    // HACK: Temporary workaround for #123",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "5736f20f",
+      "kind": "XXX",
+      "priority": "high",
+      "file": "src/static_analysis.rs",
+      "line": 1832,
+      "text": "Race condition here",
+      "context_before": [
+        "    let data = vec![];",
+        "    // HACK: Temporary workaround for #123"
+      ],
+      "context_after": [
+        "    data",
+        "}"
+      ],
+      "raw_comment": "    // XXX: Race condition here",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "443284d3",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/static_analysis.rs",
+      "line": 1836,
+      "text": "Add error handling",
+      "context_before": [
+        "}",
+        ""
+      ],
+      "context_after": [
+        "pub fn process() {}",
+        "\"#;"
+      ],
+      "raw_comment": "// TODO: Add error handling",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "94359c8f",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/static_analysis.rs",
+      "line": 2011,
+      "text": "Add write support",
+      "context_before": [
+        "    }",
+        ""
+      ],
+      "context_after": [
+        "    pub fn set(&mut self, key: String, value: String) {",
+        "        self.cache.insert(key, value);"
+      ],
+      "raw_comment": "    // TODO: Add write support",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "66dfda7e",
+      "kind": "DEPRECATED",
+      "priority": "low",
+      "file": "src/tag_schema.rs",
+      "line": 45,
+      "text": "/old code",
+      "context_before": [
+        "    /// Testing",
+        "    Testing,"
+      ],
+      "context_after": [
+        "    Legacy,",
+        "    /// Experimental/new code"
+      ],
+      "raw_comment": "    /// Deprecated/old code",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "4ea6e23d",
+      "kind": "DEPRECATED",
+      "priority": "low",
+      "file": "src/tag_schema.rs",
+      "line": 99,
+      "text": "but still used",
+      "context_before": [
+        "    /// Stable/production",
+        "    Stable,"
+      ],
+      "context_after": [
+        "    Deprecated,",
+        "    /// Old code (> 1 year)"
+      ],
+      "raw_comment": "    /// Deprecated but still used",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "8ac6ab49",
+      "kind": "OPTIMIZE",
+      "priority": "low",
+      "file": "src/tag_schema.rs",
+      "line": 478,
+      "text": "ional: second part is category",
+      "context_before": [
+        "    }",
+        ""
+      ],
+      "context_after": [
+        "    if parts.len() > 1 && TagCategory::from_str(parts[1]).is_none() {",
+        "        return TagValidation::invalid(format!(\"Unknown category: '{}'\", parts[1]))"
+      ],
+      "raw_comment": "    // Optional: second part is category",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "753fecbd",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/task/models.rs",
+      "line": 32,
+      "text": "/FIXME comment from code",
+      "context_before": [
+        "    #[default]",
+        "    Manual, // Manually added task"
+      ],
+      "context_after": [
+        "    Scan, // Found during repo scan",
+        "    Idea, // Random thought/idea capture"
+      ],
+      "raw_comment": "    Todo, // TODO/FIXME comment from code",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "ed4b18cf",
+      "kind": "OPTIMIZE",
+      "priority": "low",
+      "file": "src/telemetry.rs",
+      "line": 179,
+      "text": "ionally add stdout logging",
+      "context_before": [
+        "        .with(telemetry_layer);",
+        ""
+      ],
+      "context_after": [
+        "    if config.enable_stdout {",
+        "        let fmt_layer = tracing_subscriber::fmt::layer()"
+      ],
+      "raw_comment": "    // Optionally add stdout logging",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "75de92aa",
+      "kind": "FIXME",
+      "priority": "high",
+      "file": "src/test_generator.rs",
+      "line": 56,
+      "text": "ture data needed",
+      "context_before": [
+        "    /// Additional setup code needed",
+        "    pub setup_code: Option<String>,"
+      ],
+      "context_after": [
+        "    pub fixtures: Vec<Fixture>,",
+        "    /// Estimated coverage improvement"
+      ],
+      "raw_comment": "    /// Fixture data needed",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "7509065f",
+      "kind": "FIXME",
+      "priority": "high",
+      "file": "src/test_generator.rs",
+      "line": 112,
+      "text": "ture name",
+      "context_before": [
+        "#[derive(Debug, Clone, Serialize, Deserialize)]",
+        "pub struct Fixture {"
+      ],
+      "context_after": [
+        "    pub name: String,",
+        "    /// Fixture type"
+      ],
+      "raw_comment": "    /// Fixture name",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "6f8f4bed",
+      "kind": "FIXME",
+      "priority": "high",
+      "file": "src/test_generator.rs",
+      "line": 114,
+      "text": "ture type",
+      "context_before": [
+        "    /// Fixture name",
+        "    pub name: String,"
+      ],
+      "context_after": [
+        "    pub fixture_type: String,",
+        "    /// Sample data"
+      ],
+      "raw_comment": "    /// Fixture type",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "82119507",
+      "kind": "FIXME",
+      "priority": "high",
+      "file": "src/test_generator.rs",
+      "line": 677,
+      "text": "ture: {}\\n\", fixture.name));",
+      "context_before": [
+        "        // Add fixtures",
+        "        for fixture in &self.fixtures {"
+      ],
+      "context_after": [
+        "            output.push_str(&format!(\"    {}\\n\\n\", fixture.creation_code));",
+        "        }"
+      ],
+      "raw_comment": "            output.push_str(&format!(\"    // Fixture: {}\\n\", fixture.name));",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "c6ed1829",
+      "kind": "FIXME",
+      "priority": "high",
+      "file": "src/test_generator.rs",
+      "line": 737,
+      "text": "tures\\n\\n\");",
+      "context_before": [
+        "",
+        "        if !self.fixtures.is_empty() {"
+      ],
+      "context_after": [
+        "            for fixture in &self.fixtures {",
+        "                output.push_str(&format!(\"### {}\\n\\n\", fixture.name));"
+      ],
+      "raw_comment": "            output.push_str(\"## Fixtures\\n\\n\");",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "65788b08",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/tests_runner.rs",
+      "line": 184,
+      "text": "Parse detailed results",
+      "context_before": [
+        "            test_files,",
+        "            coverage,"
+      ],
+      "context_after": [
+        "            output: output_str,",
+        "        })"
+      ],
+      "raw_comment": "            results_by_file: HashMap::new(), // TODO: Parse detailed results",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "7806a56d",
+      "kind": "OPTIMIZE",
+      "priority": "low",
+      "file": "src/todo/planner.rs",
+      "line": 144,
+      "text": "ional acceptance criteria",
+      "context_before": [
+        "    /// Suggested approach / strategy",
+        "    pub approach: String,"
+      ],
+      "context_after": [
+        "    pub acceptance_criteria: Option<String>,",
+        "}"
+      ],
+      "raw_comment": "    /// Optional acceptance criteria",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "f24abf12",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/todo/scaffolder.rs",
+      "line": 63,
+      "text": "implement` markers so the",
+      "context_before": [
+        "//! - The scaffolder is **always Step 1**.  Run it once per repo before",
+        "//!   `todo-plan` or `todo-work`."
+      ],
+      "context_after": [
+        "//!   `todo-scan` command picks them up automatically in the next run.",
+        "//! - The scaffolder is idempotent by default — re-running it on a repo that"
+      ],
+      "raw_comment": "//! - Stub files use `// TODO(scaffolder): implement` markers so the",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "604754ec",
+      "kind": "OPTIMIZE",
+      "priority": "low",
+      "file": "src/todo/scaffolder.rs",
+      "line": 99,
+      "text": "ional override for the model name",
+      "context_before": [
+        "    /// LLM temperature for scaffold generation (lower = more conservative)",
+        "    pub temperature: f32,"
+      ],
+      "context_after": [
+        "    pub model: Option<String>,",
+        "    /// Extra instructions appended to the LLM system prompt"
+      ],
+      "raw_comment": "    /// Optional override for the model name",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "2ca33b3b",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/todo/scaffolder.rs",
+      "line": 719,
+      "text": "implement`",
+      "context_before": [
+        "2. Only propose files/dirs that DO NOT already exist (check the file list above).",
+        "3. For every `file` entry, provide minimal stub content — just the module doc"
+      ],
+      "context_after": [
+        "   line. Do NOT write real logic.",
+        "4. For `mod.rs` / `lib.rs` entries, include `pub mod <name>;` declarations for"
+      ],
+      "raw_comment": "   comment, any necessary `use` statements, and a single `// TODO(scaffolder): implement`",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "86472a1e",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/todo/scaffolder.rs",
+      "line": 939,
+      "text": "implement\\n\", entry.path)",
+      "context_before": [
+        "                    ScaffoldEntry::default_rust_stub(&entry.path)",
+        "                } else {"
+      ],
+      "context_after": [
+        "                }",
+        "            }"
+      ],
+      "raw_comment": "                    format!(\"# {}\\n# TODO(scaffolder): implement\\n\", entry.path)",
+      "extension": "rs",
+      "assignee": "scaffolder"
+    },
+    {
+      "id": "9b02cf6c",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/todo/scaffolder.rs",
+      "line": 1136,
+      "text": ".md update",
+      "context_before": [
+        "",
+        "    // -----------------------------------------------------------------------"
+      ],
+      "context_after": [
+        "    // -----------------------------------------------------------------------",
+        ""
+      ],
+      "raw_comment": "    // todo.md update",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "a4067a76",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/todo/scaffolder.rs",
+      "line": 1492,
+      "text": "\\n\\n## 🔴 High Priority\\n\\n### Test\\n- [ ] placeholder\\n\",",
+      "context_before": [
+        "        fs::write(",
+        "            repo_root.join(\"todo.md\"),"
+      ],
+      "context_after": [
+        "        )",
+        "        .unwrap();"
+      ],
+      "raw_comment": "            \"# TODO\\n\\n## 🔴 High Priority\\n\\n### Test\\n- [ ] placeholder\\n\",",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "cb7bed7a",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/todo/scanner.rs",
+      "line": 24,
+      "text": "Implement type counts\"",
+      "context_before": [
+        "//!       \"context_before\": [\"    let response = StatsResponse {\"],",
+        "//!       \"context_after\": [\"        chunks: ChunkStats {\"],"
+      ],
+      "context_after": [
+        "//!     }",
+        "//!   ],"
+      ],
+      "raw_comment": "//!       \"raw_comment\": \"// TODO: Implement type counts\"",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "45a03feb",
+      "kind": "OPTIMIZE",
+      "priority": "low",
+      "file": "src/todo/scanner.rs",
+      "line": 236,
+      "text": "ional author/assignee extracted from `TODO(name):` syntax",
+      "context_before": [
+        "    /// File extension (language hint)",
+        "    pub extension: String,"
+      ],
+      "context_after": [
+        "    pub assignee: Option<String>,",
+        "}"
+      ],
+      "raw_comment": "    /// Optional author/assignee extracted from `TODO(name):` syntax",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "8ce71f02",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/todo/scanner.rs",
+      "line": 320,
+      "text": "…`",
+      "context_before": [
+        "    /// Captures: (keyword, optional_assignee, text)",
+        "    line_comment: Regex,"
+      ],
+      "context_after": [
+        "    block_comment: Regex,",
+        "}"
+      ],
+      "raw_comment": "    /// Matches block comment openers: `/* TODO: …`",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "92a04f07",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/todo/scanner.rs",
+      "line": 327,
+      "text": "text",
+      "context_before": [
+        "    fn new() -> Result<Self> {",
+        "        // Covers:"
+      ],
+      "context_after": [
+        "        //   // TODO(name): text",
+        "        //   # TODO: text"
+      ],
+      "raw_comment": "        //   // TODO: text",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "aaeff2ba",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/todo/scanner.rs",
+      "line": 328,
+      "text": "text",
+      "context_before": [
+        "        // Covers:",
+        "        //   // TODO: text"
+      ],
+      "context_after": [
+        "        //   # TODO: text",
+        "        //   -- TODO: text  (SQL / Lua)"
+      ],
+      "raw_comment": "        //   // TODO(name): text",
+      "extension": "rs",
+      "assignee": "name"
+    },
+    {
+      "id": "ae2eef0d",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/todo/scanner.rs",
+      "line": 329,
+      "text": "text",
+      "context_before": [
+        "        //   // TODO: text",
+        "        //   // TODO(name): text"
+      ],
+      "context_after": [
+        "        //   -- TODO: text  (SQL / Lua)",
+        "        //   * TODO: text   (inside block comments)"
+      ],
+      "raw_comment": "        //   # TODO: text",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "5efedede",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/todo/scanner.rs",
+      "line": 330,
+      "text": "text  (SQL / Lua)",
+      "context_before": [
+        "        //   // TODO(name): text",
+        "        //   # TODO: text"
+      ],
+      "context_after": [
+        "        //   * TODO: text   (inside block comments)",
+        "        //   <!-- TODO: text -->  (HTML)"
+      ],
+      "raw_comment": "        //   -- TODO: text  (SQL / Lua)",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "5a3fc369",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/todo/scanner.rs",
+      "line": 331,
+      "text": "text   (inside block comments)",
+      "context_before": [
+        "        //   # TODO: text",
+        "        //   -- TODO: text  (SQL / Lua)"
+      ],
+      "context_after": [
+        "        //   <!-- TODO: text -->  (HTML)",
+        "        let line_comment = Regex::new("
+      ],
+      "raw_comment": "        //   * TODO: text   (inside block comments)",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "577ce5b0",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/todo/scanner.rs",
+      "line": 332,
+      "text": "text -->  (HTML)",
+      "context_before": [
+        "        //   -- TODO: text  (SQL / Lua)",
+        "        //   * TODO: text   (inside block comments)"
+      ],
+      "context_after": [
+        "        let line_comment = Regex::new(",
+        "            r#\"(?ix)"
+      ],
+      "raw_comment": "        //   <!-- TODO: text -->  (HTML)",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "7ef4cbcf",
+      "kind": "OPTIMIZE",
+      "priority": "low",
+      "file": "src/todo/scanner.rs",
+      "line": 345,
+      "text": "ional (assignee)",
+      "context_before": [
+        "            )",
+        "            (TODO|FIXME|FIX|HACK|XXX|NOTE|BUG|OPTIMIZE|OPTIM|OPT|REFACTOR|DEPRECATED|DEPRECATE)"
+      ],
+      "context_after": [
+        "            :?\\s*                        # optional colon + space",
+        "            (.*)                         # captured text"
+      ],
+      "raw_comment": "            (?:\\(([^)]*)\\))?             # optional (assignee)",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "73b7ed16",
+      "kind": "OPTIMIZE",
+      "priority": "low",
+      "file": "src/todo/scanner.rs",
+      "line": 346,
+      "text": "ional colon + space",
+      "context_before": [
+        "            (TODO|FIXME|FIX|HACK|XXX|NOTE|BUG|OPTIMIZE|OPTIM|OPT|REFACTOR|DEPRECATED|DEPRECATE)",
+        "            (?:\\(([^)]*)\\))?             # optional (assignee)"
+      ],
+      "context_after": [
+        "            (.*)                         # captured text",
+        "            \"#,"
+      ],
+      "raw_comment": "            :?\\s*                        # optional colon + space",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "9ff19f7b",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/todo/scanner.rs",
+      "line": 525,
+      "text": "… */`",
+      "context_before": [
+        "            }",
+        ""
+      ],
+      "context_after": [
+        "            if let Some(caps) = self.patterns.block_comment.captures(line) {",
+        "                let keyword = caps.get(1).map_or(\"\", |m| m.as_str());"
+      ],
+      "raw_comment": "            // Try inline block comment `/* TODO: … */`",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "9103e0ac",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/todo/scanner.rs",
+      "line": 726,
+      "text": "implement this properly",
+      "context_before": [
+        "        let src = r#\"",
+        "fn foo() {"
+      ],
+      "context_after": [
+        "    let x = 1;",
+        "    // FIXME: this crashes on empty input"
+      ],
+      "raw_comment": "    // TODO: implement this properly",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "ad8d40a6",
+      "kind": "FIXME",
+      "priority": "high",
+      "file": "src/todo/scanner.rs",
+      "line": 728,
+      "text": "this crashes on empty input",
+      "context_before": [
+        "    // TODO: implement this properly",
+        "    let x = 1;"
+      ],
+      "context_after": [
+        "    unimplemented!()",
+        "}"
+      ],
+      "raw_comment": "    // FIXME: this crashes on empty input",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "4e5907a9",
+      "kind": "HACK",
+      "priority": "medium",
+      "file": "src/todo/scanner.rs",
+      "line": 735,
+      "text": "temporary workaround",
+      "context_before": [
+        "const MAGIC: u32 = 42;",
+        ""
+      ],
+      "context_after": [
+        "fn bar() {}",
+        "\"#;"
+      ],
+      "raw_comment": "// HACK: temporary workaround",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "9e83236b",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/todo/scanner.rs",
+      "line": 759,
+      "text": "wire this up\\nfn stub() {}\\n\";",
+      "context_before": [
+        "    #[test]",
+        "    fn test_scan_with_assignee() {"
+      ],
+      "context_after": [
+        "        let (dir, path) = write_temp(\"stub.rs\", src);",
+        "        let scanner = TodoCommentScanner::new().unwrap();"
+      ],
+      "raw_comment": "        let src = \"// TODO(jordan): wire this up\\nfn stub() {}\\n\";",
+      "extension": "rs",
+      "assignee": "jordan"
+    },
+    {
+      "id": "187950dc",
+      "kind": "TODO",
+      "priority": "high",
+      "file": "src/todo/scanner.rs",
+      "line": 771,
+      "text": "fix security vulnerability in auth\\n\";",
+      "context_before": [
+        "    #[test]",
+        "    fn test_priority_upgrade_on_security() {"
+      ],
+      "context_after": [
+        "        let (dir, path) = write_temp(\"auth.rs\", src);",
+        "        let scanner = TodoCommentScanner::new().unwrap();"
+      ],
+      "raw_comment": "        let src = \"// TODO: fix security vulnerability in auth\\n\";",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "a5fe6df4",
+      "kind": "TODO",
+      "priority": "low",
+      "file": "src/todo/scanner.rs",
+      "line": 781,
+      "text": "maybe someday add telemetry\\n\";",
+      "context_before": [
+        "    #[test]",
+        "    fn test_priority_downgrade_on_someday() {"
+      ],
+      "context_after": [
+        "        let (dir, path) = write_temp(\"tele.rs\", src);",
+        "        let scanner = TodoCommentScanner::new().unwrap();"
+      ],
+      "raw_comment": "        let src = \"// TODO: maybe someday add telemetry\\n\";",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "77e7ac28",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/todo/scanner.rs",
+      "line": 791,
+      "text": "test context\\nfn after() {}\\n\";",
+      "context_before": [
+        "    #[test]",
+        "    fn test_context_lines_captured() {"
+      ],
+      "context_after": [
+        "        let (dir, path) = write_temp(\"ctx.rs\", src);",
+        "        let scanner = TodoCommentScanner::new().unwrap();"
+      ],
+      "raw_comment": "        let src = \"fn before() {}\\n// TODO: test context\\nfn after() {}\\n\";",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "2dfa3665",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/todo/scanner.rs",
+      "line": 803,
+      "text": "one",
+      "context_before": [
+        "    fn test_scan_output_summary() {",
+        "        let src = r#\""
+      ],
+      "context_after": [
+        "// FIXME: two",
+        "// TODO: three"
+      ],
+      "raw_comment": "// TODO: one",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "33bd6660",
+      "kind": "FIXME",
+      "priority": "high",
+      "file": "src/todo/scanner.rs",
+      "line": 804,
+      "text": "two",
+      "context_before": [
+        "        let src = r#\"",
+        "// TODO: one"
+      ],
+      "context_after": [
+        "// TODO: three",
+        "fn x() {}"
+      ],
+      "raw_comment": "// FIXME: two",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "377c7bd7",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/todo/scanner.rs",
+      "line": 805,
+      "text": "three",
+      "context_before": [
+        "// TODO: one",
+        "// FIXME: two"
+      ],
+      "context_after": [
+        "fn x() {}",
+        "\"#;"
+      ],
+      "raw_comment": "// TODO: three",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "89c9b5dd",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/todo/scanner.rs",
+      "line": 822,
+      "text": "this should not be scanned\\n\").unwrap();",
+      "context_before": [
+        "        let dir = tempfile::tempdir().unwrap();",
+        "        let txt = dir.path().join(\"readme.txt\");"
+      ],
+      "context_after": [
+        "",
+        "        let scanner = TodoCommentScanner::new().unwrap();"
+      ],
+      "raw_comment": "        fs::write(&txt, \"// TODO: this should not be scanned\\n\").unwrap();",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "5bd07401",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/todo/scanner.rs",
+      "line": 832,
+      "text": "serialise me\\n\";",
+      "context_before": [
+        "    #[test]",
+        "    fn test_json_round_trip() {"
+      ],
+      "context_after": [
+        "        let (dir, path) = write_temp(\"serial.rs\", src);",
+        "        let scanner = TodoCommentScanner::new().unwrap();"
+      ],
+      "raw_comment": "        let src = \"// TODO: serialise me\\n\";",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "769947c9",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/todo/scanner.rs",
+      "line": 844,
+      "text": "handle edge case in parser\\n\";",
+      "context_before": [
+        "    #[test]",
+        "    fn test_python_hash_comment() {"
+      ],
+      "context_after": [
+        "        let (dir, path) = write_temp(\"script.py\", src);",
+        "        let scanner = TodoCommentScanner::new().unwrap();"
+      ],
+      "raw_comment": "        let src = \"# TODO: handle edge case in parser\\n\";",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "ad02bd7b",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/todo/scanner.rs",
+      "line": 856,
+      "text": "replace with bar() */\\n\";",
+      "context_before": [
+        "    #[test]",
+        "    fn test_inline_block_comment() {"
+      ],
+      "context_after": [
+        "        let (dir, path) = write_temp(\"block.rs\", src);",
+        "        let scanner = TodoCommentScanner::new().unwrap();"
+      ],
+      "raw_comment": "        let src = \"let x = foo(); /* TODO: replace with bar() */\\n\";",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "db28ff1f",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/todo/scanner.rs",
+      "line": 867,
+      "text": "relative path test\\n\";",
+      "context_before": [
+        "    #[test]",
+        "    fn test_relative_paths_in_output() {"
+      ],
+      "context_after": [
+        "        let (dir, path) = write_temp(\"rel.rs\", src);",
+        "        let scanner = TodoCommentScanner::new().unwrap();"
+      ],
+      "raw_comment": "        let src = \"// TODO: relative path test\\n\";",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "efa89c3c",
+      "kind": "OPTIMIZE",
+      "priority": "low",
+      "file": "src/todo/sync.rs",
+      "line": 289,
+      "text": "ionally skip \"skipped\" outcomes",
+      "context_before": [
+        "",
+        "        for item_result in &work_result.item_results {"
+      ],
+      "context_after": [
+        "            if item_result.status == ItemStatus::Skipped && !self.config.sync_skipped {",
+        "                sync_result.items_skipped += 1;"
+      ],
+      "raw_comment": "            // Optionally skip \"skipped\" outcomes",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "c2c8154f",
+      "kind": "OPTIMIZE",
+      "priority": "low",
+      "file": "src/todo/sync.rs",
+      "line": 354,
+      "text": "ionally append a batch summary section",
+      "context_before": [
+        "        }",
+        ""
+      ],
+      "context_after": [
+        "        if self.config.append_summary && !self.config.dry_run {",
+        "            self.append_summary_section(&mut todo_file, work_result, &sync_result)?;"
+      ],
+      "raw_comment": "        // Optionally append a batch summary section",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "eb69313b",
+      "kind": "OPTIMIZE",
+      "priority": "low",
+      "file": "src/todo/todo_file.rs",
+      "line": 150,
+      "text": "ional note appended after the marker (e.g. \"Done — some explanation\")",
+      "context_before": [
+        "    /// The raw item text (without leading `- [x] ` or `- [ ] `)",
+        "    pub text: String,"
+      ],
+      "context_after": [
+        "    pub note: Option<String>,",
+        "    /// Whether the text is struck-through (`~~…~~`)"
+      ],
+      "raw_comment": "    /// Optional note appended after the marker (e.g. \"Done — some explanation\")",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "5374170f",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/todo/todo_file.rs",
+      "line": 276,
+      "text": "File",
+      "context_before": [
+        "",
+        "// ============================================================================"
+      ],
+      "context_after": [
+        "// ============================================================================",
+        ""
+      ],
+      "raw_comment": "// TodoFile",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "6f818ea0",
+      "kind": "OPTIMIZE",
+      "priority": "low",
+      "file": "src/todo/worker.rs",
+      "line": 145,
+      "text": "ional path to the gameplan JSON file this batch came from",
+      "context_before": [
+        "pub struct WorkBatch {",
+        "    pub batch: GamePlanBatch,"
+      ],
+      "context_after": [
+        "    pub source_file: Option<PathBuf>,",
+        "}"
+      ],
+      "raw_comment": "    /// Optional path to the gameplan JSON file this batch came from",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "524a8955",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/todo/worker.rs",
+      "line": 934,
+      "text": ".md update",
+      "context_before": [
+        "",
+        "    // -----------------------------------------------------------------------"
+      ],
+      "context_after": [
+        "    // -----------------------------------------------------------------------",
+        ""
+      ],
+      "raw_comment": "    // todo.md update",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "8d36f01e",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/todo_scanner.rs",
+      "line": 18,
+      "text": "text/description",
+      "context_before": [
+        "    /// Line number",
+        "    pub line: usize,"
+      ],
+      "context_after": [
+        "    pub text: String,",
+        "    /// Code category"
+      ],
+      "raw_comment": "    /// TODO text/description",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "f9df5764",
+      "kind": "FIXME",
+      "priority": "high",
+      "file": "src/todo_scanner.rs",
+      "line": 55,
+      "text": "(treat as high priority)",
+      "context_before": [
+        "            Regex::new(r#\"(?i)[\"']{3}\\s*TODO:?\\s*(.+)[\"']{3}\"#)",
+        "                .map_err(|e| AuditError::other(format!(\"Invalid regex: {}\", e)))?,"
+      ],
+      "context_after": [
+        "            Regex::new(r\"(?i)(?://|#)\\s*FIXME:?\\s*(.+)\")",
+        "                .map_err(|e| AuditError::other(format!(\"Invalid regex: {}\", e)))?,"
+      ],
+      "raw_comment": "            // FIXME (treat as high priority)",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "c812d1b7",
+      "kind": "HACK",
+      "priority": "medium",
+      "file": "src/todo_scanner.rs",
+      "line": 58,
+      "text": "(treat as medium priority)",
+      "context_before": [
+        "            Regex::new(r\"(?i)(?://|#)\\s*FIXME:?\\s*(.+)\")",
+        "                .map_err(|e| AuditError::other(format!(\"Invalid regex: {}\", e)))?,"
+      ],
+      "context_after": [
+        "            Regex::new(r\"(?i)(?://|#)\\s*HACK:?\\s*(.+)\")",
+        "                .map_err(|e| AuditError::other(format!(\"Invalid regex: {}\", e)))?,"
+      ],
+      "raw_comment": "            // HACK (treat as medium priority)",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "98307e6b",
+      "kind": "XXX",
+      "priority": "high",
+      "file": "src/todo_scanner.rs",
+      "line": 61,
+      "text": "(treat as high priority)",
+      "context_before": [
+        "            Regex::new(r\"(?i)(?://|#)\\s*HACK:?\\s*(.+)\")",
+        "                .map_err(|e| AuditError::other(format!(\"Invalid regex: {}\", e)))?,"
+      ],
+      "context_after": [
+        "            Regex::new(r\"(?i)(?://|#)\\s*XXX:?\\s*(.+)\")",
+        "                .map_err(|e| AuditError::other(format!(\"Invalid regex: {}\", e)))?,"
+      ],
+      "raw_comment": "            // XXX (treat as high priority)",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "4e53de63",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/todo_scanner.rs",
+      "line": 317,
+      "text": "Implement error handling",
+      "context_before": [
+        "            &file_path,",
+        "            r#\""
+      ],
+      "context_after": [
+        "fn foo() {",
+        "    // FIXME: This is broken"
+      ],
+      "raw_comment": "// TODO: Implement error handling",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "72dd7e69",
+      "kind": "FIXME",
+      "priority": "high",
+      "file": "src/todo_scanner.rs",
+      "line": 319,
+      "text": "This is broken",
+      "context_before": [
+        "// TODO: Implement error handling",
+        "fn foo() {"
+      ],
+      "context_after": [
+        "    println!(\"Hello\");",
+        "}"
+      ],
+      "raw_comment": "    // FIXME: This is broken",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "ddaf23a1",
+      "kind": "FIXME",
+      "priority": "high",
+      "file": "src/todo_scanner.rs",
+      "line": 346,
+      "text": "urgent\", \"urgent\"),",
+      "context_before": [
+        "        // High priority",
+        "        assert_eq!("
+      ],
+      "context_after": [
+        "            TodoPriority::High",
+        "        );"
+      ],
+      "raw_comment": "            scanner.infer_priority(\"// FIXME: urgent\", \"urgent\"),",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "1530afcf",
+      "kind": "TODO",
+      "priority": "high",
+      "file": "src/todo_scanner.rs",
+      "line": 350,
+      "text": "security issue\", \"security issue\"),",
+      "context_before": [
+        "        );",
+        "        assert_eq!("
+      ],
+      "context_after": [
+        "            TodoPriority::High",
+        "        );"
+      ],
+      "raw_comment": "            scanner.infer_priority(\"// TODO: security issue\", \"security issue\"),",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "6e59cb72",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/todo_scanner.rs",
+      "line": 362,
+      "text": "refactor\", \"refactor\"),",
+      "context_before": [
+        "        // Medium priority (default)",
+        "        assert_eq!("
+      ],
+      "context_after": [
+        "            TodoPriority::Medium",
+        "        );"
+      ],
+      "raw_comment": "            scanner.infer_priority(\"// TODO: refactor\", \"refactor\"),",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "47abe7c9",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/tree_state.rs",
+      "line": 27,
+      "text": "s index file name",
+      "context_before": [
+        "pub const AUDIT_TAGS_INDEX_FILE: &str = \"audit_tags_index.json\";",
+        ""
+      ],
+      "context_after": [
+        "pub const TODOS_INDEX_FILE: &str = \"todos_index.json\";",
+        ""
+      ],
+      "raw_comment": "/// TODOs index file name",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "c082dc98",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/tree_state.rs",
+      "line": 178,
+      "text": "changes",
+      "context_before": [
+        "    pub tag_changes: TagChanges,",
+        ""
+      ],
+      "context_after": [
+        "    pub todo_changes: TodoChanges,",
+        ""
+      ],
+      "raw_comment": "    /// TODO changes",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "8457eb0d",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/tree_state.rs",
+      "line": 193,
+      "text": "changes summary",
+      "context_before": [
+        "}",
+        ""
+      ],
+      "context_after": [
+        "#[derive(Debug, Clone, Default, Serialize, Deserialize)]",
+        "pub struct TodoChanges {"
+      ],
+      "raw_comment": "/// TODO changes summary",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "953a6858",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/tree_state.rs",
+      "line": 297,
+      "text": "s added (net)",
+      "context_before": [
+        "    pub tags_removed: usize,",
+        ""
+      ],
+      "context_after": [
+        "    pub todos_added: i32,",
+        ""
+      ],
+      "raw_comment": "    /// TODOs added (net)",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "d2f41654",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/tree_state.rs",
+      "line": 300,
+      "text": "s removed (net)",
+      "context_before": [
+        "    pub todos_added: i32,",
+        ""
+      ],
+      "context_after": [
+        "    pub todos_removed: i32,",
+        ""
+      ],
+      "raw_comment": "    /// TODOs removed (net)",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "2417b247",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/tree_state.rs",
+      "line": 1078,
+      "text": "implement\\nfn main() {{}}\\n// @audit-tag: test\"",
+      "context_before": [
+        "        writeln!(",
+        "            file,"
+      ],
+      "context_after": [
+        "        )",
+        "        .unwrap();"
+      ],
+      "raw_comment": "            \"// TODO: implement\\nfn main() {{}}\\n// @audit-tag: test\"",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "4ecbf5bb",
+      "kind": "OPTIMIZE",
+      "priority": "low",
+      "file": "src/web_api.rs",
+      "line": 1226,
+      "text": "ional conversation history (for multi-turn context)",
+      "context_before": [
+        "    /// The user's new message",
+        "    pub message: String,"
+      ],
+      "context_after": [
+        "    pub history: Option<Vec<ChatMessage>>,",
+        "    /// Optional repo_id — if set, the repo's todo.md is injected as context"
+      ],
+      "raw_comment": "    /// Optional conversation history (for multi-turn context)",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "724555b1",
+      "kind": "OPTIMIZE",
+      "priority": "low",
+      "file": "src/web_api.rs",
+      "line": 1228,
+      "text": "ional repo_id — if set, the repo's todo.md is injected as context",
+      "context_before": [
+        "    /// Optional conversation history (for multi-turn context)",
+        "    pub history: Option<Vec<ChatMessage>>,"
+      ],
+      "context_after": [
+        "    pub repo_id: Option<String>,",
+        "    /// Optional extra context string to prepend"
+      ],
+      "raw_comment": "    /// Optional repo_id — if set, the repo's todo.md is injected as context",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "865479d5",
+      "kind": "OPTIMIZE",
+      "priority": "low",
+      "file": "src/web_api.rs",
+      "line": 1230,
+      "text": "ional extra context string to prepend",
+      "context_before": [
+        "    /// Optional repo_id — if set, the repo's todo.md is injected as context",
+        "    pub repo_id: Option<String>,"
+      ],
+      "context_after": [
+        "    pub context: Option<String>,",
+        "}"
+      ],
+      "raw_comment": "    /// Optional extra context string to prepend",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "7ef76554",
+      "kind": "OPTIMIZE",
+      "priority": "low",
+      "file": "src/web_api.rs",
+      "line": 1280,
+      "text": "ionally load todo.md for context",
+      "context_before": [
+        "    Json(req): Json<ChatRequest>,",
+        ") -> impl IntoResponse {"
+      ],
+      "context_after": [
+        "    let todo_context: Option<String> = if let Some(ref repo_id) = req.repo_id {",
+        "        if let Ok(repo) = db::get_repository(&state.pool, repo_id).await {"
+      ],
+      "raw_comment": "    // Optionally load todo.md for context",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "47de423c",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/web_ui_extensions.rs",
+      "line": 375,
+      "text": "Add pinned field to Document struct",
+      "context_before": [
+        "                _ => r#\"<span class=\"badge badge-muted\">Other</span>\"#,",
+        "            };"
+      ],
+      "context_after": [
+        "            let tags_html = doc.tags.as_deref().map(|t| {",
+        "                t.split(',').map(|tag| format!("
+      ],
+      "raw_comment": "            let pin_icon = \"\"; // TODO: Add pinned field to Document struct",
+      "extension": "rs",
+      "assignee": null
+    },
+    {
+      "id": "9066d4e2",
+      "kind": "TODO",
+      "priority": "medium",
+      "file": "src/web_ui_extensions.rs",
+      "line": 719,
+      "text": "Add pinned field to Document struct",
+      "context_before": [
+        "                tz_selector = timezone_selector_html(),",
+        "                title = html_escape(&doc.title),"
+      ],
+      "context_after": [
+        "                doc_type = doc.doc_type,",
+        "                tags_html = tags_html,"
+      ],
+      "raw_comment": "                pin = \"\", // TODO: Add pinned field to Document struct",
+      "extension": "rs",
+      "assignee": null
+    }
+  ],
+  "summary": {
+    "total": 208,
+    "by_kind": {
+      "HACK": 3,
+      "FIXME": 18,
+      "XXX": 2,
+      "DEPRECATED": 6,
+      "OPTIMIZE": 29,
+      "REFACTOR": 23,
+      "TODO": 127
+    },
+    "by_priority": {
+      "low": 36,
+      "high": 23,
+      "medium": 149
+    },
+    "by_extension": {
+      "yml": 16,
+      "sh": 11,
+      "toml": 3,
+      "rs": 178
+    },
+    "files_with_todos": 50
+  }
+}
