@@ -12,6 +12,7 @@ pub mod auth;
 pub mod handlers;
 pub mod jobs;
 pub mod rate_limit;
+pub mod repos;
 pub mod types;
 
 use axum::{

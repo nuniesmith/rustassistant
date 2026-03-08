@@ -1,12 +1,17 @@
-//! Axum API server for the audit service (API-only, no web UI)
+//! Axum API server for the audit service + RustAssistant dashboard
 
+use crate::api::repos::{repo_router, RepoAppState};
 use crate::config::Config;
 use crate::db::{self, Repository};
 use crate::error::{AuditError, Result};
 use crate::git::GitManager;
 use crate::llm::LlmClient;
+use crate::model_router::{ModelRouter, ModelRouterConfig};
 use crate::queue::{get_queue_stats, QueueStats};
+use crate::repo_sync::RepoSyncService;
 use crate::scanner::github::sync_repos_to_db;
+use crate::sync_scheduler::{SyncScheduler, SyncSchedulerConfig};
+use crate::web_api::{web_api_router, WebState};
 // Neuromorphic mapper removed - feature not currently implemented
 
 use crate::scanner::Scanner;
@@ -24,10 +29,12 @@ use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::fs;
 use tower_http::cors::CorsLayer;
+use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
@@ -35,9 +42,9 @@ use tracing::info;
 #[derive(Clone)]
 pub struct AppState {
     config: Arc<Config>,
-    git_manager: Arc<GitManager>,
+    pub(crate) git_manager: Arc<GitManager>,
     llm_client: Option<Arc<LlmClient>>,
-    db_pool: SqlitePool,
+    pub(crate) db_pool: SqlitePool,
 }
 
 impl AppState {
@@ -88,7 +95,7 @@ pub async fn run_server(config: Config) -> Result<()> {
         .parse()
         .map_err(|e| AuditError::config(format!("Invalid server address: {}", e)))?;
 
-    info!("Starting API-only audit server on {}", socket_addr);
+    info!("Starting RustAssistant server on {}", socket_addr);
 
     // Initialize tracing
     tracing_subscriber::fmt()
@@ -101,16 +108,69 @@ pub async fn run_server(config: Config) -> Result<()> {
     // Create application state
     let state = AppState::new(config.clone()).await?;
 
-    // SECURITY: Configure restrictive CORS policy instead of permissive
-    // Only allow requests from trusted origins
+    // ------------------------------------------------------------------
+    // Build the RustAssistant dashboard web state
+    // ------------------------------------------------------------------
+    let workspace = PathBuf::from(
+        std::env::var("WORKSPACE_DIR").unwrap_or_else(|_| "data/workspaces".to_string()),
+    );
+    std::fs::create_dir_all(&workspace)
+        .map_err(|e| AuditError::other(format!("Cannot create workspace dir: {}", e)))?;
+
+    let web_state = WebState::new(state.db_pool.clone(), state.git_manager.clone(), workspace);
+
+    // ------------------------------------------------------------------
+    // Build RepoSyncService + ModelRouter + SyncScheduler
+    // ------------------------------------------------------------------
+    let sync_service = Arc::new(tokio::sync::RwLock::new(RepoSyncService::new()));
+
+    let model_router = Arc::new(ModelRouter::new(ModelRouterConfig {
+        remote_api_key: std::env::var("XAI_API_KEY").unwrap_or_default(),
+        remote_model: std::env::var("REMOTE_MODEL").unwrap_or_else(|_| "grok-2-latest".to_string()),
+        local_model: std::env::var("LOCAL_MODEL")
+            .unwrap_or_else(|_| "qwen2.5-coder:7b".to_string()),
+        local_base_url: std::env::var("OLLAMA_BASE_URL")
+            .unwrap_or_else(|_| "http://localhost:11434".to_string()),
+        force_remote: std::env::var("FORCE_REMOTE_MODEL")
+            .map(|v| v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false),
+        fallback_to_remote: true,
+    }));
+
+    let repo_app_state = RepoAppState {
+        sync_service: Arc::clone(&sync_service),
+        model_router: Arc::clone(&model_router),
+    };
+
+    // Start background sync scheduler
+    let sync_interval_secs = std::env::var("REPO_SYNC_INTERVAL_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(300);
+    SyncScheduler::new(
+        SyncSchedulerConfig {
+            interval: std::time::Duration::from_secs(sync_interval_secs),
+            ..SyncSchedulerConfig::default()
+        },
+        Arc::clone(&sync_service),
+    )
+    .start();
+    info!(interval_secs = sync_interval_secs, "SyncScheduler started");
+
+    // SECURITY: Configure restrictive CORS policy
     let cors = build_cors_layer();
 
-    // Build API-only router (no static file serving or web UI)
-    // SECURITY: Middleware stack includes:
-    // - Restrictive CORS (not permissive)
-    // - Request tracing for audit logging
-    // - URL validation happens in handlers (SSRF prevention)
+    // ------------------------------------------------------------------
+    // Static file serving for the dashboard SPA
+    // ------------------------------------------------------------------
+    let static_dir = std::env::var("STATIC_DIR").unwrap_or_else(|_| "static".to_string());
+    let serve_static = ServeDir::new(&static_dir).append_index_html_on_directories(true);
+
+    // ------------------------------------------------------------------
+    // Compose routers
+    // ------------------------------------------------------------------
     let app = Router::new()
+        // Legacy audit API
         .route("/health", get(health_check))
         .route("/api/audit", post(create_audit))
         .route("/api/audit/{id}", get(get_audit))
@@ -127,11 +187,23 @@ pub async fn run_server(config: Config) -> Result<()> {
         .route("/api/github/prs", get(github_prs))
         .route("/api/github/search", get(github_search))
         .route("/api/github/sync", post(github_sync))
+        .with_state(state)
+        // New dashboard API (separate state)
+        .merge(web_api_router(web_state))
+        // Repo management + chat API at /api/v1
+        .nest("/api/v1", repo_router(repo_app_state))
+        // Serve static files (dashboard HTML/CSS/JS) at /static and /
+        .nest_service("/static", serve_static.clone())
+        .fallback_service(serve_static)
+        // Middleware (applied last, wraps everything)
         .layer(cors)
-        .layer(TraceLayer::new_for_http())
-        .with_state(state);
+        .layer(TraceLayer::new_for_http());
 
-    info!("API server listening on {} (API-only mode)", socket_addr);
+    info!("Dashboard available at  http://{}/", socket_addr);
+    info!(
+        "API docs at             http://{}/api/web/health",
+        socket_addr
+    );
     info!("Security: Restrictive CORS enabled, Git URL whitelist active");
 
     // Start server

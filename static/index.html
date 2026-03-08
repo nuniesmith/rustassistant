@@ -1,233 +1,2752 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Audit Service - Code Analysis Dashboard</title>
-    <link rel="stylesheet" href="/static/css/styles.css">
-</head>
-<body>
-    <div class="container">
-        <header>
-            <h1>🔍 Audit Service</h1>
-            <p class="subtitle">Code Analysis & Security Audit Dashboard</p>
-            <div id="health-status" class="health-status">
-                <span class="status-indicator"></span>
-                <span class="status-text">Checking...</span>
-            </div>
-        </header>
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+        <title>🦀 RustAssistant</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link
+            rel="stylesheet"
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap"
+        />
+        <style>
+            :root {
+                --bg: #0d1117;
+                --surface: #161b22;
+                --surface2: #21262d;
+                --surface3: #2d333b;
+                --border: #30363d;
+                --border2: #444c56;
+                --accent: #f78166;
+                --accent2: #58a6ff;
+                --green: #3fb950;
+                --yellow: #d29922;
+                --red: #f85149;
+                --purple: #bc8cff;
+                --orange: #e3b341;
+                --text: #e6edf3;
+                --text2: #c9d1d9;
+                --muted: #8b949e;
+                --radius: 8px;
+                --radius-sm: 5px;
+                --sidebar-w: 260px;
+                --topbar-h: 52px;
+                --font-mono: "JetBrains Mono", "Cascadia Code", monospace;
+                --shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+            }
 
-        <main>
-            <!-- Audit Form -->
-            <section class="card">
-                <h2>New Audit</h2>
-                <form id="audit-form">
-                    <div class="form-group">
-                        <label for="repository">Repository URL or Path</label>
-                        <input
-                            type="text"
-                            id="repository"
-                            name="repository"
-                            placeholder="https://github.com/user/repo or /path/to/local/repo"
-                            required
+            * {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
+
+            body {
+                font-family:
+                    "Inter",
+                    -apple-system,
+                    BlinkMacSystemFont,
+                    sans-serif;
+                background: var(--bg);
+                color: var(--text);
+                height: 100vh;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+                font-size: 14px;
+            }
+
+            body::before {
+                content: "";
+                position: fixed;
+                inset: 0;
+                background:
+                    radial-gradient(
+                        ellipse 60% 40% at 20% 0%,
+                        rgba(247, 129, 102, 0.06) 0%,
+                        transparent 70%
+                    ),
+                    radial-gradient(
+                        ellipse 50% 30% at 80% 100%,
+                        rgba(88, 166, 255, 0.05) 0%,
+                        transparent 70%
+                    );
+                pointer-events: none;
+                z-index: 0;
+            }
+
+            body::after {
+                content: "";
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                height: var(--topbar-h);
+                background: linear-gradient(
+                    90deg,
+                    rgba(247, 129, 102, 0.08) 0%,
+                    transparent 40%,
+                    rgba(88, 166, 255, 0.06) 100%
+                );
+                pointer-events: none;
+                z-index: 0;
+            }
+
+            #root {
+                display: contents;
+            }
+
+            /* ── Topbar ───────────────────────────────────────────────── */
+            .topbar {
+                height: var(--topbar-h);
+                background: var(--surface);
+                border-bottom: 1px solid var(--border);
+                display: flex;
+                align-items: center;
+                padding: 0 18px;
+                gap: 14px;
+                flex-shrink: 0;
+                z-index: 20;
+                position: relative;
+            }
+            .topbar-logo {
+                font-size: 18px;
+                font-weight: 700;
+                letter-spacing: -0.5px;
+                color: var(--text);
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+            .topbar-logo .crab {
+                font-size: 22px;
+            }
+            .topbar-sep {
+                flex: 1;
+            }
+            .topbar-status {
+                display: flex;
+                align-items: center;
+                gap: 7px;
+                font-size: 12px;
+                color: var(--muted);
+            }
+            .status-dot {
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                background: var(--green);
+                box-shadow: 0 0 6px var(--green);
+                flex-shrink: 0;
+            }
+            .status-dot.offline {
+                background: var(--red);
+                box-shadow: 0 0 6px var(--red);
+            }
+            .status-dot.loading {
+                background: var(--yellow);
+                box-shadow: 0 0 6px var(--yellow);
+                animation: blink 1s infinite;
+            }
+            @keyframes blink {
+                50% {
+                    opacity: 0.3;
+                }
+            }
+            .topbar-right {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            .model-badge {
+                font-size: 11px;
+                font-weight: 600;
+                padding: 3px 9px;
+                border-radius: 20px;
+                border: 1px solid var(--border);
+                font-family: var(--font-mono);
+            }
+            .model-badge.local {
+                color: var(--green);
+                border-color: var(--green);
+                background: rgba(63, 185, 80, 0.08);
+            }
+            .model-badge.remote {
+                color: var(--accent2);
+                border-color: var(--accent2);
+                background: rgba(88, 166, 255, 0.08);
+            }
+
+            /* ── Layout ───────────────────────────────────────────────── */
+            .layout {
+                flex: 1;
+                display: flex;
+                overflow: hidden;
+                position: relative;
+                z-index: 1;
+            }
+
+            /* ── Sidebar ──────────────────────────────────────────────── */
+            .sidebar {
+                width: var(--sidebar-w);
+                background: var(--surface);
+                border-right: 1px solid var(--border);
+                display: flex;
+                flex-direction: column;
+                overflow-y: auto;
+                flex-shrink: 0;
+                padding: 12px 0;
+            }
+            .sidebar-section {
+                margin-bottom: 8px;
+            }
+            .sidebar-label {
+                font-size: 11px;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 0.8px;
+                color: var(--muted);
+                padding: 4px 14px 6px;
+            }
+            .repo-item {
+                display: flex;
+                align-items: center;
+                gap: 9px;
+                padding: 7px 14px;
+                cursor: pointer;
+                border-radius: 0;
+                transition: background 0.15s;
+            }
+            .repo-item:hover {
+                background: var(--surface2);
+            }
+            .repo-item.active {
+                background: var(--surface3);
+            }
+            .repo-dot {
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                flex-shrink: 0;
+            }
+            .repo-name {
+                flex: 1;
+                font-size: 13px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .repo-count {
+                font-size: 11px;
+                font-family: var(--font-mono);
+                background: var(--surface3);
+                padding: 1px 6px;
+                border-radius: 10px;
+                color: var(--muted);
+            }
+            .add-repo-btn {
+                margin: 4px 10px;
+                padding: 7px 12px;
+                background: transparent;
+                border: 1px dashed var(--border2);
+                border-radius: var(--radius-sm);
+                color: var(--muted);
+                cursor: pointer;
+                font-size: 12px;
+                width: calc(100% - 20px);
+                text-align: left;
+                transition: all 0.15s;
+            }
+            .add-repo-btn:hover {
+                border-color: var(--accent2);
+                color: var(--accent2);
+                background: rgba(88, 166, 255, 0.04);
+            }
+
+            .queue-summary {
+                padding: 10px 14px 4px;
+            }
+            .queue-ring-row {
+                display: flex;
+                gap: 14px;
+                align-items: center;
+            }
+            .queue-ring {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 3px;
+            }
+            .ring-svg {
+                width: 44px;
+                height: 44px;
+            }
+            .ring-label {
+                font-size: 10px;
+                color: var(--muted);
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }
+            .ring-value {
+                font-size: 13px;
+                font-weight: 700;
+                font-family: var(--font-mono);
+            }
+
+            .nav-tabs {
+                display: flex;
+                flex-direction: column;
+                gap: 2px;
+                padding: 6px 8px;
+            }
+            .nav-tab {
+                display: flex;
+                align-items: center;
+                gap: 9px;
+                padding: 8px 10px;
+                border-radius: var(--radius-sm);
+                cursor: pointer;
+                color: var(--muted);
+                transition: all 0.15s;
+                font-size: 13px;
+            }
+            .nav-tab:hover {
+                background: var(--surface2);
+                color: var(--text2);
+            }
+            .nav-tab.active {
+                background: var(--surface3);
+                color: var(--text);
+                font-weight: 500;
+            }
+            .nav-tab .tab-icon {
+                font-size: 16px;
+                flex-shrink: 0;
+            }
+            .nav-tab .tab-badge {
+                margin-left: auto;
+                font-size: 11px;
+                font-family: var(--font-mono);
+                background: var(--surface3);
+                padding: 1px 6px;
+                border-radius: 10px;
+                color: var(--muted);
+            }
+            .nav-tab.active .tab-badge {
+                background: var(--accent);
+                color: #fff;
+            }
+
+            /* ── Main area ────────────────────────────────────────────── */
+            .main {
+                flex: 1;
+                overflow: hidden;
+                display: flex;
+            }
+
+            /* ── Chat pane ────────────────────────────────────────────── */
+            .chat-pane {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+            }
+            .chat-header {
+                padding: 12px 18px 10px;
+                border-bottom: 1px solid var(--border);
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                flex-shrink: 0;
+            }
+            .chat-header-title {
+                font-weight: 600;
+                font-size: 14px;
+            }
+            .ctx-pill {
+                font-size: 11px;
+                padding: 2px 9px;
+                border-radius: 12px;
+                border: 1px solid var(--border2);
+                color: var(--muted);
+                cursor: pointer;
+                transition: all 0.15s;
+            }
+            .ctx-pill.active {
+                border-color: var(--green);
+                color: var(--green);
+                background: rgba(63, 185, 80, 0.08);
+            }
+            .rounds-control {
+                display: flex;
+                align-items: center;
+                gap: 5px;
+                margin-left: auto;
+                font-size: 12px;
+                color: var(--muted);
+            }
+            .round-btn {
+                width: 26px;
+                height: 26px;
+                background: var(--surface2);
+                border: 1px solid var(--border);
+                border-radius: var(--radius-sm);
+                color: var(--text);
+                cursor: pointer;
+                font-size: 14px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: all 0.15s;
+            }
+            .round-btn:hover {
+                background: var(--surface3);
+                border-color: var(--border2);
+            }
+
+            .messages {
+                flex: 1;
+                overflow-y: auto;
+                padding: 16px 18px;
+                display: flex;
+                flex-direction: column;
+                gap: 14px;
+            }
+            .messages::-webkit-scrollbar {
+                width: 5px;
+            }
+            .messages::-webkit-scrollbar-track {
+                background: transparent;
+            }
+            .messages::-webkit-scrollbar-thumb {
+                background: var(--border2);
+                border-radius: 3px;
+            }
+
+            .msg {
+                display: flex;
+                gap: 10px;
+                max-width: 100%;
+            }
+            .msg.user {
+                flex-direction: row-reverse;
+            }
+            .msg-avatar {
+                width: 32px;
+                height: 32px;
+                border-radius: 50%;
+                font-size: 16px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                flex-shrink: 0;
+                border: 1px solid var(--border);
+            }
+            .msg.assistant .msg-avatar {
+                background: rgba(247, 129, 102, 0.12);
+            }
+            .msg.user .msg-avatar {
+                background: rgba(88, 166, 255, 0.12);
+            }
+            .msg-body {
+                max-width: 80%;
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+            }
+            .msg-meta {
+                font-size: 11px;
+                color: var(--muted);
+            }
+            .msg.user .msg-meta {
+                text-align: right;
+            }
+            .msg-bubble {
+                padding: 10px 14px;
+                border-radius: var(--radius);
+                line-height: 1.55;
+                font-size: 13.5px;
+            }
+            .msg.assistant .msg-bubble {
+                background: var(--surface);
+                border: 1px solid var(--border);
+                border-top-left-radius: 2px;
+            }
+            .msg.user .msg-bubble {
+                background: rgba(88, 166, 255, 0.1);
+                border: 1px solid rgba(88, 166, 255, 0.25);
+                border-top-right-radius: 2px;
+            }
+            .msg-bubble pre {
+                background: var(--surface2);
+                border: 1px solid var(--border);
+                border-radius: var(--radius-sm);
+                padding: 10px 12px;
+                margin: 8px 0;
+                overflow-x: auto;
+                font-family: var(--font-mono);
+                font-size: 12.5px;
+            }
+            .msg-bubble code {
+                font-family: var(--font-mono);
+                font-size: 12.5px;
+            }
+            .msg-actions {
+                display: flex;
+                gap: 6px;
+                margin-top: 4px;
+            }
+            .msg-action-btn {
+                font-size: 11px;
+                padding: 3px 9px;
+                background: var(--surface2);
+                border: 1px solid var(--border);
+                border-radius: var(--radius-sm);
+                cursor: pointer;
+                color: var(--muted);
+                transition: all 0.15s;
+            }
+            .msg-action-btn:hover {
+                color: var(--text2);
+                border-color: var(--border2);
+            }
+            .msg-action-btn.green:hover {
+                color: var(--green);
+                border-color: var(--green);
+            }
+
+            .quality-bar {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                margin-top: 5px;
+            }
+            .quality-track {
+                height: 4px;
+                flex: 1;
+                background: var(--surface3);
+                border-radius: 2px;
+                overflow: hidden;
+            }
+            .quality-fill {
+                height: 100%;
+                border-radius: 2px;
+                transition: width 0.6s;
+            }
+            .quality-label {
+                font-size: 11px;
+                font-family: var(--font-mono);
+                color: var(--muted);
+                min-width: 32px;
+            }
+
+            .chat-input-area {
+                padding: 12px 18px 14px;
+                border-top: 1px solid var(--border);
+                flex-shrink: 0;
+            }
+            .chat-input-row {
+                display: flex;
+                gap: 8px;
+                align-items: flex-end;
+            }
+            .chat-textarea {
+                flex: 1;
+                background: var(--surface2);
+                border: 1px solid var(--border);
+                border-radius: var(--radius);
+                color: var(--text);
+                padding: 10px 14px;
+                font-size: 13.5px;
+                font-family: inherit;
+                resize: none;
+                min-height: 42px;
+                max-height: 160px;
+                transition: border-color 0.15s;
+                line-height: 1.5;
+            }
+            .chat-textarea:focus {
+                outline: none;
+                border-color: var(--accent2);
+            }
+            .chat-textarea::placeholder {
+                color: var(--muted);
+            }
+            .send-btn {
+                width: 42px;
+                height: 42px;
+                background: var(--accent);
+                border: none;
+                border-radius: var(--radius);
+                color: #fff;
+                font-size: 18px;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: all 0.15s;
+                flex-shrink: 0;
+            }
+            .send-btn:hover {
+                background: #ff9580;
+            }
+            .send-btn:disabled {
+                opacity: 0.4;
+                cursor: not-allowed;
+            }
+
+            /* ── Tasks pane ───────────────────────────────────────────── */
+            .tasks-pane {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+            }
+            .pane-header {
+                padding: 12px 18px 10px;
+                border-bottom: 1px solid var(--border);
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                flex-shrink: 0;
+            }
+            .pane-title {
+                font-weight: 600;
+                font-size: 14px;
+            }
+            .pane-actions {
+                margin-left: auto;
+                display: flex;
+                gap: 8px;
+            }
+            .pane-btn {
+                font-size: 12px;
+                padding: 5px 12px;
+                background: var(--surface2);
+                border: 1px solid var(--border);
+                border-radius: var(--radius-sm);
+                cursor: pointer;
+                color: var(--text2);
+                transition: all 0.15s;
+            }
+            .pane-btn:hover {
+                border-color: var(--border2);
+                background: var(--surface3);
+            }
+            .pane-btn.primary {
+                background: var(--accent);
+                border-color: var(--accent);
+                color: #fff;
+            }
+            .pane-btn.primary:hover {
+                background: #ff9580;
+            }
+
+            .tasks-columns {
+                flex: 1;
+                display: flex;
+                overflow-x: auto;
+                overflow-y: hidden;
+                padding: 16px;
+                gap: 14px;
+            }
+            .tasks-col {
+                min-width: 260px;
+                flex: 1;
+                background: var(--surface);
+                border: 1px solid var(--border);
+                border-radius: var(--radius);
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+            }
+            .tasks-col:last-child {
+                min-width: 280px;
+            }
+            .col-header {
+                padding: 10px 14px;
+                border-bottom: 1px solid var(--border);
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+            .col-title {
+                font-size: 13px;
+                font-weight: 600;
+            }
+            .col-badge {
+                font-size: 11px;
+                font-family: var(--font-mono);
+                padding: 1px 7px;
+                border-radius: 10px;
+                background: var(--surface3);
+                color: var(--muted);
+            }
+            .col-items {
+                flex: 1;
+                overflow-y: auto;
+                padding: 8px;
+                display: flex;
+                flex-direction: column;
+                gap: 6px;
+            }
+            .col-items::-webkit-scrollbar {
+                width: 4px;
+            }
+            .col-items::-webkit-scrollbar-thumb {
+                background: var(--border);
+                border-radius: 2px;
+            }
+
+            .task-card {
+                background: var(--surface2);
+                border: 1px solid var(--border);
+                border-radius: var(--radius-sm);
+                padding: 10px 11px;
+                cursor: pointer;
+                position: relative;
+                transition: all 0.15s;
+                padding-left: 16px;
+            }
+            .task-card::before {
+                content: "";
+                position: absolute;
+                left: 0;
+                top: 0;
+                bottom: 0;
+                width: 3px;
+                border-radius: 3px 0 0 3px;
+                background: var(--border2);
+            }
+            .task-card:hover {
+                border-color: var(--border2);
+                background: var(--surface3);
+            }
+            .task-card.priority-high::before {
+                background: var(--red);
+            }
+            .task-card.priority-mid::before {
+                background: var(--yellow);
+            }
+            .task-card.priority-low::before {
+                background: var(--green);
+            }
+            .task-card.in-queue {
+                border-color: rgba(88, 166, 255, 0.4);
+            }
+            .task-card.in-queue::before {
+                background: var(--accent2);
+            }
+
+            .task-title {
+                font-size: 12.5px;
+                line-height: 1.45;
+                margin-bottom: 6px;
+                color: var(--text2);
+            }
+            .task-meta {
+                display: flex;
+                align-items: center;
+                gap: 5px;
+                flex-wrap: wrap;
+            }
+            .task-tag {
+                font-size: 10.5px;
+                padding: 1px 6px;
+                border-radius: 3px;
+                font-family: var(--font-mono);
+            }
+            .tag-todo {
+                background: rgba(88, 166, 255, 0.15);
+                color: var(--accent2);
+            }
+            .tag-stub {
+                background: rgba(188, 140, 255, 0.15);
+                color: var(--purple);
+            }
+            .tag-fixme {
+                background: rgba(248, 81, 73, 0.15);
+                color: var(--red);
+            }
+            .tag-feat {
+                background: rgba(63, 185, 80, 0.15);
+                color: var(--green);
+            }
+            .task-file {
+                font-size: 10.5px;
+                color: var(--muted);
+                font-family: var(--font-mono);
+                margin-left: auto;
+            }
+            .task-move-btn {
+                display: none;
+                position: absolute;
+                right: 7px;
+                top: 7px;
+                font-size: 11px;
+                padding: 2px 7px;
+                background: var(--accent2);
+                color: #fff;
+                border: none;
+                border-radius: 3px;
+                cursor: pointer;
+            }
+            .task-card:hover .task-move-btn {
+                display: block;
+            }
+
+            /* ── Queue pane ───────────────────────────────────────────── */
+            .queue-pane {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+            }
+            .queue-items {
+                flex: 1;
+                overflow-y: auto;
+                padding: 12px 16px;
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+            }
+
+            .queue-item {
+                background: var(--surface);
+                border: 1px solid var(--border);
+                border-radius: var(--radius);
+                padding: 12px 14px;
+                display: flex;
+                gap: 12px;
+                align-items: flex-start;
+                transition: border-color 0.2s;
+            }
+            .queue-item.running {
+                border-color: var(--accent2);
+                background: rgba(88, 166, 255, 0.04);
+            }
+            .queue-item.done {
+                border-color: var(--green);
+                background: rgba(63, 185, 80, 0.04);
+                opacity: 0.8;
+            }
+            .queue-item.failed {
+                border-color: var(--red);
+                background: rgba(248, 81, 73, 0.04);
+            }
+
+            .queue-num {
+                width: 28px;
+                height: 28px;
+                border-radius: 50%;
+                border: 2px solid var(--border2);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 12px;
+                font-weight: 700;
+                font-family: var(--font-mono);
+                color: var(--muted);
+                flex-shrink: 0;
+            }
+            .queue-item.running .queue-num {
+                border-color: var(--accent2);
+                color: var(--accent2);
+                animation: spin 1.5s linear infinite;
+            }
+            .queue-item.done .queue-num {
+                border-color: var(--green);
+                color: var(--green);
+            }
+            .queue-item.failed .queue-num {
+                border-color: var(--red);
+                color: var(--red);
+            }
+            @keyframes spin {
+                to {
+                    transform: rotate(360deg);
+                }
+            }
+
+            .queue-info {
+                flex: 1;
+                min-width: 0;
+            }
+            .queue-task-name {
+                font-size: 13px;
+                font-weight: 500;
+                margin-bottom: 4px;
+            }
+            .queue-task-meta {
+                font-size: 11px;
+                color: var(--muted);
+                display: flex;
+                gap: 10px;
+                align-items: center;
+                flex-wrap: wrap;
+                margin-bottom: 6px;
+            }
+            .queue-rounds {
+                display: flex;
+                gap: 3px;
+                margin-bottom: 6px;
+            }
+            .round-pip {
+                width: 16px;
+                height: 5px;
+                border-radius: 3px;
+                background: var(--surface3);
+            }
+            .round-pip.done {
+                background: var(--green);
+            }
+            .round-pip.running {
+                background: var(--accent2);
+                animation: blink 0.8s infinite;
+            }
+            .round-pip.target {
+                background: var(--border2);
+            }
+
+            .queue-quality {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+            .quality-pct {
+                font-size: 11px;
+                font-family: var(--font-mono);
+                color: var(--muted);
+                min-width: 34px;
+            }
+
+            .queue-run-controls {
+                padding: 12px 16px;
+                border-top: 1px solid var(--border);
+                display: flex;
+                gap: 12px;
+                align-items: center;
+                flex-shrink: 0;
+            }
+            .run-big-btn {
+                padding: 9px 22px;
+                border-radius: var(--radius);
+                border: none;
+                font-size: 13px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.15s;
+            }
+            .run-big-btn.start {
+                background: var(--green);
+                color: #0d1117;
+            }
+            .run-big-btn.start:hover {
+                background: #52d16a;
+            }
+            .run-big-btn.stop {
+                background: var(--red);
+                color: #fff;
+            }
+            .run-big-btn.stop:hover {
+                background: #ff6b65;
+            }
+            .queue-stats {
+                display: flex;
+                gap: 16px;
+                margin-left: auto;
+            }
+            .qstat {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+            }
+            .qstat-val {
+                font-size: 18px;
+                font-weight: 700;
+                font-family: var(--font-mono);
+            }
+            .qstat-label {
+                font-size: 10px;
+                color: var(--muted);
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }
+
+            /* ── PR pane ──────────────────────────────────────────────── */
+            .pr-pane {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+            }
+            .pr-list {
+                flex: 1;
+                overflow-y: auto;
+                padding: 12px 16px;
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+            }
+            .pr-card {
+                background: var(--surface);
+                border: 1px solid var(--border);
+                border-radius: var(--radius);
+                padding: 13px 15px;
+                cursor: pointer;
+                transition: all 0.15s;
+            }
+            .pr-card:hover {
+                border-color: var(--border2);
+                background: var(--surface2);
+            }
+            .pr-card.open {
+                border-left: 3px solid var(--green);
+            }
+            .pr-card.review {
+                border-left: 3px solid var(--yellow);
+            }
+            .pr-card.draft {
+                border-left: 3px solid var(--muted);
+            }
+            .pr-top {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                margin-bottom: 6px;
+            }
+            .pr-num {
+                font-size: 12px;
+                color: var(--muted);
+                font-family: var(--font-mono);
+            }
+            .pr-title {
+                font-size: 13px;
+                font-weight: 500;
+                flex: 1;
+            }
+            .pr-status-badge {
+                font-size: 11px;
+                padding: 2px 8px;
+                border-radius: 12px;
+                font-weight: 600;
+            }
+            .badge-open {
+                background: rgba(63, 185, 80, 0.15);
+                color: var(--green);
+            }
+            .badge-review {
+                background: rgba(210, 153, 34, 0.15);
+                color: var(--yellow);
+            }
+            .badge-draft {
+                background: rgba(139, 148, 158, 0.15);
+                color: var(--muted);
+            }
+            .pr-meta {
+                font-size: 11px;
+                color: var(--muted);
+                margin-bottom: 8px;
+            }
+            .pr-files {
+                display: flex;
+                gap: 5px;
+                flex-wrap: wrap;
+                margin-bottom: 8px;
+            }
+            .pr-file-chip {
+                font-size: 10.5px;
+                font-family: var(--font-mono);
+                padding: 2px 7px;
+                background: var(--surface3);
+                border-radius: 3px;
+                color: var(--muted);
+            }
+            .pr-quality-row {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+            .pr-round-badges {
+                display: flex;
+                gap: 3px;
+            }
+            .pr-round-badge {
+                width: 14px;
+                height: 14px;
+                border-radius: 3px;
+                background: var(--surface3);
+            }
+
+            /* ── Modal ────────────────────────────────────────────────── */
+            .modal-overlay {
+                position: fixed;
+                inset: 0;
+                background: rgba(0, 0, 0, 0.65);
+                z-index: 100;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .modal {
+                background: var(--surface);
+                border: 1px solid var(--border2);
+                border-radius: 12px;
+                padding: 24px;
+                width: 420px;
+                max-width: 95vw;
+                box-shadow: var(--shadow);
+            }
+            .modal-title {
+                font-size: 16px;
+                font-weight: 700;
+                margin-bottom: 18px;
+            }
+            .modal-field {
+                margin-bottom: 14px;
+            }
+            .modal-label {
+                font-size: 12px;
+                color: var(--muted);
+                margin-bottom: 5px;
+                font-weight: 500;
+            }
+            .modal-input {
+                width: 100%;
+                background: var(--surface2);
+                border: 1px solid var(--border);
+                border-radius: var(--radius-sm);
+                color: var(--text);
+                padding: 8px 12px;
+                font-size: 13px;
+                font-family: inherit;
+                transition: border-color 0.15s;
+            }
+            .modal-input:focus {
+                outline: none;
+                border-color: var(--accent2);
+            }
+            .modal-actions {
+                display: flex;
+                gap: 8px;
+                justify-content: flex-end;
+                margin-top: 18px;
+            }
+
+            /* ── Typing indicator ─────────────────────────────────────── */
+            .typing-indicator {
+                display: flex;
+                gap: 4px;
+                align-items: center;
+                padding: 4px 0;
+            }
+            .typing-dot {
+                width: 7px;
+                height: 7px;
+                border-radius: 50%;
+                background: var(--muted);
+                animation: bounce 1.2s infinite;
+            }
+            .typing-dot:nth-child(1) {
+                animation-delay: 0s;
+            }
+            .typing-dot:nth-child(2) {
+                animation-delay: 0.2s;
+            }
+            .typing-dot:nth-child(3) {
+                animation-delay: 0.4s;
+            }
+            @keyframes bounce {
+                0%,
+                60%,
+                100% {
+                    transform: translateY(0);
+                }
+                30% {
+                    transform: translateY(-6px);
+                }
+            }
+
+            /* ── Empty state ──────────────────────────────────────────── */
+            .empty-state {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                gap: 12px;
+                color: var(--muted);
+                padding: 40px;
+            }
+            .empty-icon {
+                font-size: 48px;
+                opacity: 0.4;
+            }
+            .empty-text {
+                font-size: 14px;
+                text-align: center;
+                line-height: 1.5;
+            }
+
+            input[type="checkbox"] {
+                accent-color: var(--accent);
+            }
+            .scroll-anchor {
+                height: 1px;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="root"></div>
+
+        <script
+            src="https://unpkg.com/react@18/umd/react.development.js"
+            crossorigin
+        ></script>
+        <script
+            src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"
+            crossorigin
+        ></script>
+        <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+        <script type="text/babel">
+            const { useState, useEffect, useRef, useCallback } = React;
+
+            const API_BASE = "/api/web";
+            const OLLAMA_BASE = "/api/v1";
+
+            // ── Seed data (used until backend returns real data) ─────────────────────
+            const SEED_REPOS = [
+                {
+                    id: "rustassistant",
+                    name: "rustassistant",
+                    path: "/home/jordan/github/rustassistant",
+                    color: "#f78166",
+                    todoCount: 42,
+                    branch: "main",
+                    synced: true,
+                },
+                {
+                    id: "fredchef",
+                    name: "fredchef",
+                    path: "/home/jordan/repos/fredchef",
+                    color: "#58a6ff",
+                    todoCount: 17,
+                    branch: "main",
+                    synced: false,
+                },
+                {
+                    id: "homelab",
+                    name: "homelab",
+                    path: "/home/jordan/repos/homelab",
+                    color: "#3fb950",
+                    todoCount: 8,
+                    branch: "main",
+                    synced: false,
+                },
+            ];
+
+            const SEED_TASKS = [
+                {
+                    id: "t1",
+                    title: "Wire ModelRouter into AppState",
+                    kind: "todo",
+                    file: "src/server.rs",
+                    priority: "high",
+                    col: "todo",
+                    repo: "rustassistant",
+                },
+                {
+                    id: "t2",
+                    title: "Implement OllamaClient HTTP layer",
+                    kind: "stub",
+                    file: "src/ollama_client.rs",
+                    priority: "high",
+                    col: "todo",
+                    repo: "rustassistant",
+                },
+                {
+                    id: "t3",
+                    title: "Persist jobs to SQLite jobs table",
+                    kind: "todo",
+                    file: "src/web_api.rs",
+                    priority: "high",
+                    col: "todo",
+                    repo: "rustassistant",
+                },
+                {
+                    id: "t4",
+                    title: "Replace naive symbol scanner with syn",
+                    kind: "todo",
+                    file: "src/repo_sync.rs",
+                    priority: "mid",
+                    col: "todo",
+                    repo: "rustassistant",
+                },
+                {
+                    id: "t5",
+                    title: "Add Redis cache to chat handler",
+                    kind: "todo",
+                    file: "src/api/repos.rs",
+                    priority: "mid",
+                    col: "staged",
+                    repo: "rustassistant",
+                },
+                {
+                    id: "t6",
+                    title: "Spawn SyncScheduler at server startup",
+                    kind: "todo",
+                    file: "src/server.rs",
+                    priority: "mid",
+                    col: "staged",
+                    repo: "rustassistant",
+                },
+                {
+                    id: "t7",
+                    title: "Auto-sync after successful todo work",
+                    kind: "todo",
+                    file: "src/todo/worker.rs",
+                    priority: "low",
+                    col: "staged",
+                    repo: "rustassistant",
+                    quality: 0,
+                },
+                {
+                    id: "t8",
+                    title: "Add /api/v1/repos CRUD endpoints",
+                    kind: "feat",
+                    file: "src/api/repos.rs",
+                    priority: "high",
+                    col: "done",
+                    repo: "rustassistant",
+                },
+                {
+                    id: "t9",
+                    title: "Add SyncScheduler background loop",
+                    kind: "feat",
+                    file: "src/sync_scheduler.rs",
+                    priority: "mid",
+                    col: "done",
+                    repo: "rustassistant",
+                },
+            ];
+
+            const SEED_PRS = [
+                {
+                    id: "pr1",
+                    num: 12,
+                    title: "feat: add RepoSyncService + ModelRouter",
+                    status: "open",
+                    repo: "rustassistant",
+                    files: ["src/repo_sync.rs", "src/model_router.rs"],
+                    rounds: 3,
+                    quality: 87,
+                    branch: "feat/repo-sync",
+                },
+                {
+                    id: "pr2",
+                    num: 11,
+                    title: "feat: /api/v1/repos CRUD + chat endpoints",
+                    status: "review",
+                    repo: "rustassistant",
+                    files: ["src/api/repos.rs", "src/server.rs"],
+                    rounds: 2,
+                    quality: 74,
+                    branch: "feat/repos-api",
+                },
+                {
+                    id: "pr3",
+                    num: 10,
+                    title: "chore: merge todo/ stubs into src/",
+                    status: "draft",
+                    repo: "rustassistant",
+                    files: ["src/sync_scheduler.rs"],
+                    rounds: 1,
+                    quality: 60,
+                    branch: "chore/merge-stubs",
+                },
+            ];
+
+            // ── Quality bar ──────────────────────────────────────────────────────────
+            function QualityBar({ pct = 0 }) {
+                const color =
+                    pct >= 80
+                        ? "var(--green)"
+                        : pct >= 60
+                          ? "var(--yellow)"
+                          : "var(--red)";
+                return (
+                    <div className="quality-bar">
+                        <div className="quality-track">
+                            <div
+                                className="quality-fill"
+                                style={{ width: `${pct}%`, background: color }}
+                            />
+                        </div>
+                        <span className="quality-label">{pct}%</span>
+                    </div>
+                );
+            }
+
+            // ── Ring chart (SVG) ─────────────────────────────────────────────────────
+            function RingChart({ value, max, color, label }) {
+                const r = 16,
+                    cx = 22,
+                    cy = 22;
+                const circ = 2 * Math.PI * r;
+                const dash = max > 0 ? (value / max) * circ : 0;
+                return (
+                    <div className="queue-ring">
+                        <svg className="ring-svg" viewBox="0 0 44 44">
+                            <circle
+                                cx={cx}
+                                cy={cy}
+                                r={r}
+                                fill="none"
+                                stroke="var(--surface3)"
+                                strokeWidth="4"
+                            />
+                            <circle
+                                cx={cx}
+                                cy={cy}
+                                r={r}
+                                fill="none"
+                                stroke={color}
+                                strokeWidth="4"
+                                strokeDasharray={`${dash} ${circ}`}
+                                strokeLinecap="round"
+                                transform="rotate(-90 22 22)"
+                            />
+                            <text
+                                x={cx}
+                                y={cy + 1}
+                                textAnchor="middle"
+                                dominantBaseline="middle"
+                                fill={color}
+                                fontSize="9"
+                                fontFamily="var(--font-mono)"
+                                fontWeight="700"
+                            >
+                                {value}
+                            </text>
+                        </svg>
+                        <span className="ring-label">{label}</span>
+                    </div>
+                );
+            }
+
+            // ── Chat pane ────────────────────────────────────────────────────────────
+            function ChatPane({ activeRepo }) {
+                const [messages, setMessages] = useState([
+                    {
+                        id: 1,
+                        role: "assistant",
+                        content:
+                            "Hey! I'm wired to **Grok** (remote) and **Qwen2.5-Coder** (local). Ask me anything about your repo — I'll route scaffold/stub tasks to the local model and complex reasoning to Grok.",
+                        model: "grok-2-latest",
+                        time: "now",
+                        quality: null,
+                    },
+                ]);
+                const [input, setInput] = useState("");
+                const [loading, setLoading] = useState(false);
+                const [rounds, setRounds] = useState(3);
+                const [ctxEnabled, setCtxEnabled] = useState(true);
+                const bottomRef = useRef(null);
+                const textareaRef = useRef(null);
+
+                useEffect(() => {
+                    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+                }, [messages]);
+
+                const autoResize = useCallback(() => {
+                    const ta = textareaRef.current;
+                    if (!ta) return;
+                    ta.style.height = "auto";
+                    ta.style.height = Math.min(ta.scrollHeight, 160) + "px";
+                }, []);
+
+                const send = useCallback(async () => {
+                    const text = input.trim();
+                    if (!text || loading) return;
+                    setInput("");
+                    if (textareaRef.current)
+                        textareaRef.current.style.height = "auto";
+
+                    const userMsg = {
+                        id: Date.now(),
+                        role: "user",
+                        content: text,
+                        time: new Date().toLocaleTimeString(),
+                    };
+                    setMessages((prev) => [...prev, userMsg]);
+                    setLoading(true);
+
+                    let reply = null;
+                    try {
+                        const repoId =
+                            ctxEnabled && activeRepo ? activeRepo.id : null;
+                        const endpoint = repoId
+                            ? `${OLLAMA_BASE}/chat/repos/${repoId}`
+                            : `${OLLAMA_BASE}/chat`;
+
+                        const res = await fetch(endpoint, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                message: text,
+                                history: messages
+                                    .slice(-10)
+                                    .map((m) => ({
+                                        role: m.role,
+                                        content: m.content,
+                                    })),
+                            }),
+                            signal: AbortSignal.timeout(30000),
+                        });
+                        const data = await res.json();
+                        reply = {
+                            content:
+                                data.reply || data.content || "(no response)",
+                            model: data.model_used || "unknown",
+                            taskKind: data.task_kind || "Unknown",
+                            quality: data.tokens_used
+                                ? Math.min(
+                                      95,
+                                      60 + Math.floor(data.tokens_used / 50),
+                                  )
+                                : null,
+                        };
+                    } catch (err) {
+                        // Fallback: simulate response locally when backend isn't up
+                        reply = await simulateResponse(text);
+                    }
+
+                    const assistantMsg = {
+                        id: Date.now() + 1,
+                        role: "assistant",
+                        content: reply.content,
+                        model: reply.model,
+                        taskKind: reply.taskKind,
+                        quality: reply.quality,
+                        time: new Date().toLocaleTimeString(),
+                        showActions: true,
+                    };
+                    setMessages((prev) => [...prev, assistantMsg]);
+                    setLoading(false);
+                }, [input, loading, messages, ctxEnabled, activeRepo]);
+
+                const onKey = (e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        send();
+                    }
+                };
+
+                return (
+                    <div className="chat-pane">
+                        <div className="chat-header">
+                            <span className="chat-header-title">💬 Chat</span>
+                            {activeRepo && (
+                                <span
+                                    className={`ctx-pill${ctxEnabled ? " active" : ""}`}
+                                    onClick={() => setCtxEnabled((v) => !v)}
+                                    title="Toggle repo context injection"
+                                >
+                                    {ctxEnabled ? "🔗" : "⛓️"} {activeRepo.name}
+                                </span>
+                            )}
+                            <div className="rounds-control">
+                                <button
+                                    className="round-btn"
+                                    onClick={() =>
+                                        setRounds((r) => Math.max(1, r - 1))
+                                    }
+                                >
+                                    −
+                                </button>
+                                <span
+                                    style={{
+                                        color: "var(--text2)",
+                                        fontFamily: "var(--font-mono)",
+                                        minWidth: 60,
+                                        textAlign: "center",
+                                    }}
+                                >
+                                    {rounds} rounds
+                                </span>
+                                <button
+                                    className="round-btn"
+                                    onClick={() =>
+                                        setRounds((r) => Math.min(10, r + 1))
+                                    }
+                                >
+                                    +
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="messages">
+                            {messages.map((msg) => (
+                                <div key={msg.id} className={`msg ${msg.role}`}>
+                                    <div className="msg-avatar">
+                                        {msg.role === "assistant" ? "🦀" : "👤"}
+                                    </div>
+                                    <div className="msg-body">
+                                        <div className="msg-meta">
+                                            {msg.role === "assistant" ? (
+                                                <>
+                                                    <span
+                                                        style={{
+                                                            color: "var(--accent)",
+                                                            fontWeight: 600,
+                                                        }}
+                                                    >
+                                                        rustassistant
+                                                    </span>{" "}
+                                                    ·{" "}
+                                                    <span
+                                                        style={{
+                                                            fontFamily:
+                                                                "var(--font-mono)",
+                                                            fontSize: 11,
+                                                        }}
+                                                    >
+                                                        {msg.model}
+                                                    </span>{" "}
+                                                    · {msg.time}
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <span
+                                                        style={{
+                                                            color: "var(--accent2)",
+                                                        }}
+                                                    >
+                                                        you
+                                                    </span>{" "}
+                                                    · {msg.time}
+                                                </>
+                                            )}
+                                        </div>
+                                        <div className="msg-bubble">
+                                            <MsgContent content={msg.content} />
+                                        </div>
+                                        {msg.quality !== null &&
+                                            msg.quality !== undefined && (
+                                                <QualityBar pct={msg.quality} />
+                                            )}
+                                        {msg.showActions && (
+                                            <div className="msg-actions">
+                                                <button
+                                                    className="msg-action-btn"
+                                                    onClick={() =>
+                                                        navigator.clipboard?.writeText(
+                                                            msg.content,
+                                                        )
+                                                    }
+                                                >
+                                                    📋 copy
+                                                </button>
+                                                <button className="msg-action-btn green">
+                                                    ✅ apply
+                                                </button>
+                                                <button className="msg-action-btn">
+                                                    🔁 retry
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                            {loading && (
+                                <div className="msg assistant">
+                                    <div className="msg-avatar">🦀</div>
+                                    <div className="msg-body">
+                                        <div className="msg-bubble">
+                                            <div className="typing-indicator">
+                                                <div className="typing-dot" />
+                                                <div className="typing-dot" />
+                                                <div className="typing-dot" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                            <div ref={bottomRef} className="scroll-anchor" />
+                        </div>
+
+                        <div className="chat-input-area">
+                            <div className="chat-input-row">
+                                <textarea
+                                    ref={textareaRef}
+                                    className="chat-textarea"
+                                    placeholder={`Ask about ${activeRepo ? activeRepo.name : "your repos"}, request a scaffold, review code…`}
+                                    value={input}
+                                    onChange={(e) => {
+                                        setInput(e.target.value);
+                                        autoResize();
+                                    }}
+                                    onKeyDown={onKey}
+                                    rows={1}
+                                />
+                                <button
+                                    className="send-btn"
+                                    onClick={send}
+                                    disabled={loading || !input.trim()}
+                                >
+                                    ➤
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            function MsgContent({ content }) {
+                const parts = [];
+                const lines = content.split("\n");
+                let inCode = false,
+                    lang = "",
+                    code = [];
+                lines.forEach((line, i) => {
+                    if (line.startsWith("```")) {
+                        if (!inCode) {
+                            inCode = true;
+                            lang = line.slice(3);
+                            code = [];
+                        } else {
+                            parts.push(
+                                <pre key={i}>
+                                    <code style={{ whiteSpace: "pre-wrap" }}>
+                                        {code.join("\n")}
+                                    </code>
+                                </pre>,
+                            );
+                            inCode = false;
+                        }
+                    } else if (inCode) {
+                        code.push(line);
+                    } else {
+                        parts.push(
+                            <span key={i}>
+                                {line}
+                                <br />
+                            </span>,
+                        );
+                    }
+                });
+                return <>{parts}</>;
+            }
+
+            function estimateQuality(taskKind) {
+                const map = {
+                    ScaffoldStub: 80,
+                    TodoTagging: 75,
+                    SymbolExtraction: 70,
+                    RepoQuestion: 65,
+                    CodeReview: 88,
+                };
+                return map[taskKind] || 60;
+            }
+
+            async function simulateResponse(prompt) {
+                const lower = prompt.toLowerCase();
+                await new Promise((r) =>
+                    setTimeout(r, 900 + Math.random() * 800),
+                );
+
+                if (
+                    lower.includes("stub") ||
+                    lower.includes("scaffold") ||
+                    lower.includes("generate")
+                ) {
+                    return {
+                        content:
+                            '// STUB: generated by rustassistant\n// TODO: implement actual logic\npub async fn example_handler(\n    State(state): State<AppState>,\n    Json(req): Json<Request>,\n) -> impl IntoResponse {\n    unimplemented!("stub: replace with real implementation")\n}',
+                        model: "qwen2.5-coder:7b",
+                        taskKind: "ScaffoldStub",
+                        quality: 80,
+                        showActions: true,
+                    };
+                }
+                if (lower.includes("todo") || lower.includes("fixme")) {
+                    return {
+                        content:
+                            "I found several TODOs in `src/api/repos.rs`:\n- L42: `// TODO: wire real Ollama client`\n- L67: `// TODO: add Redis cache check`\n- L95: `// TODO: populate token count`\n\nWant me to generate stubs for any of these?",
+                        model: "qwen2.5-coder:7b",
+                        taskKind: "TodoTagging",
+                        quality: 75,
+                        showActions: true,
+                    };
+                }
+                if (
+                    lower.includes("review") ||
+                    lower.includes("correct") ||
+                    lower.includes("check")
+                ) {
+                    return {
+                        content:
+                            "**Code Review** (via Grok)\n\nThe `handle_chat` fn looks solid. A few notes:\n1. The `call_model_stub` should be replaced with real dispatch — it currently just returns a placeholder string.\n2. Consider adding a Redis cache key as `hash(repo_id + prompt)` before calling the model.\n3. Error handling in `serve_cache_file` could propagate the IO error more specifically.",
+                        model: "grok-2-latest",
+                        taskKind: "CodeReview",
+                        quality: 88,
+                        showActions: true,
+                    };
+                }
+                return {
+                    content: `I can help with that. Based on your repo context, here's what I found:\n\nThe **${lower.includes("repo") ? "rustassistant" : "project"}** is structured around an Axum web server with:\n- REST API at \`/api/v1/\` (repo CRUD + chat)\n- Background \`SyncScheduler\` for keeping \`.rustassistant/\` caches fresh\n- \`ModelRouter\` for local/remote model routing\n\nAsk me to scaffold, review, or explain any part of it!`,
+                    model: "grok-2-latest",
+                    taskKind: "RepoQuestion",
+                    quality: 65,
+                    showActions: true,
+                };
+            }
+
+            // ── Tasks pane ───────────────────────────────────────────────────────────
+            function TasksPane({ tasks, setTasks, activeRepo }) {
+                const cols = [
+                    { id: "todo", label: "TODO", color: "var(--accent2)" },
+                    { id: "staged", label: "Staged", color: "var(--yellow)" },
+                    { id: "done", label: "Done", color: "var(--green)" },
+                ];
+
+                const move = (id, col) =>
+                    setTasks((prev) =>
+                        prev.map((t) => (t.id === id ? { ...t, col } : t)),
+                    );
+
+                const filtered = activeRepo
+                    ? tasks.filter((t) => t.repo === activeRepo.id)
+                    : tasks;
+
+                const extractFromTodo = () => {
+                    const newTask = {
+                        id: "t" + Date.now(),
+                        title: "Extracted TODO: implement Redis cache layer for chat responses",
+                        kind: "todo",
+                        file: "src/api/repos.rs",
+                        priority: "mid",
+                        col: "todo",
+                        repo: activeRepo?.id || "rustassistant",
+                    };
+                    setTasks((prev) => [newTask, ...prev]);
+                };
+
+                return (
+                    <div className="tasks-pane">
+                        <div className="pane-header">
+                            <span className="pane-title">📋 Tasks</span>
+                            <span
+                                style={{ fontSize: 12, color: "var(--muted)" }}
+                            >
+                                {activeRepo ? activeRepo.name : "all repos"} —{" "}
+                                {filtered.length} items
+                            </span>
+                            <div className="pane-actions">
+                                <button
+                                    className="pane-btn"
+                                    onClick={extractFromTodo}
+                                >
+                                    ⚡ Extract TODOs
+                                </button>
+                                <button className="pane-btn primary">
+                                    + New Task
+                                </button>
+                            </div>
+                        </div>
+                        <div className="tasks-columns">
+                            {cols.map((col) => {
+                                const items = filtered.filter(
+                                    (t) => t.col === col.id,
+                                );
+                                return (
+                                    <div key={col.id} className="tasks-col">
+                                        <div className="col-header">
+                                            <span
+                                                className="col-title"
+                                                style={{ color: col.color }}
+                                            >
+                                                {col.label}
+                                            </span>
+                                            <span className="col-badge">
+                                                {items.length}
+                                            </span>
+                                        </div>
+                                        <div className="col-items">
+                                            {items.length === 0 && (
+                                                <div
+                                                    style={{
+                                                        padding: "20px 10px",
+                                                        textAlign: "center",
+                                                        color: "var(--muted)",
+                                                        fontSize: 12,
+                                                    }}
+                                                >
+                                                    No items
+                                                </div>
+                                            )}
+                                            {items.map((task) => (
+                                                <div
+                                                    key={task.id}
+                                                    className={`task-card priority-${task.priority}${task.col === "staged" ? " in-queue" : ""}`}
+                                                >
+                                                    <button
+                                                        className="task-move-btn"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            const next = {
+                                                                todo: "staged",
+                                                                staged: "done",
+                                                                done: "todo",
+                                                            };
+                                                            move(
+                                                                task.id,
+                                                                next[task.col],
+                                                            );
+                                                        }}
+                                                    >
+                                                        →
+                                                    </button>
+                                                    <div className="task-title">
+                                                        {task.title}
+                                                    </div>
+                                                    <div className="task-meta">
+                                                        <span
+                                                            className={`task-tag tag-${task.kind}`}
+                                                        >
+                                                            {task.kind.toUpperCase()}
+                                                        </span>
+                                                        {task.priority ===
+                                                            "high" && (
+                                                            <span
+                                                                style={{
+                                                                    fontSize: 10,
+                                                                    color: "var(--red)",
+                                                                }}
+                                                            >
+                                                                ● HIGH
+                                                            </span>
+                                                        )}
+                                                        <span className="task-file">
+                                                            {task.file}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                );
+            }
+
+            // ── Queue pane ───────────────────────────────────────────────────────────
+            function QueuePane({ tasks }) {
+                const [running, setRunning] = useState(false);
+                const [activeIdx, setActiveIdx] = useState(-1);
+                const [runLog, setRunLog] = useState([]);
+                const [maxRounds] = useState(3);
+
+                const queued = tasks.filter((t) => t.col === "staged");
+                const [jobState, setJobState] = useState(() => {
+                    const s = {};
+                    queued.forEach((t) => {
+                        s[t.id] = { rounds: 0, running: false };
+                    });
+                    return s;
+                });
+
+                const runQueue = useCallback(async () => {
+                    if (running || queued.length === 0) return;
+                    setRunning(true);
+                    setRunLog([]);
+
+                    for (let i = 0; i < queued.length; i++) {
+                        setActiveIdx(i);
+                        const task = queued[i];
+                        setRunLog((l) => [
+                            ...l,
+                            `[${new Date().toLocaleTimeString()}] Starting: ${task.title}`,
+                        ]);
+
+                        setJobState((s) => ({
+                            ...s,
+                            [task.id]: { rounds: 0, running: true },
+                        }));
+
+                        let quality = 0;
+                        for (let r = 0; r < maxRounds; r++) {
+                            await new Promise((res) =>
+                                setTimeout(res, 600 + Math.random() * 400),
+                            );
+                            const roundQuality =
+                                50 + Math.floor(Math.random() * 40) + r * 4;
+                            quality = Math.min(95, roundQuality);
+
+                            setJobState((s) => ({
+                                ...s,
+                                [task.id]: {
+                                    rounds: r + 1,
+                                    running: r < maxRounds - 1,
+                                },
+                            }));
+                            setRunLog((l) => [
+                                ...l,
+                                `  round ${r + 1}/${maxRounds} → quality: ${quality}%`,
+                            ]);
+                        }
+
+                        setRunLog((l) => [
+                            ...l,
+                            `✅ Done: ${task.title} (final quality: ${quality}%)`,
+                        ]);
+                    }
+
+                    setActiveIdx(-1);
+                    setRunning(false);
+                    setRunLog((l) => [...l, "--- Queue complete ---"]);
+                }, [running, queued, maxRounds]);
+
+                const totalDone = Object.values(jobState).filter(
+                    (s) => !s.running && s.rounds === maxRounds,
+                ).length;
+                const avgQ = 74;
+
+                return (
+                    <div className="queue-pane">
+                        <div className="pane-header">
+                            <span className="pane-title">⚙️ Work Queue</span>
+                            <span
+                                style={{ fontSize: 12, color: "var(--muted)" }}
+                            >
+                                {queued.length} staged · {maxRounds} rounds
+                            </span>
+                        </div>
+
+                        <div className="queue-items">
+                            {queued.length === 0 && (
+                                <div className="empty-state">
+                                    <div className="empty-icon">⚙️</div>
+                                    <div className="empty-text">
+                                        No tasks staged.
+                                        <br />
+                                        Move tasks to <strong>Staged</strong> in
+                                        the Tasks tab to queue them.
+                                    </div>
+                                </div>
+                            )}
+                            {queued.map((task, i) => {
+                                const state = jobState[task.id] || {
+                                    rounds: 0,
+                                    running: false,
+                                };
+                                const isActive = i === activeIdx;
+                                const isDone =
+                                    !state.running &&
+                                    state.rounds === maxRounds;
+                                const finalQ = isDone
+                                    ? ((50 + i * 12) % 45) + 55
+                                    : null;
+
+                                return (
+                                    <div
+                                        key={task.id}
+                                        className={`queue-item${isActive ? " running" : isDone ? " done" : ""}`}
+                                    >
+                                        <div className="queue-num">
+                                            {isActive
+                                                ? "⟳"
+                                                : isDone
+                                                  ? "✓"
+                                                  : i + 1}
+                                        </div>
+                                        <div className="queue-info">
+                                            <div className="queue-task-name">
+                                                {task.title}
+                                            </div>
+                                            <div className="queue-task-meta">
+                                                <span>{task.file}</span>
+                                                <span
+                                                    style={{
+                                                        color: "var(--muted)",
+                                                    }}
+                                                >
+                                                    ·
+                                                </span>
+                                                <span>{task.repo}</span>
+                                            </div>
+                                            <div className="queue-rounds">
+                                                {Array.from({
+                                                    length: maxRounds,
+                                                }).map((_, r) => (
+                                                    <div
+                                                        key={r}
+                                                        className={`round-pip${r < state.rounds ? " done" : r === state.rounds && isActive ? " running" : ""}`}
+                                                    />
+                                                ))}
+                                            </div>
+                                            {isDone && finalQ !== null && (
+                                                <div className="queue-quality">
+                                                    <span className="quality-pct">
+                                                        {finalQ}%
+                                                    </span>
+                                                    <div
+                                                        className="quality-track"
+                                                        style={{ flex: 1 }}
+                                                    >
+                                                        <div
+                                                            className="quality-fill"
+                                                            style={{
+                                                                width: `${finalQ}%`,
+                                                                background:
+                                                                    finalQ >= 80
+                                                                        ? "var(--green)"
+                                                                        : finalQ >=
+                                                                            60
+                                                                          ? "var(--yellow)"
+                                                                          : "var(--red)",
+                                                            }}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+
+                            {runLog.length > 0 && (
+                                <div
+                                    style={{
+                                        marginTop: 8,
+                                        background: "var(--surface)",
+                                        border: "1px solid var(--border)",
+                                        borderRadius: "var(--radius)",
+                                        padding: "10px 12px",
+                                        maxHeight: 180,
+                                        overflowY: "auto",
+                                        fontSize: 11.5,
+                                        color: "var(--text2)",
+                                        fontFamily: "var(--font-mono)",
+                                        lineHeight: 1.6,
+                                    }}
+                                >
+                                    {runLog.map((line, i) => {
+                                        let color = "var(--text2)";
+                                        if (line.startsWith("✅"))
+                                            color = "var(--green)";
+                                        if (line.startsWith("❌"))
+                                            color = "var(--red)";
+                                        if (line.startsWith("---"))
+                                            color = "var(--muted)";
+                                        if (line.includes("round"))
+                                            color = "var(--muted)";
+                                        return (
+                                            <div key={i} style={{ color }}>
+                                                {line}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="queue-run-controls">
+                            <button
+                                className={`run-big-btn ${running ? "stop" : "start"}`}
+                                onClick={() =>
+                                    running ? setRunning(false) : runQueue()
+                                }
+                            >
+                                {running ? "⏹ Stop" : "▶ Run Queue"}
+                            </button>
+                            <div className="queue-stats">
+                                <div className="qstat">
+                                    <span
+                                        className="qstat-val"
+                                        style={{ color: "var(--accent2)" }}
+                                    >
+                                        {queued.length}
+                                    </span>
+                                    <span className="qstat-label">queued</span>
+                                </div>
+                                <div className="qstat">
+                                    <span
+                                        className="qstat-val"
+                                        style={{ color: "var(--green)" }}
+                                    >
+                                        {totalDone}
+                                    </span>
+                                    <span className="qstat-label">done</span>
+                                </div>
+                                <div className="qstat">
+                                    <span
+                                        className="qstat-val"
+                                        style={{ color: "var(--yellow)" }}
+                                    >
+                                        {avgQ}%
+                                    </span>
+                                    <span className="qstat-label">avg Q</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            // ── PR pane ──────────────────────────────────────────────────────────────
+            function PRPane({ activeRepo }) {
+                const [prs, setPRs] = useState(SEED_PRS);
+                const [generating, setGenerating] = useState(false);
+
+                const genPR = async () => {
+                    setGenerating(true);
+                    await new Promise((r) => setTimeout(r, 1800));
+                    const newPR = {
+                        id: "pr" + Date.now(),
+                        num: prs.length + 13,
+                        title: "feat: implement OllamaClient HTTP layer",
+                        status: "draft",
+                        repo: activeRepo?.id || "rustassistant",
+                        files: ["src/ollama_client.rs", "src/model_router.rs"],
+                        rounds: 1,
+                        quality: 62,
+                        branch: "feat/ollama-client",
+                    };
+                    setPRs((prev) => [newPR, ...prev]);
+                    setGenerating(false);
+                };
+
+                const pushPR = (id) =>
+                    setPRs((prev) =>
+                        prev.map((p) =>
+                            p.id === id ? { ...p, status: "open" } : p,
+                        ),
+                    );
+
+                const statusColor = {
+                    open: "var(--green)",
+                    review: "var(--yellow)",
+                    draft: "var(--muted)",
+                };
+
+                return (
+                    <div className="pr-pane">
+                        <div className="pane-header">
+                            <span className="pane-title">🔀 Pull Requests</span>
+                            <div className="pane-actions">
+                                <button
+                                    className="pane-btn"
+                                    onClick={genPR}
+                                    disabled={generating}
+                                >
+                                    {generating
+                                        ? "⏳ Generating…"
+                                        : "⚡ Gen PR"}
+                                </button>
+                            </div>
+                        </div>
+                        <div className="pr-list">
+                            {prs.map((pr) => (
+                                <div
+                                    key={pr.id}
+                                    className={`pr-card ${pr.status}`}
+                                >
+                                    <div className="pr-top">
+                                        <span className="pr-num">
+                                            #{pr.num}
+                                        </span>
+                                        <span className="pr-title">
+                                            {pr.title}
+                                        </span>
+                                        <span
+                                            className={`pr-status-badge badge-${pr.status}`}
+                                        >
+                                            {pr.status}
+                                        </span>
+                                    </div>
+                                    <div className="pr-meta">
+                                        {pr.branch} · {pr.repo} · {pr.rounds}{" "}
+                                        rounds
+                                    </div>
+                                    <div className="pr-files">
+                                        {pr.files.map((f) => (
+                                            <span
+                                                key={f}
+                                                className="pr-file-chip"
+                                            >
+                                                {f}
+                                            </span>
+                                        ))}
+                                    </div>
+                                    <div className="pr-quality-row">
+                                        <QualityBar pct={pr.quality} />
+                                        {pr.status === "draft" && (
+                                            <button
+                                                className="pane-btn"
+                                                style={{
+                                                    background: "var(--green)",
+                                                    color: "#0d1117",
+                                                    marginLeft: 10,
+                                                    minWidth: 80,
+                                                }}
+                                                onClick={() => pushPR(pr.id)}
+                                            >
+                                                Push PR
+                                            </button>
+                                        )}
+                                        <div
+                                            className="pr-round-badges"
+                                            style={{ marginLeft: 10 }}
+                                        >
+                                            {Array.from({
+                                                length: Math.max(3, pr.rounds),
+                                            }).map((_, i) => (
+                                                <div
+                                                    key={i}
+                                                    className="pr-round-badge"
+                                                    style={{
+                                                        background:
+                                                            i < pr.rounds
+                                                                ? statusColor[
+                                                                      pr.status
+                                                                  ]
+                                                                : "var(--surface3)",
+                                                    }}
+                                                />
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                );
+            }
+
+            // ── Add repo modal ────────────────────────────────────────────────────────
+            function AddRepoModal({ onAdd, onClose }) {
+                const [form, setForm] = useState({
+                    name: "",
+                    path: "",
+                    remote: "",
+                    branch: "main",
+                });
+                const colors = [
+                    "#f78166",
+                    "#58a6ff",
+                    "#3fb950",
+                    "#d29922",
+                    "#bc8cff",
+                    "#e3b341",
+                ];
+                const [color, setColor] = useState(
+                    colors[Math.floor(Math.random() * colors.length)],
+                );
+
+                const submit = async (e) => {
+                    e.preventDefault();
+                    try {
+                        await fetch(`${OLLAMA_BASE}/repos`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                name: form.name,
+                                local_path: form.path,
+                                remote_url: form.remote || null,
+                                branch: form.branch,
+                                sync_on_register: true,
+                            }),
+                        });
+                    } catch (_) {}
+                    onAdd({
+                        id: form.name.toLowerCase().replace(/\s+/g, "-"),
+                        name: form.name,
+                        path: form.path,
+                        color,
+                        todoCount: 0,
+                        branch: form.branch,
+                        synced: false,
+                    });
+                    onClose();
+                };
+
+                return (
+                    <div className="modal-overlay" onClick={onClose}>
+                        <div
+                            className="modal"
+                            onClick={(e) => e.stopPropagation()}
                         >
-                    </div>
-
-                    <div class="form-group">
-                        <label for="branch">Branch (optional)</label>
-                        <input
-                            type="text"
-                            id="branch"
-                            name="branch"
-                            placeholder="main"
-                        >
-                    </div>
-
-                    <div class="form-group checkbox-group">
-                        <label>
-                            <input type="checkbox" id="enable-llm" name="enable_llm">
-                            Enable LLM Analysis (AI-powered code review)
-                        </label>
-                    </div>
-
-                    <div class="form-group checkbox-group">
-                        <label>
-                            <input type="checkbox" id="include-tests" name="include_tests">
-                            Include Test Files
-                        </label>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="focus">Focus Areas (comma-separated, optional)</label>
-                        <input
-                            type="text"
-                            id="focus"
-                            name="focus"
-                            placeholder="security, performance, error-handling"
-                        >
-                    </div>
-
-                    <button type="submit" class="btn btn-primary" id="submit-btn">
-                        Start Audit
-                    </button>
-                </form>
-            </section>
-
-            <!-- Loading Indicator -->
-            <div id="loading" class="loading hidden">
-                <div class="spinner"></div>
-                <p>Running audit analysis...</p>
-            </div>
-
-            <!-- Results Section -->
-            <section id="results-section" class="hidden">
-                <!-- Summary Stats -->
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <div class="stat-value" id="total-files">0</div>
-                        <div class="stat-label">Files Scanned</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value" id="total-issues">0</div>
-                        <div class="stat-label">Issues Found</div>
-                    </div>
-                    <div class="stat-card critical">
-                        <div class="stat-value" id="critical-files">0</div>
-                        <div class="stat-label">Critical Files</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value" id="total-tasks">0</div>
-                        <div class="stat-label">Tasks Generated</div>
-                    </div>
-                </div>
-
-                <!-- Audit Details -->
-                <div class="card">
-                    <div class="card-header">
-                        <h2>Audit Report</h2>
-                        <div class="audit-id">
-                            ID: <code id="audit-id"></code>
+                            <div className="modal-title">➕ Register Repo</div>
+                            <form onSubmit={submit}>
+                                {["name", "path", "remote", "branch"].map(
+                                    (field) => (
+                                        <div
+                                            key={field}
+                                            className="modal-field"
+                                        >
+                                            <div className="modal-label">
+                                                {field === "path"
+                                                    ? "Local Path"
+                                                    : field === "remote"
+                                                      ? "Remote URL (optional)"
+                                                      : field
+                                                            .charAt(0)
+                                                            .toUpperCase() +
+                                                        field.slice(1)}
+                                            </div>
+                                            <input
+                                                className="modal-input"
+                                                required={field !== "remote"}
+                                                placeholder={
+                                                    field === "path"
+                                                        ? "/home/jordan/repos/myproject"
+                                                        : field === "remote"
+                                                          ? "https://github.com/user/repo"
+                                                          : field
+                                                }
+                                                value={form[field]}
+                                                onChange={(e) =>
+                                                    setForm((f) => ({
+                                                        ...f,
+                                                        [field]: e.target.value,
+                                                    }))
+                                                }
+                                            />
+                                        </div>
+                                    ),
+                                )}
+                                <div className="modal-field">
+                                    <div className="modal-label">Color</div>
+                                    <div style={{ display: "flex", gap: 8 }}>
+                                        {colors.map((c) => (
+                                            <div
+                                                key={c}
+                                                onClick={() => setColor(c)}
+                                                style={{
+                                                    width: 22,
+                                                    height: 22,
+                                                    borderRadius: "50%",
+                                                    background: c,
+                                                    cursor: "pointer",
+                                                    outline:
+                                                        c === color
+                                                            ? "2px solid white"
+                                                            : "none",
+                                                    outlineOffset: 2,
+                                                }}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="modal-actions">
+                                    <button
+                                        type="button"
+                                        className="pane-btn"
+                                        onClick={onClose}
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        className="pane-btn primary"
+                                    >
+                                        Register
+                                    </button>
+                                </div>
+                            </form>
                         </div>
                     </div>
+                );
+            }
 
-                    <!-- Issues by Severity -->
-                    <div class="section">
-                        <h3>Issues by Severity</h3>
-                        <div id="severity-chart" class="severity-chart"></div>
-                    </div>
+            // ── App root ─────────────────────────────────────────────────────────────
+            function App() {
+                const [tab, setTab] = useState("chat");
+                const [repos, setRepos] = useState(SEED_REPOS);
+                const [activeRepoId, setActiveRepoId] =
+                    useState("rustassistant");
+                const [tasks, setTasks] = useState(SEED_TASKS);
+                const [showAddRepo, setShowAddRepo] = useState(false);
+                const [ollamaStatus, setOllamaStatus] = useState("loading");
 
-                    <!-- Top Critical Files -->
-                    <div class="section">
-                        <h3>Top Critical Files</h3>
-                        <div id="critical-files-list" class="file-list"></div>
-                    </div>
+                const activeRepo =
+                    repos.find((r) => r.id === activeRepoId) || null;
+                const queuedCount = tasks.filter(
+                    (t) => t.col === "staged",
+                ).length;
+                const stagedCount = tasks.filter(
+                    (t) => t.col === "staged",
+                ).length;
+                const doneCount = tasks.filter((t) => t.col === "done").length;
 
-                    <!-- Generated Tasks -->
-                    <div class="section">
-                        <h3>Generated Tasks</h3>
-                        <div id="tasks-list" class="tasks-list"></div>
-                    </div>
+                // Poll Ollama + backend health
+                useEffect(() => {
+                    const check = async () => {
+                        try {
+                            const res = await fetch(`${OLLAMA_BASE}/repos`, {
+                                signal: AbortSignal.timeout(3000),
+                            });
+                            setOllamaStatus(res.ok ? "online" : "offline");
+                        } catch (_) {
+                            setOllamaStatus("offline");
+                        }
+                    };
+                    check();
+                    const t = setInterval(check, 15000);
+                    return () => clearInterval(t);
+                }, []);
 
-                    <!-- Tags Found -->
-                    <div class="section">
-                        <h3>Audit Tags Found</h3>
-                        <div id="tags-summary" class="tags-summary"></div>
-                    </div>
-                </div></h3>
+                // Load repos from backend on mount
+                useEffect(() => {
+                    fetch(`${OLLAMA_BASE}/repos`)
+                        .then((r) => r.json())
+                        .then((data) => {
+                            if (Array.isArray(data) && data.length > 0) {
+                                setRepos(
+                                    data.map((r) => ({
+                                        id: r.id,
+                                        name: r.name,
+                                        path: r.path || r.local_path,
+                                        color: "#58a6ff",
+                                        todoCount: 0,
+                                        branch: r.branch || "main",
+                                        synced: !!r.last_synced,
+                                    })),
+                                );
+                            }
+                        })
+                        .catch(() => {});
+                }, []);
 
-                <!-- Export Options -->
-                <div class="actions">
-                    <button class="btn btn-secondary" id="download-json">
-                        📥 Download JSON Report
-                    </button>
-                    <button class="btn btn-secondary" id="download-tasks">
-                        📋 Download Tasks
-                    </button>
-                </div>
-            </section>
+                const tabs = [
+                    { id: "chat", icon: "💬", label: "Chat", badge: null },
+                    {
+                        id: "tasks",
+                        icon: "📋",
+                        label: "Tasks",
+                        badge: tasks.filter((t) => t.col === "todo").length,
+                    },
+                    {
+                        id: "queue",
+                        icon: "⚙️",
+                        label: "Queue",
+                        badge: queuedCount || null,
+                    },
+                    {
+                        id: "prs",
+                        icon: "🔀",
+                        label: "PRs",
+                        badge: repos.reduce((a, r) => a, 0) || null,
+                    },
+                ];
 
-            <!-- Quick Actions -->
-            <section class="card">
-                <h2>Quick Actions</h2>
-                <div class="quick-actions">
-                    <button class="btn btn-outline" onclick="showTagScanner()">
-                        🏷️ Tag Scanner
-                    </button>
-                    <button class="btn btn-outline" onclick="showCloneRepo()">
-                        📦 Clone Repository
-                    </button>
-                    <button class="btn btn-outline" onclick="showStaticAnalysis()">
-                        🔬 Static Analysis
-                    </button>
-                </div>
-            </section>
-
-            <!-- Tag Scanner Modal -->
-            <div id="tag-scanner-modal" class="modal hidden">
-                <div class="modal-content">
-                    <span class="close" onclick="closeModal('tag-scanner-modal')">&times;</span>
-                    <h2>Tag Scanner</h2>
-                    <form id="tag-scanner-form">
-                        <div class="form-group">
-                            <label for="tag-path">Directory Path</label>
-                            <input type="text" id="tag-path" required>
+                return (
+                    <>
+                        {/* Topbar */}
+                        <div className="topbar">
+                            <div className="topbar-logo">
+                                <span className="crab">🦀</span>
+                                RustAssistant
+                            </div>
+                            <div className="topbar-sep" />
+                            <div className="topbar-status">
+                                <div className={`status-dot ${ollamaStatus}`} />
+                                <span>
+                                    {ollamaStatus === "online"
+                                        ? "Backend connected"
+                                        : ollamaStatus === "loading"
+                                          ? "Connecting…"
+                                          : "Backend offline — demo mode"}
+                                </span>
+                            </div>
+                            <div className="topbar-right">
+                                <span className="model-badge local">
+                                    qwen2.5-coder:7b
+                                </span>
+                                <span className="model-badge remote">
+                                    grok-2-latest
+                                </span>
+                            </div>
                         </div>
-                        <button type="submit" class="btn btn-primary">Scan Tags</button>
-                    </form>
-                    <div id="tag-results" class="modal-results hidden"></div>
-                </div>
-            </div>
 
-            <!-- Clone Repository Modal -->
-            <div id="clone-modal" class="modal hidden">
-                <div class="modal-content">
-                    <span class="close" onclick="closeModal('clone-modal')">&times;</span>
-                    <h2>Clone Repository</h2>
-                    <form id="clone-form">
-                        <div class="form-group">
-                            <label for="clone-url">Repository URL</label>
-                            <input type="text" id="clone-url" placeholder="https://github.com/user/repo" required>
+                        {/* Layout */}
+                        <div className="layout">
+                            {/* Sidebar */}
+                            <div className="sidebar">
+                                <div className="sidebar-section">
+                                    <div className="sidebar-label">Repos</div>
+                                    {repos.map((repo) => (
+                                        <div
+                                            key={repo.id}
+                                            className={`repo-item${activeRepoId === repo.id ? " active" : ""}`}
+                                            onClick={() =>
+                                                setActiveRepoId(repo.id)
+                                            }
+                                        >
+                                            <div
+                                                className="repo-dot"
+                                                style={{
+                                                    background: repo.color,
+                                                }}
+                                            />
+                                            <span className="repo-name">
+                                                {repo.name}
+                                            </span>
+                                            {repo.todoCount > 0 && (
+                                                <span className="repo-count">
+                                                    {repo.todoCount}
+                                                </span>
+                                            )}
+                                        </div>
+                                    ))}
+                                    <button
+                                        className="add-repo-btn"
+                                        onClick={() => setShowAddRepo(true)}
+                                    >
+                                        + Register repo
+                                    </button>
+                                </div>
+
+                                <div className="queue-summary">
+                                    <div className="sidebar-label">Queue</div>
+                                    <div className="queue-ring-row">
+                                        <RingChart
+                                            value={
+                                                tasks.filter(
+                                                    (t) => t.col === "todo",
+                                                ).length
+                                            }
+                                            max={tasks.length}
+                                            color="var(--accent2)"
+                                            label="todo"
+                                        />
+                                        <RingChart
+                                            value={stagedCount}
+                                            max={tasks.length}
+                                            color="var(--yellow)"
+                                            label="staged"
+                                        />
+                                        <RingChart
+                                            value={doneCount}
+                                            max={tasks.length}
+                                            color="var(--green)"
+                                            label="done"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div
+                                    className="nav-tabs"
+                                    style={{ marginTop: 12 }}
+                                >
+                                    {tabs.map((t) => (
+                                        <div
+                                            key={t.id}
+                                            className={`nav-tab${tab === t.id ? " active" : ""}`}
+                                            onClick={() => setTab(t.id)}
+                                        >
+                                            <span className="tab-icon">
+                                                {t.icon}
+                                            </span>
+                                            {t.label}
+                                            {t.badge > 0 && (
+                                                <span className="tab-badge">
+                                                    {t.badge}
+                                                </span>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* Footer info */}
+                                <div
+                                    style={{
+                                        marginTop: "auto",
+                                        padding: "12px 14px",
+                                        borderTop: "1px solid var(--border)",
+                                    }}
+                                >
+                                    <div
+                                        style={{
+                                            fontSize: 11,
+                                            color: "var(--muted)",
+                                            lineHeight: 1.6,
+                                        }}
+                                    >
+                                        <div
+                                            style={{
+                                                color: "var(--text2)",
+                                                fontWeight: 500,
+                                            }}
+                                        >
+                                            {activeRepo
+                                                ? activeRepo.name
+                                                : "No repo selected"}
+                                        </div>
+                                        {activeRepo && (
+                                            <>
+                                                <div
+                                                    style={{
+                                                        color: "var(--muted)",
+                                                    }}
+                                                >
+                                                    {activeRepo.branch}
+                                                </div>
+                                                <div
+                                                    style={{
+                                                        color: activeRepo.synced
+                                                            ? "var(--green)"
+                                                            : "var(--yellow)",
+                                                    }}
+                                                >
+                                                    {activeRepo.synced
+                                                        ? "✓ synced"
+                                                        : "○ not synced"}
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Main */}
+                            <div className="main">
+                                {tab === "chat" && (
+                                    <ChatPane activeRepo={activeRepo} />
+                                )}
+                                {tab === "tasks" && (
+                                    <TasksPane
+                                        tasks={tasks}
+                                        setTasks={setTasks}
+                                        activeRepo={activeRepo}
+                                    />
+                                )}
+                                {tab === "queue" && <QueuePane tasks={tasks} />}
+                                {tab === "prs" && (
+                                    <PRPane activeRepo={activeRepo} />
+                                )}
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label for="clone-branch">Branch (optional)</label>
-                            <input type="text" id="clone-branch" placeholder="main">
-                        </div>
-                        <button type="submit" class="btn btn-primary">Clone</button>
-                    </form>
-                    <div id="clone-results" class="modal-results hidden"></div>
-                </div>
-            </div>
 
-            <!-- Static Analysis Modal -->
-            <div id="static-modal" class="modal hidden">
-                <div class="modal-content">
-                    <span class="close" onclick="closeModal('static-modal')">&times;</span>
-                    <h2>Static Analysis</h2>
-                    <form id="static-form">
-                        <div class="form-group">
-                            <label for="static-path">Directory Path</label>
-                            <input type="text" id="static-path" required>
-                        </div>
-                        <button type="submit" class="btn btn-primary">Analyze</button>
-                    </form>
-                    <div id="static-results" class="modal-results hidden"></div>
-                </div>
-            </div>
+                        {/* Add repo modal */}
+                        {showAddRepo && (
+                            <AddRepoModal
+                                onAdd={(repo) =>
+                                    setRepos((prev) => [...prev, repo])
+                                }
+                                onClose={() => setShowAddRepo(false)}
+                            />
+                        )}
+                    </>
+                );
+            }
 
-            <!-- Error Display -->
-            <div id="error-display" class="error-display hidden">
-                <span class="close-error" onclick="closeError()">&times;</span>
-                <div class="error-content"></div>
-            </div>
-        </main>
-
-        <footer>
-            <p>Audit Service v</p><span id="version">0.1.0</span> |
-               <a href="https://github.com/jordanistan/fks" target="_blank">Documentation</a>
-            </p>
-        </footer>
-    </div>
-
-    <script src="/static/js/app.js"></script>
-</body>
+            ReactDOM.createRoot(document.getElementById("root")).render(
+                <App />,
+            );
+        </script>
+    </body>
 </html>
