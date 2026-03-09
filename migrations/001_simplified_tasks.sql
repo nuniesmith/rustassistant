@@ -1,15 +1,6 @@
--- Simplified Task Schema Migration
+-- Migration: 001_simplified_tasks.sql
+-- Rewritten for PostgreSQL
 -- Consolidates QueueItem, FileAnalysis, and TodoItem into a single Task table
--- Run with: sqlx migrate run
-
--- ============================================================================
--- Drop old tables (backup first in production!)
--- ============================================================================
-
--- Uncomment these after backing up your data:
--- DROP TABLE IF EXISTS queue_items;
--- DROP TABLE IF EXISTS file_analysis;
--- DROP TABLE IF EXISTS todo_items;
 
 -- ============================================================================
 -- Core Task Table
@@ -17,38 +8,38 @@
 
 CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY NOT NULL,
-    
+
     -- Content
-    content TEXT NOT NULL,              -- The task description/TODO/issue
-    context TEXT,                       -- Surrounding code, file content for LLM
-    llm_suggestion TEXT,                -- LLM-generated fix/implementation
-    
+    content TEXT NOT NULL,
+    context TEXT,
+    llm_suggestion TEXT,
+
     -- Source tracking
-    source_type TEXT NOT NULL DEFAULT 'manual',  -- 'todo', 'scan', 'manual', 'idea'
-    source_repo TEXT,                   -- Repository name (e.g., 'rustassistant')
-    source_file TEXT,                   -- File path within repo
-    source_line INTEGER,                -- Line number for TODOs
-    content_hash TEXT,                  -- For deduplication
-    
+    source_type TEXT NOT NULL DEFAULT 'manual',
+    source_repo TEXT,
+    source_file TEXT,
+    source_line INTEGER,
+    content_hash TEXT,
+
     -- Status & Priority
-    status TEXT NOT NULL DEFAULT 'pending',  -- pending, processing, review, ready, done, failed
-    priority INTEGER NOT NULL DEFAULT 5,     -- 1-10, higher = more important
-    category TEXT,                           -- 'bug', 'refactor', 'feature', 'docs', 'test'
-    
+    status TEXT NOT NULL DEFAULT 'pending',
+    priority INTEGER NOT NULL DEFAULT 5,
+    category TEXT,
+
     -- Grouping
-    group_id TEXT,                      -- Links related tasks together
-    group_reason TEXT,                  -- Why tasks are grouped (same file, similar issue)
-    
+    group_id TEXT,
+    group_reason TEXT,
+
     -- Processing metadata
     retry_count INTEGER NOT NULL DEFAULT 0,
     last_error TEXT,
-    tokens_used INTEGER,                -- Track LLM token usage
-    
+    tokens_used INTEGER,
+
     -- Timestamps
-    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    processed_at INTEGER,
-    completed_at INTEGER
+    created_at BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT,
+    updated_at BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT,
+    processed_at BIGINT,
+    completed_at BIGINT
 );
 
 -- ============================================================================
@@ -67,22 +58,22 @@ CREATE INDEX IF NOT EXISTS idx_tasks_category ON tasks(category);
 CREATE INDEX IF NOT EXISTS idx_tasks_queue ON tasks(status, priority DESC, created_at);
 
 -- ============================================================================
--- Repository Tracking (simplified)
+-- Repository Tracking
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS repositories (
     id TEXT PRIMARY KEY NOT NULL,
-    name TEXT NOT NULL UNIQUE,          -- e.g., 'rustassistant'
-    url TEXT,                           -- GitHub URL
-    local_path TEXT,                    -- Local clone path
-    
-    auto_scan INTEGER NOT NULL DEFAULT 1,  -- Boolean: auto-scan enabled
+    name TEXT NOT NULL UNIQUE,
+    url TEXT,
+    local_path TEXT,
+
+    auto_scan INTEGER NOT NULL DEFAULT 1,
     scan_interval_mins INTEGER NOT NULL DEFAULT 60,
-    last_scanned_at INTEGER,
-    last_commit_hash TEXT,              -- Detect changes
-    
-    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    last_scanned_at BIGINT,
+    last_commit_hash TEXT,
+
+    created_at BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT,
+    updated_at BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT
 );
 
 CREATE INDEX IF NOT EXISTS idx_repos_auto_scan ON repositories(auto_scan, last_scanned_at);
@@ -93,16 +84,16 @@ CREATE INDEX IF NOT EXISTS idx_repos_auto_scan ON repositories(auto_scan, last_s
 
 CREATE TABLE IF NOT EXISTS task_groups (
     id TEXT PRIMARY KEY NOT NULL,
-    name TEXT NOT NULL,                 -- e.g., "src/queue/processor.rs issues"
-    description TEXT,                   -- LLM-generated summary
-    
+    name TEXT NOT NULL,
+    description TEXT,
+
     combined_priority INTEGER NOT NULL DEFAULT 5,
     task_count INTEGER NOT NULL DEFAULT 0,
-    
-    status TEXT NOT NULL DEFAULT 'pending',  -- pending, in_progress, done
-    
-    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    exported_at INTEGER                 -- When copied to IDE
+
+    status TEXT NOT NULL DEFAULT 'pending',
+
+    created_at BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT,
+    exported_at BIGINT
 );
 
 -- ============================================================================
@@ -110,15 +101,15 @@ CREATE TABLE IF NOT EXISTS task_groups (
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS llm_usage (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id BIGSERIAL PRIMARY KEY,
     task_id TEXT,
-    operation TEXT NOT NULL,            -- 'analyze', 'suggest', 'batch_analyze'
+    operation TEXT NOT NULL,
     tokens_input INTEGER NOT NULL DEFAULT 0,
     tokens_output INTEGER NOT NULL DEFAULT 0,
-    cost_usd REAL,                      -- Calculated cost
+    cost_usd REAL,
     model TEXT DEFAULT 'grok-4.1',
-    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    
+    created_at BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT,
+
     FOREIGN KEY (task_id) REFERENCES tasks(id)
 );
 
@@ -128,40 +119,44 @@ CREATE INDEX IF NOT EXISTS idx_llm_usage_created ON llm_usage(created_at);
 -- Views for common queries
 -- ============================================================================
 
--- Pending tasks queue (what to work on next)
-CREATE VIEW IF NOT EXISTS v_task_queue AS
-SELECT 
+CREATE OR REPLACE VIEW v_task_queue AS
+SELECT
     t.*,
-    g.name as group_name,
-    g.task_count as group_size
+    g.name AS group_name,
+    g.task_count AS group_size
 FROM tasks t
 LEFT JOIN task_groups g ON t.group_id = g.id
 WHERE t.status IN ('pending', 'review', 'ready')
 ORDER BY t.priority DESC, t.created_at ASC;
 
--- Daily stats
-CREATE VIEW IF NOT EXISTS v_daily_stats AS
-SELECT 
-    date(created_at, 'unixepoch') as day,
-    COUNT(*) as tasks_created,
-    SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as tasks_completed,
-    SUM(tokens_used) as total_tokens
+CREATE OR REPLACE VIEW v_daily_stats AS
+SELECT
+    TO_CHAR(TO_TIMESTAMP(created_at), 'YYYY-MM-DD') AS day,
+    COUNT(*) AS tasks_created,
+    SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS tasks_completed,
+    SUM(tokens_used) AS total_tokens
 FROM tasks
-GROUP BY date(created_at, 'unixepoch')
+GROUP BY TO_CHAR(TO_TIMESTAMP(created_at), 'YYYY-MM-DD')
 ORDER BY day DESC;
 
 -- ============================================================================
 -- Triggers for updated_at
 -- ============================================================================
 
-CREATE TRIGGER IF NOT EXISTS tasks_updated_at 
-AFTER UPDATE ON tasks
+CREATE OR REPLACE FUNCTION set_updated_at()
+RETURNS TRIGGER AS $$
 BEGIN
-    UPDATE tasks SET updated_at = unixepoch() WHERE id = NEW.id;
+    NEW.updated_at = EXTRACT(EPOCH FROM NOW())::BIGINT;
+    RETURN NEW;
 END;
+$$ LANGUAGE plpgsql;
 
-CREATE TRIGGER IF NOT EXISTS repos_updated_at
-AFTER UPDATE ON repositories
-BEGIN
-    UPDATE repositories SET updated_at = unixepoch() WHERE id = NEW.id;
-END;
+DROP TRIGGER IF EXISTS tasks_updated_at ON tasks;
+CREATE TRIGGER tasks_updated_at
+BEFORE UPDATE ON tasks
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS repos_updated_at ON repositories;
+CREATE TRIGGER repos_updated_at
+BEFORE UPDATE ON repositories
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();

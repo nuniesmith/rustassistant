@@ -22,43 +22,37 @@
 
 ### Rust-Native TODO System
 
-- [x] ~~Add a `rustassistant todo-scan <repo-path>` command~~ ✅ Done — `todo scan . --json --output .rustassistant/scan_fresh.json` runs offline. 208 items / 50 files. UTF-8 truncation panic fixed.
-- [x] ~~Generate a GAMEPLAN from a `todo.md` file using the Rust LLM client~~ ✅ Done — `todo plan todo.md --context . --output .rustassistant/gameplan.json` produces 10 batches / 17 items. Partial-JSON recovery added for truncated responses.
-- [x] ~~Execute a single batch from the gameplan~~ ✅ Done — `todo work .rustassistant/gameplan.json --batch batch-006` ran 3 items, patched `src/api/handlers.rs` cleanly. `skip_todo_md_update` flag added so IDs stay stable for `todo-sync`.
-- [x] ~~Build a `TodoFile` struct that can parse, update, and write back `todo.md`~~ ✅ Done — `todo sync todo.md .rustassistant/results/batch-006.json` found all 3 items by stable CRC32 ID and marked them ✅ Done.
+- [x] ~~Add a `rustassistant todo-scan <repo-path>` command~~ ✅ Done — `todo scan . --json --output .rustassistant/scan_fresh.json` runs offline.
+- [x] ~~Generate a GAMEPLAN from a `todo.md` file using the Rust LLM client~~ ✅ Done — `todo plan todo.md --context . --output .rustassistant/gameplan.json`.
+- [x] ~~Execute a single batch from the gameplan~~ ✅ Done — `todo work .rustassistant/gameplan.json --batch batch-006` ran 3 items, patched `src/api/handlers.rs` cleanly.
+- [x] ~~Build a `TodoFile` struct that can parse, update, and write back `todo.md`~~ ✅ Done — `todo sync todo.md .rustassistant/results/batch-006.json` finds all items by stable CRC32 ID.
+- [x] ~~`todo work --auto-sync`~~ ✅ Done — `--auto-sync` flag is live in `src/bin/cli.rs`. After a successful work + compile-check pass it automatically calls `todo sync`, eliminating the manual step 4. `--todo-md` override flag added too.
 - [ ] **Wire workflow to Docker image** — Replace the Python `todo-analyze`, `todo-plan`, and `todo-work` steps in `llm-audit.yml` with calls to `./rustassistant-bin todo <command>`. All 5 subcommands exist. Python stays as fallback if image pull fails.
 
-### Model Router (NEW — `todo/model_router.rs` → `src/model_router.rs`)
+### Model Router (`src/model_router.rs`)
 
-> Scaffolded stub at `todo/model_router.rs`. Copy to `src/model_router.rs` and wire in.
-> Routes tasks between local Ollama (Qwen2.5-Coder 7B) and remote Grok based on task kind.
+- [x] ~~**Copy stub to `src/model_router.rs`**~~ ✅ Done — live with `TaskKind`, `ModelTarget`, `ModelRouterConfig`, `ModelRouter`, `CompletionRequest/Response`, and tests.
+- [x] ~~**Wire `ModelRouter` into `AppState`**~~ ✅ Done — instantiated in `src/server.rs::run_server`, shared via `Arc<ModelRouter>` in `RepoAppState`.
+- [x] ~~**Replace `call_model_stub` in `repos_api.rs`**~~ ✅ Done — `handle_chat` dispatches to `OllamaClient::complete()` for local and `GrokClient::ask_tracked()` for remote.
+- [x] ~~**Implement Ollama HTTP client**~~ ✅ Done — `src/ollama_client.rs` with `POST /api/chat`, retry + exponential back-off, health check, model list, token pass-through.
+- [x] ~~**Upgrade keyword classifier to LLM-based**~~ ✅ Done — `ModelRouter::classify_prompt_async` / `llm_classify` sends a one-shot classification prompt to the local Ollama model and parses the returned `TaskKind`. Falls back to `keyword_classify` if Ollama is unreachable. Covers all 8 `TaskKind` variants.
+- [x] ~~**Add `.env` entries for local model**~~ ✅ Done — `OLLAMA_BASE_URL`, `LOCAL_MODEL`, `OLLAMA_TIMEOUT_SECS`, `OLLAMA_MAX_RETRIES`, `FORCE_REMOTE_MODEL` all wired.
 
-- [x] ~~**Copy stub to `src/model_router.rs`**~~ ✅ Done — `src/model_router.rs` is live with TaskKind, ModelTarget, ModelRouterConfig, ModelRouter, CompletionRequest/Response, and tests. Registered in `src/lib.rs`.
-- [x] ~~**Wire `ModelRouter` into `AppState`**~~ ✅ Done — `ModelRouter::new(ModelRouterConfig { remote_api_key: XAI_API_KEY, .. })` instantiated in `src/server.rs::run_server` and shared via `Arc<ModelRouter>` in `RepoAppState`.
-- [x] ~~**Replace `call_model_stub` in `repos_api.rs`**~~ ✅ Done — `handle_chat` now dispatches to `OllamaClient::complete()` for `ModelTarget::Local` and `GrokClient::ask_tracked()` for `ModelTarget::Remote`. `call_model_stub` removed entirely.
-- [x] ~~**Implement Ollama HTTP client**~~ ✅ Done — `src/ollama_client.rs` written with `POST /api/chat`, retry + exponential back-off, `GrokClient` fallback, `health_check()`, `list_models()`, token pass-through from `eval_count` / `prompt_eval_count`. Registered in `src/lib.rs`.
-- [ ] **Upgrade keyword classifier to LLM-based** — `ModelRouter::classify_prompt` currently uses naive keyword matching (`TODO`). Replace or augment with a one-shot classification prompt against the local model: `"Classify this task as one of: ScaffoldStub | TodoTagging | TreeSummary | SymbolExtraction | RepoQuestion | ArchitecturalReason | CodeReview | Unknown"`.
-- [x] ~~**Add `.env` entries for local model**~~ ✅ Done — `OLLAMA_BASE_URL`, `LOCAL_MODEL`, `OLLAMA_TIMEOUT_SECS`, `OLLAMA_MAX_RETRIES`, `FORCE_REMOTE_MODEL` all documented and wired via `OllamaClientConfig::default()`. `.env.rustassistant` template copied to repo root.
+### Repo Sync Service (`src/repo_sync.rs`)
 
-### Repo Sync Service (NEW — `todo/repo_sync.rs` → `src/repo_sync.rs`)
+- [x] ~~**Copy stub to `src/repo_sync.rs`**~~ ✅ Done — live with `RepoSyncService`, tree walker, TODO extractor, syn symbol extractor, `.rustassistant/` cache management.
+- [x] ~~**Persist `RepoSyncService.repos` to Postgres**~~ ✅ Done — `migrations/015_registered_repos.sql` added. `RepoSyncService::with_db(pool)` constructor wired. Server startup calls `load_from_db()`. Upsert, soft-delete, and `last_synced` update all wired.
+- [x] ~~**Replace naive symbol extractor with `syn`-based AST parse**~~ ✅ Done — `extract_symbols_syn()` using `syn::parse_file` handles `fn`, `struct`, `enum`, `trait`, `impl`, `type`, `const`, `mod` at top level. Falls back to line scanner for macro-heavy files.
+- [x] ~~**Chunk changed files on sync and re-embed**~~ ✅ Done — after `sync()` completes, all `.rs` files are passed to `embed_rust_files()` in a background `tokio::spawn`. On success the in-process HNSW index is rebuilt via `refresh_rag_index()`.
+- [x] ~~**Add webhook trigger for push-event sync**~~ ✅ Done — `POST /api/github/webhook` handler added to `src/server.rs`. Verifies `X-Hub-Signature-256` (when `GITHUB_WEBHOOK_SECRET` is set), parses `PushEvent`, finds any registered repo whose `remote_url` contains the GitHub `full_name`, and calls `RepoSyncService::sync` in a background `tokio::spawn`. Returns 200 immediately so GitHub never times out.
+- [x] ~~**`tree.txt` rolling snapshot on every tick**~~ ✅ Done — see `tree.txt` webhook-triggered regeneration item above.
 
-> Full async `RepoSyncService` scaffolded at `todo/repo_sync.rs`. Handles tree walks,
-> TODO extraction, symbol extraction, and `.rustassistant/` cache management per repo.
+### Repo API Layer (`src/api/repos.rs`)
 
-- [x] ~~**Copy stub to `src/repo_sync.rs`**~~ ✅ Done — `src/repo_sync.rs` is live with `RepoSyncService`, `RegisteredRepo`, tree walker, TODO extractor, symbol extractor, and `.rustassistant/` cache management. `async-recursion = "1"` confirmed in `Cargo.toml`. Registered in `src/lib.rs`.
-- [x] ~~**Persist `RepoSyncService.repos` to SQLite**~~ ✅ Done — `migrations/015_registered_repos.sql` added with the full schema (id, name, local_path, remote_url, branch, last_synced, active, created_at, updated_at, unique index on local_path, active index, updated_at trigger). `RepoSyncService::with_db(pool)` constructor added; `load_from_db()` called at server startup to restore persisted repos. `register()` uses `query_unchecked!` upsert; `remove_repo_async()` soft-deletes; `sync()` updates `last_synced` in both memory and DB. Server wired to re-use the app's existing `SqlitePool`.
-- [ ] **Replace naive symbol extractor with `syn`-based AST parse** — `extract_symbols` in `repo_sync.rs` uses a line-scanner. Replace with `syn::parse_file` to correctly handle multi-line signatures, trait bounds, lifetimes, and generics.
-- [ ] **Add webhook trigger for push-event sync** — `POST /api/v1/repos/:id/sync` already exists in `repos_api.rs`. Wire GitHub webhook push events (already handled in `src/webhooks.rs`) to call `RepoSyncService::sync` for the matching repo so `tree.txt` / `todos.json` stay real-time.
-- [ ] **Chunk changed files on sync and re-embed** — after `sync()` completes, diff the new `tree.txt` against the previous one, chunk only the changed `.rs` files, and update the HNSW / LanceDB embedding index via the existing `src/embeddings.rs` + `src/vector_index.rs` pipeline.
-
-### Repo API Layer (NEW — `todo/repos_api.rs` → `src/api/repos.rs`)
-
-> REST endpoints + chat handler scaffolded at `todo/repos_api.rs`.
-
-- [x] ~~**Copy stub to `src/api/repos.rs`**~~ ✅ Done — `src/api/repos.rs` is live with all CRUD + chat handlers. `pub mod repos;` added in `src/api/mod.rs`. `repo_router(repo_app_state)` mounted under `.nest("/api/v1", ...)` in `src/server.rs`.
-- [x] ~~**Add Redis response cache to chat handler**~~ ✅ Done — `handle_chat` now builds a SHA-256 cache key over `(target_label, prompt, repo_id)`, checks `CacheLayer::get` before calling the model, and fire-and-forgets a `CacheLayer::set` (TTL 1 hour) after a successful response. `CacheLayer` initialised with Redis when `REDIS_URL` env var is set, falls back to in-memory LRU otherwise. `ChatResponse.cached: bool` field added. `no_cache: bool` request field added for bypass. `RepoAppState::from_env()` builder wires the cache. `GrokClient::model_name()` accessor added.
-- [x] ~~**Wire real `OllamaClient` / `XaiClient` into `RepoAppState`**~~ ✅ Done — `RepoAppState` now holds `ollama_client: Arc<OllamaClient>`, `grok_client: Option<Arc<GrokClient>>`, and `cache: Arc<CacheLayer>`. `RepoAppState::from_env()` builder constructs all three from env vars at startup. Server startup constructs `GrokClient` from `XAI_API_KEY` (skips gracefully when unset). Two new endpoints added: `GET /api/v1/ollama/health` and `GET /api/v1/ollama/models`.
-- [x] ~~**Populate `tokens_used` in `ChatResponse`**~~ ✅ Done — `dispatch_completion` returns `Option<u32>` token count; Ollama path sums `prompt_eval_count + eval_count`; Grok path casts `prompt_tokens + completion_tokens` from `AskResponse`. `ChatResponse.tokens_used` is now populated on every successful model call.
+- [x] ~~**Copy stub to `src/api/repos.rs`**~~ ✅ Done — all CRUD + chat handlers live.
+- [x] ~~**Add Redis response cache to chat handler**~~ ✅ Done — SHA-256 cache key over `(target_label, prompt, repo_id)`, TTL 1h, `no_cache` bypass, `cached: bool` in response.
+- [x] ~~**Wire real `OllamaClient` / `GrokClient` into `RepoAppState`**~~ ✅ Done — `RepoAppState::from_env()` builds all three from env vars.
+- [x] ~~**Populate `tokens_used` in `ChatResponse`**~~ ✅ Done — Ollama path sums `prompt_eval_count + eval_count`; Grok path casts `prompt_tokens + completion_tokens`.
 - [ ] **Full endpoint list after wiring:**
   ```
   POST   /api/v1/repos                   Register a repo
@@ -74,30 +68,47 @@
   POST   /api/v1/chat/repos/:id          Chat with repo context injected
   ```
 
-### Sync Scheduler (NEW — `todo/sync_scheduler.rs` → `src/sync_scheduler.rs`)
+### Sync Scheduler (`src/sync_scheduler.rs`)
 
-> Background 5-minute sync loop scaffolded at `todo/sync_scheduler.rs`.
-
-- [x] ~~**Copy stub to `src/sync_scheduler.rs`**~~ ✅ Done — `src/sync_scheduler.rs` is live with `SyncScheduler` + `SyncSchedulerConfig`. Registered in `src/lib.rs`.
-- [x] ~~**Spawn scheduler at server startup**~~ ✅ Done — `SyncScheduler::new(SyncSchedulerConfig { interval: Duration::from_secs(REPO_SYNC_INTERVAL_SECS), .. }, Arc::clone(&sync_service)).start()` called in `src/server.rs::run_server`. `REPO_SYNC_INTERVAL_SECS` env var wired (default 300s).
-- [x] ~~**Replace sequential sync loop with `JoinSet` + semaphore**~~ ✅ Done — `run_sync_pass` now collects due-repo IDs up-front (filtering by `skip_if_synced_within`), spawns one `JoinSet` task per repo gated by `Arc<Semaphore::new(concurrency)>`, drains results with per-task error logging, and reports non-fatal sync errors via `warn!`. `REPO_SYNC_CONCURRENCY` env var wired into `SyncSchedulerConfig::default()`. First ticker tick skipped to avoid hammering disk at startup.
-- [x] ~~**Add `REPO_SYNC_INTERVAL_SECS` env var**~~ ✅ Done — `run_server` reads `REPO_SYNC_INTERVAL_SECS` and passes it to `SyncSchedulerConfig::interval`. Default 300s. Documented in `.env.rustassistant`.
-
-### API & Data Layer
-
-- [x] ~~**Fix admin module**~~ ✅ Done — `pub mod admin` uncommented in `src/api/mod.rs`. `admin.rs` rewritten to use actual `ApiState` fields only: removed all references to `cache_layer`, `vector_index`, `webhook_manager`, `analytics`. Removed webhook + analytics endpoints (not in ApiState). Kept: `GET /admin/stats`, `GET /admin/health`, `GET/POST /admin/api-keys`, `DELETE /admin/api-keys/:id`, `GET /admin/jobs`, `POST /admin/jobs/:id/retry`. `admin_router()` merged into `create_api_router`. `hash_api_key` made `pub` in `auth.rs` and re-exported from `api/mod.rs` + `lib.rs`. `JobQueue::pending_count()` added (sync, uses `try_read`). `AdminStats` now includes `queue_depth` and `uptime_secs`.
-- [x] ~~Implement proper document listing with filters (`src/api/handlers.rs:345`)~~ ✅ Done — src/api/handlers.rs
-- [x] ~~Implement document stats `by_type` counts (`src/api/handlers.rs:132`)~~ ✅ Done — src/api/handlers.rs
-- [x] ~~Calculate average chunk size (`src/api/handlers.rs:137`)~~ ✅ Done — src/api/handlers.rs
+- [x] ~~**Copy stub to `src/sync_scheduler.rs`**~~ ✅ Done.
+- [x] ~~**Spawn scheduler at server startup**~~ ✅ Done — `SyncScheduler::new(...).start()` called in `run_server`. `REPO_SYNC_INTERVAL_SECS` env var wired (default 300s).
+- [x] ~~**Replace sequential sync loop with `JoinSet` + semaphore**~~ ✅ Done — concurrent sync with `REPO_SYNC_CONCURRENCY` env var.
+- [x] ~~**Add `REPO_SYNC_INTERVAL_SECS` env var**~~ ✅ Done.
 
 ### Search & RAG
 
-- [ ] **Integrate RAG with LanceDB vector search** — `search_rag_context` in `src/research/worker.rs:275` returns empty results. Implement vector similarity query against embeddings stored via `src/vector_index.rs` and `src/embeddings.rs`, passing results through `enhance_prompt_with_rag`.
-- [ ] **Feed `RepoSyncService` embeddings into RAG pipeline** — after each sync, chunk changed `.rs` files and upsert embeddings so the chat handler's RAG context is always current.
+- [x] ~~**Integrate RAG with LanceDB vector search**~~ ✅ Done — `search_rag_context` in `src/research/worker.rs` builds/queries a lazily initialised in-process HNSW index backed by Postgres embeddings. `enhance_prompt_with_rag` prepends top-k results to the prompt. `handle_chat` in `repos_api.rs` calls both. `refresh_rag_index` is triggered at server startup and after every sync.
+- [ ] **Feed `RepoSyncService` embeddings into RAG pipeline more granularly** — current implementation re-embeds ALL `.rs` files on every sync. Diff the new `tree.txt` against the previous snapshot and only chunk files that actually changed, reducing embedding churn.
 
-### Indexing
+### API & Data Layer
 
-- [x] ~~**Implement concurrent batch indexing with semaphore**~~ ✅ Done — `BatchIndexer::index_batch` now uses `tokio::task::JoinSet` gated by `Arc<tokio::sync::Semaphore::new(self.concurrency)>`. Each document gets its own spawned task; individual failures are logged and skipped without aborting the batch. Summary log (total/succeeded/failed) emitted on completion. `BatchIndexer.indexer` field changed to `Arc<DocumentIndexer>` to allow sharing across tasks. `concurrency()` accessor added.
+- [x] ~~**Fix admin module**~~ ✅ Done — `pub mod admin` live. `hash_api_key` pub. `JobQueue::pending_count()` added. `AdminStats` includes `queue_depth` and `uptime_secs`.
+- [x] ~~Implement proper document listing with filters~~ ✅ Done — `src/api/handlers.rs`
+- [x] ~~Implement document stats `by_type` counts~~ ✅ Done — `src/api/handlers.rs`
+- [x] ~~Calculate average chunk size~~ ✅ Done — `src/api/handlers.rs`
+
+### Audit Endpoint (`src/audit/endpoint.rs`)
+
+> `audit_router()` is fully implemented and mounted. The legacy `POST /api/audit` / `GET /api/audit/{id}` routes and handlers have been removed from `server.rs` and replaced by the new pipeline.
+
+- [x] ~~**Mount `audit_router` in `src/server.rs`**~~ ✅ Done — legacy `create_audit` / `get_audit` / `get_audit_tasks` handlers removed. `AuditState::from_env()` built at startup; `.merge(audit_router(audit_state))` wires all three routes.
+- [x] ~~**Implement `handle_audit_post`**~~ ✅ Done — validates repo path, pre-allocates `run_id`, spawns background task that calls `AuditRunnerWithGrok::run()` (or `run_static_only()` when no `XAI_API_KEY`), writes `docs/audit/<run_id>.json` + `.md`, returns 202 with `AuditJobAccepted`.
+- [x] ~~**Implement `handle_audit_get_by_id`**~~ ✅ Done — reads `docs/audit/<id>.json`, returns 200 with full report JSON, 404 if not found, 400 on path-traversal attempt.
+- [x] ~~**Implement `handle_audit_get`**~~ ✅ Done — lists all `*.json` files under `docs/audit/`, deserialises each into `AuditReportSummary`, returns sorted newest-first.
+- [x] ~~**Wire `RedisAuditCache` into audit handlers**~~ ✅ Done — `RedisAuditCache::from_env()` initialised inside `AuditState::from_env()`; held in `Arc<RwLock<RedisAuditCache>>` on `AuditState`. Degrades gracefully to no-op when Redis is unreachable.
+- [x] ~~**Auto-append audit findings to `todo.md`**~~ ✅ Done — `AuditRunnerWithGrok::run()` already calls `append_findings_to_todo` when `request.append_to_todo` is true. `append_to_todo` field is in `AuditRequest` and passed through from the POST body unchanged.
+
+### Postgres Migration
+
+> **Status: ✅ Mostly complete.** `Cargo.toml` uses `sqlx` with `postgres` feature. `docker-compose.yml` includes Postgres 16. `server.rs` uses `PgPool`. All migration files exist. The `research/worker.rs` already uses `PgPool`. Steps remaining below.
+
+- [x] ~~**Add `postgres` service to `docker-compose.yml`**~~ ✅ Done — Postgres 16-alpine with healthcheck, named volume `postgres_data`, wired into `depends_on`.
+- [x] ~~**Swap `sqlite` feature for `postgres` in `Cargo.toml`**~~ ✅ Done — `sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chrono", "macros"] }`.
+- [x] ~~**Replace `SqlitePool` with `PgPool`**~~ ✅ Done — `src/server.rs` and `src/research/worker.rs` use `PgPool`. `RepoSyncService::db` is `Option<PgPool>`.
+- [x] ~~**Audit all 15 migration files for Postgres syntax**~~ ✅ Done — all 15 migrations verified clean. `001`–`015` already use `BIGSERIAL`, `EXTRACT(EPOCH FROM NOW())::BIGINT`, `INSERT ... ON CONFLICT DO NOTHING/UPDATE`, `tsvector`/`GIN` FTS, and Postgres triggers. No SQLite-isms remain.
+- [ ] **Port `RepoSyncService` upsert to Postgres syntax** — `load_from_db`, `register`, `remove_repo_async`, and `sync` in `src/repo_sync.rs` use `query_unchecked!` with SQLite-flavoured upserts. Rewrite as `INSERT ... ON CONFLICT (local_path) DO UPDATE SET ...` and switch to typed `query!` macros.
+- [ ] **Regenerate `.sqlx` query cache** — run `cargo sqlx prepare` against a live Postgres instance after migrations are stable. Commit the regenerated `.sqlx/` directory. Remove `SQLX_OFFLINE=true` workaround.
+- [ ] **Data migration (optional)** — use `pgloader` to copy any SQLite dev data if worth preserving. Cast `JSONB` columns after load.
 
 ---
 
@@ -106,32 +117,32 @@
 > Pipeline tested end-to-end against this repo on 2026-03-08.
 
 ### Bugs fixed during validation run
-- [x] ~~`DATABASE_URL` env var mis-parsed~~ ✅ Fixed — `init_db` now strips both `sqlite:` and `sqlite://` prefixes; `.env` corrected from `sqlite://data/devflow.db` → `sqlite:data/rustassistant.db`
-- [x] ~~UTF-8 panic in scan table renderer~~ ✅ Fixed — `render_scan_table_items` now uses `.chars().count()` / `.chars().take(57)` instead of raw byte-index slicing
-- [x] ~~`max_tokens` hardcoded to 2000~~ ✅ Fixed — `call_api_once` now reads `XAI_MAX_TOKENS` env var (default 8000); `.env` updated to 8000
-- [x] ~~`XAI_MODEL` ignored by GrokClient~~ ✅ Fixed — `GrokClient::new` now reads `XAI_MODEL` env var; model changed to `grok-4-1-fast-non-reasoning` for code generation (6× faster, no timeout)
-- [x] ~~HTTP timeout too short for large LLM calls~~ ✅ Fixed — reqwest client timeout increased from 90s → 180s
-- [x] ~~Truncated LLM game plan JSON parsed as empty~~ ✅ Fixed — `parse_batches_from_response` now has a partial-JSON recovery path that extracts complete batch objects even from cut-off responses
-- [x] ~~Worker pre-empts `todo-sync` by modifying `todo.md` in-place~~ ✅ Fixed — `WorkConfig::skip_todo_md_update` flag added; CLI `todo work` sets it so the syncer can find items by their original (unchanged) CRC32 IDs
-- [x] ~~LLM-generated code used wrong `TypeCount` field name (`type_name` vs `doc_type`)~~ ✅ Fixed manually after work step
-- [x] ~~LLM-generated code used undefined `DocumentListRow` struct~~ ✅ Fixed manually — replaced with inline tuple type `(String, String, Option<String>, ...)`
-- [x] ~~Duplicate/mis-ordered binding code in `list_documents`~~ ✅ Fixed manually — removed the duplicate `list_q` initialisation and extra parameter-binding blocks
+- [x] ~~`DATABASE_URL` env var mis-parsed~~ ✅ Fixed
+- [x] ~~UTF-8 panic in scan table renderer~~ ✅ Fixed
+- [x] ~~`max_tokens` hardcoded to 2000~~ ✅ Fixed — reads `XAI_MAX_TOKENS` env var (default 8000)
+- [x] ~~`XAI_MODEL` ignored by GrokClient~~ ✅ Fixed
+- [x] ~~HTTP timeout too short for large LLM calls~~ ✅ Fixed — 180s
+- [x] ~~Truncated LLM game plan JSON parsed as empty~~ ✅ Fixed — partial-JSON recovery path
+- [x] ~~Worker pre-empts `todo-sync` by modifying `todo.md` in-place~~ ✅ Fixed — `skip_todo_md_update` flag
+- [x] ~~LLM-generated code used wrong `TypeCount` field name~~ ✅ Fixed manually
+- [x] ~~LLM-generated code used undefined `DocumentListRow` struct~~ ✅ Fixed manually
+- [x] ~~Duplicate/mis-ordered binding code in `list_documents`~~ ✅ Fixed manually
 
 ### Pipeline issues fixed after initial run
-- [x] ~~LLM code generation quality: worker sometimes generates code with wrong field names or undefined types~~ ✅ Fixed — `todo work` now runs `cargo check` (with `SQLX_OFFLINE=true`) after applying changes; on failure it rolls back every touched file to its pre-change snapshot and does NOT write the `WorkResult`. Pass `--no-check` to skip for non-Rust repos or manual review.
-- [x] ~~`todo scaffold` warns "Could not parse LLM scaffold plan" even when JSON parsed successfully~~ ✅ Fixed — extracted a `try_parse()` helper; the warn now only fires after all three parse strategies have failed.
-- [x] ~~2 doctest failures in `src/audit/cache.rs` and `src/audit/endpoint.rs`~~ ✅ Fixed — annotated with `rust,ignore`. Full test suite: **417 lib + 33 doctests, 0 failures**.
+- [x] ~~LLM code generation quality: worker sometimes generates code with wrong field names~~ ✅ Fixed — `todo work` now runs `cargo check` after applying; rolls back on failure
+- [x] ~~`todo scaffold` warns "Could not parse LLM scaffold plan" even when JSON parsed successfully~~ ✅ Fixed
+- [x] ~~2 doctest failures in `src/audit/cache.rs` and `src/audit/endpoint.rs`~~ ✅ Fixed — annotated with `rust,ignore`. Full test suite: **417 lib + 33 doctests, 0 failures**
 
 ### Step validation checklist
-- [x] **Step 0 — Scan** ✅ `todo scan . --json` → 208 items, 50 files, 23 high / 149 medium / 36 low
-- [x] **Step 1 — Scaffold** ✅ `todo scaffold . --dry-run` → 6 existing files correctly identified as skipped
-- [x] **Step 2 — Plan** ✅ `todo plan todo.md --context .` → 10 batches, 17 items planned, 4 skipped
-- [x] **Step 3 — Work (dry-run)** ✅ `todo work … --batch batch-006 --dry-run` → 3/3 items would patch `src/api/handlers.rs` cleanly
-- [x] **Step 3 — Work (real)** ✅ `todo work … --batch batch-006` → 3 hunks applied, compile check passed, result written
-- [x] **Step 4 — Sync (dry-run)** ✅ `todo sync todo.md … --dry-run` → all 3 items found by CRC32 ID
-- [x] **Step 4 — Sync (real)** ✅ `todo sync todo.md … --append-summary` → 3 items marked `[x] ✅ Done`
+- [x] **Step 0 — Scan** ✅ `todo scan . --json` → 208 items, 50 files
+- [x] **Step 1 — Scaffold** ✅ `todo scaffold . --dry-run` → 6 existing files correctly skipped
+- [x] **Step 2 — Plan** ✅ `todo plan todo.md --context .` → 10 batches, 17 items
+- [x] **Step 3 — Work (dry-run)** ✅ `todo work … --batch batch-006 --dry-run` → 3/3 would patch
+- [x] **Step 3 — Work (real)** ✅ `todo work … --batch batch-006` → 3 hunks, compile passed
+- [x] **Step 4 — Sync (dry-run)** ✅ `todo sync todo.md … --dry-run` → all 3 found by CRC32 ID
+- [x] **Step 4 — Sync (real)** ✅ `todo sync todo.md … --append-summary` → 3 marked ✅
 - [x] **Compile check** ✅ `SQLX_OFFLINE=true cargo build --bin rustassistant` — clean
-- [x] **Test suite** ✅ `cargo test` → 417 lib + 33 doctests passed, 0 failed
+- [x] **Test suite** ✅ `cargo test` → 417 lib + 33 doctests, 0 failed
 
 ---
 
@@ -139,38 +150,32 @@
 
 ### Local Model Integration
 
-> See `todo/merge.md` for full architecture rationale. 8GB VRAM sweet spot:
-> **Qwen2.5-Coder 7B** (Q4_K_M) for scaffold/stub gen, Grok for complex reasoning + review.
-
-- [ ] **Pull and serve Qwen2.5-Coder 7B via Ollama** — `ollama pull qwen2.5-coder:7b`. Run as sidecar in `docker-compose.yml` alongside Redis. Expose on `localhost:11434`.
-- [x] ~~**Add Ollama service to `docker-compose.yml`**~~ ✅ Done — `docker-compose.rustassistant.yml` at repo root includes `ollama` service with CUDA GPU passthrough, `ollama-init` one-shot model puller, and `OLLAMA_BASE_URL` wired into the app service.
-- [x] ~~**Implement `src/ollama_client.rs`**~~ ✅ Done — full implementation: `POST /api/chat`, `stream: false`, `options.num_predict` + `temperature`, `OllamaClientConfig::default()` reads env vars, retry loop, `GrokClient` fallback, `health_check()`, `list_models()`. See `src/ollama_client.rs`.
-- [ ] **Routing heuristic tuning** — after initial Ollama integration, measure stub quality. Adjust `ModelRouter::classify_prompt` thresholds or swap naive keyword match for a classify-first LLM call. Target: scaffold/stub tasks stay local, architectural review always goes remote.
+- [ ] **Pull and serve Qwen2.5-Coder 7B via Ollama** — `ollama pull qwen2.5-coder:7b`. Runs as sidecar in `docker-compose.yml` with CUDA GPU passthrough. `ollama-init` one-shot puller service already in compose file.
+- [x] ~~**Add Ollama service to `docker-compose.yml`**~~ ✅ Done — `ollama` service with CUDA passthrough, `ollama-init` puller, `OLLAMA_BASE_URL` wired into app service.
+- [x] ~~**Implement `src/ollama_client.rs`**~~ ✅ Done — full implementation with retry, fallback, health check, model list.
+- [ ] **Routing heuristic tuning** — `ModelRouter::llm_classify` is now implemented. After initial deployment, measure stub quality vs. Grok. Adjust the classification system prompt or escalation threshold. Target: scaffold/stub tasks stay local, architectural review always goes remote.
 
 ### `.rustassistant/` Per-Repo Cache
 
-> Architecture detailed in `todo/merge.md`. Cache dir spec in `todo/sync_scheduler.rs:RUSTASSISTANT_DIR_SPEC`.
-
-- [ ] **`tree.txt` rolling snapshot** — `RepoSyncService::walk_tree` already generates it. Wire the scheduler so it regenerates on every 5-min tick and on every git push webhook. Prepend tree to every code-gen prompt in `CompletionRequest::build_prompt`.
-- [x] ~~**`symbols.json` AST upgrade**~~ ✅ Done — `extract_symbols` now tries `extract_symbols_syn()` (using `syn::parse_file`) first for every `.rs` file, falling back to the old `extract_symbols_lines()` line-scanner only when syn fails to parse (e.g. macro-heavy or generated files). `syn` handles `fn`, `struct`, `enum`, `trait`, `impl`, `type`, `const`, `mod` at the top level, including `pub` visibility and `async` detection. `impl Trait for Type` renders as `"Trait for Type"` in the symbol name. `syn = { version = "2", features = ["full", "extra-traits"] }` added to `Cargo.toml`.
-- [x] ~~**`todos.json` deduplication**~~ ✅ Done — `extract_todos` now maintains a `HashSet<(String, usize)>` keyed on `(file, line)`. Duplicate entries from repeated syncs of the same file are silently dropped before being pushed to the output vec.
-- [ ] **`embeddings.bin` exclusion from git** — `RepoSyncService::register` already writes `.rustassistant/.gitignore` with `embeddings.bin`. Verify the entry is present and that `git status` does not show the file.
-- [x] ~~**`context.md` auto-injection**~~ ✅ Done — `build_prompt_context` now loads `symbols.json` and `manifest.json` in addition to `tree.txt` and `todos.json`. Header shows `crate_name` from manifest. TODO section shows `(none)` when empty. Added **Key Public Symbols** section: top 5 public symbols sorted fns-first, formatted as `async? Kind name (file:line)`. Total context stays under ~3000 chars.
+- [x] ~~**`tree.txt` webhook-triggered regeneration**~~ ✅ Done — `RepoSyncService::sync()` already writes `tree.txt` on every tick and manual sync. The `POST /api/github/webhook` push handler (added in batch-007) calls `svc.sync()` in a background task, so `tree.txt` is regenerated on every push event. `build_prompt_context` already prepends the first 80 lines of `tree.txt` into every `CompletionRequest::repo_context`, which `build_prompt()` injects before the user task.
+- [x] ~~**`symbols.json` AST upgrade**~~ ✅ Done — `extract_symbols_syn()` using `syn 2` full parse with line-scanner fallback.
+- [x] ~~**`todos.json` deduplication**~~ ✅ Done — `HashSet<(file, line)>` in `extract_todos`.
+- [x] ~~**`embeddings.bin` exclusion from git**~~ ✅ Done — `RepoSyncService::register` writes `.rustassistant/.gitignore` with `embeddings.bin`. Two unit tests added in `src/repo_sync.rs::tests`: `register_writes_gitignore_with_embeddings_bin` and `register_does_not_overwrite_existing_gitignore`. Both pass (7/7 `repo_sync::tests` green).
+- [x] ~~**`context.md` auto-injection**~~ ✅ Done — `build_prompt_context` loads `symbols.json` + `manifest.json` + `tree.txt` + `todos.json`. Top-5 public symbols injected. Context capped at ~3000 chars.
 
 ### CLI & Developer Experience
 
-- [ ] **Actually test the XAI API connection in `test-api` command** — `handle_test_api` in `src/bin/cli.rs:726` only checks if the key exists. Instantiate `GrokClient::from_env()` and make a minimal `ask` call (e.g. `"ping — reply with ok"`) to verify the key is accepted, printing round-trip latency and token cost.
-- [ ] **Parse detailed per-file test results in `TestRunner`** — `results_by_file` is an empty `HashMap` (`src/tests_runner.rs:184`). Parse the `--json-report` pytest output and `cargo test -- --format json` output to populate per-file pass/fail counts.
-- [ ] **`todo work --auto-sync`** — add a flag that automatically runs `todo sync` after a successful `todo work` + compile-check pass, eliminating the manual step 4 invocation.
+- [x] ~~**Actually test the XAI API connection in `test-api` command**~~ ✅ Done — `handle_test_api` in `src/bin/cli.rs` now accepts `pool: &PgPool`, builds `GrokClient::new(key, db)`, calls `ask_tracked("reply with: ok", None, "test-api-ping")`, and prints reply content, round-trip latency (ms), prompt/completion/total token counts, and estimated USD cost. Actionable error hints for 401/429/network failures included.
+- [x] ~~**Parse detailed per-file test results in `TestRunner`**~~ ✅ Done — `parse_cargo_test_json` parses `cargo test -- -Zunstable-options --format=json` event stream into `HashMap<String, FileTestResult>` keyed by inferred `src/<module>.rs` path. `parse_pytest_json_report` reads `.pytest-report.json` written by `pytest-json-report`, grouping tests by `nodeid` file prefix. Both are wired into `run_rust_tests` and `run_python_tests` with text-summary fallback when JSON isn't available. `derive_rust_file_key` helper maps test names like `audit::cache::tests::hit_rate` → `src/audit/cache.rs`. 12/12 new tests green.
 
 ### Queue & Processing
 
-- [ ] **Implement tag refinement and project linking** — `src/queue/processor.rs:430` has a stub `advance_stage`. Replace with actual tag inference using `src/tags.rs` / `src/tag_schema.rs` and project-linking by matching item tags against registered repos from `RepoSyncService`.
+- [ ] **Implement tag refinement and project linking in `process_tagging`** — `src/queue/processor.rs:429` has a `// TODO: Additional tag refinement, linking to projects` stub. Replace with actual tag inference using `src/tags.rs` / `src/tag_schema.rs` and project-linking by matching item tags against registered repos from `RepoSyncService`. Use `db::core::create_task` to write linked tasks instead of duplicating data in `queue_items`.
 
 ### Web Dashboard
 
-- [ ] **Add `pinned` field to `Document` struct** — `src/web_ui_extensions.rs:375` and `:719`. Add `pinned BOOLEAN DEFAULT 0` column to the `documents` table migration, expose in the `Document` struct, render a pin icon in the card template.
-- [ ] **Repo management UI tab** — expose the new `/api/v1/repos` endpoints in `static/index.html`: register a local path, trigger sync, view tree/todos/symbols in a tab, chat with repo context selected.
+- [ ] **Add `pinned` field to `Document` struct** — `src/web_ui_extensions.rs:375` has `let pin_icon = ""; // TODO: Add pinned field to Document struct` and `:719` has `pin = "", // TODO`. Add `pinned BOOLEAN DEFAULT FALSE` column to the `documents` table migration, expose in the `Document` struct, render a pin icon in the card template.
+- [ ] **Repo management UI tab** — expose the `/api/v1/repos` endpoints in `static/index.html` or `static/rustassistant-ui.html`: register a local path, trigger sync, view tree/todos/symbols in a tab, chat with repo context selected.
 - [ ] **Scan results auto-switch** — after clicking "Run Scan" in the dashboard, automatically switch to the Scan tab and render filter counts as coloured stat cards.
 - [ ] **Repo pull/refresh button** — `POST /api/web/repos/:id/pull` endpoint that runs `git pull` on the cloned repo and returns the new HEAD commit hash.
 
@@ -181,28 +186,21 @@
 ### Large File Handling
 
 - [x] ~~Skip LFS-tracked files (pre-trained models) during clone/audit~~ ✅
-- [ ] **Make skip-extensions list configurable per-repo** — currently hardcoded: `.onnx`, `.pt`, `.pth`, `.bin`, `.h5`, `.safetensors`, `.pkl`, `.pb`, `.tflite`, `.ckpt`, `.weights`, `.npy`, `.npz`. Add a `[scan] skip_extensions = [...]` key to repo config and thread it through `src/static_analysis.rs` and `src/auto_scanner.rs`.
-
-### Docker & Compose
-
-- [x] ~~Align `docker-compose.yml` README quick-start with actual SQLite-based setup~~ ✅
-- [ ] **Add Redis healthcheck** — add a `healthcheck` block to the `rustassistant` service in `docker-compose.yml` that runs `redis-cli -h redis ping` and fails after 3 retries.
-- [ ] **Add Ollama to compose with GPU passthrough** — `deploy.resources.reservations.devices` with `driver: nvidia`, `count: 1`, `capabilities: [gpu]`. Fall back gracefully (CPU-only) if no GPU present.
+- [ ] **Make skip-extensions list configurable per-repo** — currently hardcoded in `src/static_analysis.rs` and `src/auto_scanner.rs`. Add a `[scan] skip_extensions = [...]` key to repo config and thread it through both scanners.
 
 ### Workflow & CI/CD
 
 - [x] ~~Move `llm-audit.yml` workflow to `nuniesmith/actions` repo~~ ✅
 - [x] ~~Add `docs/audit/` directory with `.gitkeep`~~ ✅
 - [x] ~~Docker image pull in `llm-audit.yml`~~ ✅
-- [ ] **Expose `/api/audit` endpoint** — so the LLM audit workflow can leverage the Rust API + Redis cache instead of raw Python API calls. Add `GET/POST /api/audit` to `src/server.rs`, backed by `src/audit/runner.rs`, returning JSON audit results and writing them to `docs/audit/`.
-- [ ] **Auto-append audit findings to `todo.md`** — after the LLM audit completes, call `TodoFile::append_item` to add new findings to the target repo's `todo.md` automatically.
+- [ ] **Expose `/api/audit` via new `audit_router`** — `audit_router()` is defined in `src/audit/endpoint.rs` and fully stubbed. Mount it in `server.rs` (see Audit Endpoint section above). Once mounted, the LLM audit workflow can POST to the Rust API + Redis cache instead of raw Python API calls.
+- [ ] **Auto-append audit findings to `todo.md`** — already supported via `AuditRunnerWithGrok::run` + `append_findings_to_todo`. Expose `append_to_todo: true` in the `POST /api/audit` body once the endpoint is wired.
 
 ### Code Quality
 
-- [ ] **Consolidate `todo_items` DB table with `tasks` table** — currently two parallel systems (`src/db/queue.rs:13`). Migrate `queue_items` writes in `src/queue/processor.rs` to use `db::core::create_task` instead, then deprecate `queue_items` in a migration.
-- [ ] **Standardise error handling across API handlers** — mix of `anyhow` and manual error responses. Define a shared `ApiError` type in `src/api/types.rs` implementing `IntoResponse`, replace ad-hoc `(StatusCode, Json(...))` tuples in `src/api/handlers.rs`.
-- [ ] **Implement `RedisAuditCache` I/O** — `src/audit/cache.rs` has all stubs with `todo!()`. Wire `deadpool_redis::Pool` into `RedisAuditCache::new`, implement `get_file_result`/`set_file_result`/`get_run_summary`/`set_run_summary` using `GET`/`SET EX` commands.
-- [ ] **Implement `AuditRunner` pipeline** — `src/audit/runner.rs` is a stub. Wire: static analysis → LLM scoring via `GrokClient` → aggregation → write JSON to `docs/audit/`. Integrate `RedisAuditCache` to skip unchanged files.
+- [ ] **Consolidate `todo_items` DB table with `tasks` table** — `src/db/queue.rs` defines both `queue_items` and `todo_items` tables. `src/db/core.rs` has `create_task`. Migrate `process_tagging` writes in `src/queue/processor.rs` to use `db::core::create_task` instead of duplicating into `queue_items`, then deprecate `todo_items` in a new migration.
+- [ ] **Standardise error handling across API handlers** — mix of `anyhow` and manual `(StatusCode, Json(...))` tuples. `ApiError { error, code }` is already defined in `src/api/repos.rs`. Extract it to `src/api/types.rs`, implement `IntoResponse` for it, and replace ad-hoc error tuples in `src/api/handlers.rs` and `src/api/admin.rs`.
+- [ ] **Implement `AuditRunner::run` stub** — `AuditRunner::run` (without Grok) currently returns `Err("not yet implemented")`. Either remove it (since `AuditRunnerWithGrok::run` is the real path) or wire it to `run_static_only()` as a sensible no-key fallback.
 
 ---
 
@@ -212,11 +210,13 @@
 ```
 User Chat / todo-work
     ↓
-ModelRouter::classify_prompt()
+ModelRouter::classify_prompt_async()
     ├── ScaffoldStub / TodoTagging / TreeSummary → Ollama (Qwen2.5-Coder 7B, local)
     ├── RepoQuestion / SymbolExtraction         → Ollama (local, fast)
     ├── ArchitecturalReason / CodeReview        → GrokClient (remote, xAI)
     └── Unknown / force_remote                 → GrokClient (remote, fallback)
+
+Classification: one-shot LLM prompt to local model → keyword fallback if Ollama down
 ```
 
 ### `.rustassistant/` Per-Repo Cache Structure
@@ -225,17 +225,17 @@ ModelRouter::classify_prompt()
 ├── manifest.json    — repo identity, last_synced, branch, crate metadata
 ├── tree.txt         — rolling file tree snapshot (regenerated on every sync)
 ├── todos.json       — all TODO/STUB/FIXME/HACK tags with file:line attribution
-├── symbols.json     — public functions, structs, traits, impls
+├── symbols.json     — public functions, structs, traits, impls (syn-parsed)
 ├── context.md       — LLM-ready summary (injected into every code-gen prompt)
-├── embeddings.bin   — cached vector embeddings (gitignored — excluded from commits)
+├── embeddings.bin   — cached vector embeddings (gitignored)
 ├── scan.json        — output of `todo scan` (committed — useful as PR diff)
 ├── gameplan.json    — latest GamePlan from `todo plan`
 ├── results/         — WorkResult JSON files per batch
 └── backups/         — pre-change file backups created by `todo work`
 ```
 
-### Scaffolded Stubs — Wiring Checklist
-> All 4 stub files are now merged into `src/`. Server wiring complete. ✅
+### Wiring Checklist — All Stubs Merged
+> All 4 stub files are merged into `src/`. Server wiring complete. ✅
 
 | File | Destination | Status | Merged |
 |------|------------|--------|--------|
@@ -245,17 +245,7 @@ ModelRouter::classify_prompt()
 | `todo/sync_scheduler.rs` | `src/sync_scheduler.rs` | ✅ Live | 2026-03-08 |
 | `todo/rustassistant-ui.html` | `static/rustassistant-ui.html` | ✅ Live | 2026-03-08 |
 | `todo/.env.rustassistant` | `.env.rustassistant` | ✅ Copied | 2026-03-08 |
-| `todo/docker-compose.rustassistant.yml` | `docker-compose.rustassistant.yml` | ✅ Live (was already at root) | 2026-03-08 |
-
-### Session 3 — Completions
-| Item | File(s) changed | Notes |
-|------|----------------|-------|
-| JoinSet sync scheduler | `src/sync_scheduler.rs` | Semaphore-gated, `REPO_SYNC_CONCURRENCY` env var, startup tick skip |
-| syn symbol extractor | `src/repo_sync.rs`, `Cargo.toml` | syn 2 full parse → line-scanner fallback; `fn/struct/enum/trait/impl/type/const/mod` |
-| TODO deduplication | `src/repo_sync.rs` | `HashSet<(file, line)>` in `extract_todos` |
-| Context enrichment | `src/repo_sync.rs` | Crate name + top-5 public symbols injected into `build_prompt_context` |
-| Fix admin module | `src/api/admin.rs`, `src/api/mod.rs`, `src/api/auth.rs`, `src/api/jobs.rs`, `src/lib.rs` | Removed non-existent field refs; mounted in router; `hash_api_key` pub; `pending_count()` added |
-| Concurrent batch indexer | `src/indexing.rs` | `JoinSet` + semaphore; `Arc<DocumentIndexer>`; per-task error logging |
+| `todo/docker-compose.rustassistant.yml` | `docker-compose.yml` (root) | ✅ Live | 2026-03-08 |
 
 ### Recommended Local Models (8GB VRAM)
 | Model | Use case | Quality |
@@ -270,156 +260,101 @@ ModelRouter::classify_prompt()
 - `todo.md` is the **single source of truth**. Every command reads it; every command writes back to it.
 - `todo-scaffold` is always safe to re-run — it's idempotent (skips existing files).
 - `todo-work` never touches files without creating backups in `.rustassistant/backups/`.
-- `todo-work` now runs `cargo check` after patching. On failure it rolls back all changes automatically.
-- **IDs are stable**: 8-char hex CRC32 of the raw list line. Don't edit item text between `todo-work` and `todo-sync` — the syncer finds items by ID.
-- **Cross-repo reuse**: all repos share the same 5-step pipeline. Only the `todo.md` content and source files differ. The binary is identical.
+- `todo-work` runs `cargo check` after patching. On failure it rolls back all changes automatically.
+- **IDs are stable**: 8-char hex CRC32 of the raw list line. Don't edit item text between `todo-work` and `todo-sync`.
+- **`--auto-sync`**: pass this to `todo work` to skip the manual sync step entirely.
+- **Cross-repo reuse**: all repos share the same 5-step pipeline. Only `todo.md` and source files differ.
+
+### RAG Pipeline Status
+```
+Server startup → refresh_rag_index(pool)   [background tokio::spawn]
+     ↓
+RepoSyncService::sync() → embed_rust_files() → refresh_rag_index()   [fire-and-forget]
+     ↓
+handle_chat() → search_rag_context() → enhance_prompt_with_rag()
+     ↓
+HNSW in-process index (rag_index_cell / OnceCell<Arc<Mutex<Option<RagIndex>>>>)
+     ↓
+document_chunks + documents tables in Postgres (chunk content fetched per hit)
+```
+**Known gap**: all `.rs` files are re-embedded on every sync (not just changed files). See medium-priority item above.
 
 ### Migration Path
-The current workflow is ~1900 lines of YAML + Python. Goal: progressively move logic into the Rust binary, publish via `ci-cd.yml` to Docker Hub (`nuniesmith/rustassistant:latest`), and make the workflow a thin orchestrator calling `./rustassistant-bin <command>`. The image is already being pulled — the CLI commands are now wired.
+The current workflow is ~1900 lines of YAML + Python. Goal: progressively move logic into the Rust binary, publish via `ci-cd.yml` to Docker Hub (`nuniesmith/rustassistant:latest`), and make the workflow a thin orchestrator calling `./rustassistant-bin <command>`.
 
 ### Redis
-Configured in `docker-compose.yml` for LLM response caching (`allkeys-lru`, 256 MB). The workflow currently bypasses this. Once `RedisAuditCache` is implemented and `repos_api.rs` chat handler caches responses, this becomes the hot-path cache for both the web UI and CI workflow.
+Configured in `docker-compose.yml` for LLM response caching (`allkeys-lru`, 384 MB, password-protected). `RedisAuditCache` is fully implemented (`src/audit/cache.rs`) and used in `RepoAppState` chat caching. `RedisAuditCache::from_env()` wires into the audit pipeline once `audit_router` is mounted.
 
 ### Pre-trained Model Files
-`.onnx`, `.pt`, etc. in target repos are production artifacts, not source code. The workflow skips them entirely via `GIT_LFS_SKIP_SMUDGE=1` at clone time. They're never downloaded, hashed, or included in audit context.
+`.onnx`, `.pt`, etc. in target repos are skipped via `GIT_LFS_SKIP_SMUDGE=1` at clone time. Hardcoded skip list in `src/static_analysis.rs` / `src/auto_scanner.rs` — see low-priority item to make this configurable.
+
+### Postgres Migration — Current Status
+```
+✅ 1. docker-compose.yml — Postgres 16 service present, healthcheck wired
+✅ 2. DATABASE_URL — points to postgres://... in compose + server.rs
+✅ 3. Cargo.toml — sqlx features = ["postgres", "runtime-tokio", "uuid", "chrono", "macros"]
+⚠️  4. Migrations — 15 files exist; migrations 001-014 have SQLite syntax that needs audit
+⚠️  5. Rust code — PgPool used in server.rs and research/worker.rs;
+       repo_sync.rs still uses query_unchecked! with SQLite-flavoured upserts
+❌  6. .sqlx cache — not yet regenerated against live Postgres; SQLX_OFFLINE=true still needed
+❌  7. Data migration — not applicable (dev only)
+⚠️  8. RepoSyncService — upsert logic needs ON CONFLICT rewrite
+```
+
+Order of operations for completing migration:
+```
+1. Audit + rewrite migrations 001-014 for Postgres syntax
+2. cargo sqlx database create && cargo sqlx migrate run  (against live Postgres)
+3. Port repo_sync.rs upsert → ON CONFLICT syntax
+4. cargo sqlx prepare  (regenerates .sqlx/ — commit this)
+5. cargo build         (fix every type error the compiler surfaces)
+6. cargo test
+```
+> **Blocking note:** Steps 1–4 must happen in one sitting. Once the sqlx feature is Postgres-only,
+> `SQLX_OFFLINE=true cargo build` will fail until `.sqlx/` is regenerated.
 
 ---
+
+### Batch `batch-008` Summary — 2026-03-08 (quick wins)
+
+Changes landed in this batch:
+
+1. **`src/bin/cli.rs`** — `handle_test_api` now accepts `pool: &PgPool`, builds a real `GrokClient`, fires a `"reply with: ok"` ping via `ask_tracked`, and prints reply, latency (ms), token counts, and USD cost estimate. Actionable hints for 401/429/network errors.
+
+2. **`src/repo_sync.rs`** — two new unit tests: `register_writes_gitignore_with_embeddings_bin` verifies that `register()` always creates `.rustassistant/.gitignore` containing `embeddings.bin`; `register_does_not_overwrite_existing_gitignore` confirms idempotency. All 7 `repo_sync::tests` green.
+
+3. **`migrations/`** — audited all 15 SQL files for SQLite syntax. All clean: `BIGSERIAL`, `EXTRACT(EPOCH FROM NOW())::BIGINT`, `ON CONFLICT`, `tsvector`/`GIN`, Postgres triggers throughout. No action required.
+
+---
+
+### Batch `batch-009` Summary — 2026-03-08 (test runner + quick wins)
+
+Changes landed in this batch:
+
+1. **`src/tests_runner.rs`** — implemented `parse_cargo_test_json` (parses `cargo test --format=json` event stream into per-file `FileTestResult` map) and `parse_pytest_json_report` (reads `.pytest-report.json` from `pytest-json-report`). Both wired into `run_rust_tests` / `run_python_tests` with graceful fallback to text parsing. Added `derive_rust_file_key` helper + 12 new unit tests (all green). `results_by_file` is now populated in all four `run_*_tests` methods.
+
+2. **`src/bin/cli.rs`** — `handle_test_api` upgraded: builds a real `GrokClient`, fires `ask_tracked("reply with: ok")`, prints reply, latency (ms), token counts, and USD cost. Actionable error hints for 401/429/network failures.
+
+3. **`src/repo_sync.rs`** — two new gitignore unit tests; pre-existing `E0733` recursive `async fn walk_dir` fixed via `Box::pin`.
+
+4. **`migrations/`** — all 15 SQL files audited and confirmed clean Postgres syntax.
+
+5. **`todo.md`** — `tree.txt` webhook regeneration confirmed done (sync already writes it; push webhook already calls sync; `build_prompt_context` already injects first 80 lines into every prompt).
+
+---
+
+### Batch `batch-007` Summary — 2026-03-08 (audit pipeline wiring)
+
+Changes landed in this batch:
+
+1. **`src/audit/endpoint.rs`** — fully implemented all three handlers (`handle_audit_get`, `handle_audit_post`, `handle_audit_get_by_id`). Introduced `AuditState` (grok client + `RedisAuditCache` + output dir + runner config). `POST /api/audit` spawns a background task and returns 202 immediately. Path-traversal guard on `GET /api/audit/:id`. 5 new integration tests using `tower::ServiceExt::oneshot`.
+
+2. **`src/server.rs`** — removed legacy `create_audit` / `get_audit` / `get_audit_tasks` handlers and their dead response types. Mounted `audit_router(audit_state)` via `.merge(...)`. Added `WebhookState` struct and `handle_github_webhook` handler at `POST /api/github/webhook` — verifies HMAC-SHA256 signature, parses push events, triggers `RepoSyncService::sync` for matching registered repos.
+
+3. **`src/repo_sync.rs`** — fixed pre-existing `E0733` compile error in recursive `async fn walk_dir` by converting it to a `Box::pin(async move { ... })` returning function.
 
 ### Batch `batch-006` Summary — 2026-03-08 01:11 UTC
 - Attempted: 3 | Succeeded: 3 | Failed: 0 | Skipped: 0
-- ✅ `12542b08` — Implement proper document listing with filters — currently returns empty vec p…
-- ✅ `7048cea1` — Implement document stats `by_type` counts — returns empty vec (`src/api/handle…
-- ✅ `7167a7b9` — Calculate average chunk size — hardcoded to `0.0` (`src/api/handlers.rs:137`)
-
----
-
-## 🔴 High Priority — Postgres Migration
-
-> SQLite is the current store. Postgres unlocks full-text search, JSONB indexing, concurrent
-> writes, and production-grade reliability. This section tracks the full migration path.
-> Complete steps in order — each one gates the next.
-
-### 1. docker-compose — add Postgres service
-
-- [ ] **Add `postgres` service to `docker-compose.rustassistant.yml`** — use `postgres:16-alpine`, bind `5432:5432`, mount `postgres-data:/var/lib/postgresql/data`, add healthcheck `pg_isready -U rustassistant`. Wire `rustassistant` service `depends_on` → `postgres: condition: service_healthy`.
-  ```yaml
-  postgres:
-    image: postgres:16-alpine
-    container_name: rustassistant-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: rustassistant
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
-      POSTGRES_DB: rustassistant
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    networks:
-      - rustassistant-net
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U rustassistant"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-  ```
-- [ ] **Add `postgres-data:` to `volumes:` block** in `docker-compose.rustassistant.yml`.
-
-### 2. .env — swap DATABASE_URL
-
-- [ ] **Replace SQLite `DATABASE_URL` with Postgres URL** in `.env` and `.env.rustassistant`:
-  ```bash
-  # Remove:
-  DATABASE_URL=sqlite:./data/rustassistant.db
-
-  # Add:
-  DATABASE_URL=postgresql://rustassistant:changeme@postgres:5432/rustassistant
-  POSTGRES_PASSWORD=changeme
-  ```
-
-### 3. Cargo.toml — swap sqlx features
-
-- [ ] **Swap `sqlite` feature for `postgres`** in `Cargo.toml`. Also add `uuid` and `chrono` features which Postgres query macros require:
-  ```toml
-  # Remove:
-  sqlx = { version = "0.7", features = ["sqlite", "runtime-tokio-native-tls", "macros"] }
-
-  # Add:
-  sqlx = { version = "0.7", features = ["postgres", "runtime-tokio-native-tls", "macros", "uuid", "chrono"] }
-  ```
-
-### 4. Migrations — rewrite for Postgres syntax
-
-> All 15 migration files in `migrations/` need auditing. SQLite is permissive; Postgres is strict.
-
-- [ ] **Grep and fix `INTEGER PRIMARY KEY AUTOINCREMENT`** → `BIGSERIAL PRIMARY KEY` or `UUID PRIMARY KEY DEFAULT gen_random_uuid()` throughout all `.sql` files.
-- [ ] **Replace `DATETIME` columns** with `TIMESTAMPTZ` and `DEFAULT CURRENT_TIMESTAMP` with `DEFAULT NOW()`.
-- [ ] **Replace `TEXT` columns used as JSON** with `JSONB` (e.g. `tags`, `metadata`, `data` columns visible in `documents`, `repositories`, `tasks` tables).
-- [ ] **Replace `BOOLEAN` stored as `0`/`1` integers** with native `BOOLEAN` and `TRUE`/`FALSE` literals.
-- [ ] **Delete all `PRAGMA` statements** — they are SQLite-only and will error on Postgres.
-- [ ] **Fix `IF NOT EXISTS` on views/triggers** — Postgres requires `CREATE OR REPLACE` for views; triggers use a different syntax entirely (need `CREATE FUNCTION` + `CREATE TRIGGER`).
-- [ ] **Fix `ON CONFLICT` / `INSERT OR IGNORE` / `INSERT OR REPLACE`** → Postgres uses `ON CONFLICT DO NOTHING` / `ON CONFLICT (...) DO UPDATE SET ...`.
-- [ ] **Fix `strftime('%s', 'now')`** → `EXTRACT(EPOCH FROM NOW())::BIGINT` or just use `TIMESTAMPTZ` columns directly.
-- [ ] **Migration 006 — documents table**: `content_type` check constraint uses SQLite `CHECK(content_type IN (...))` syntax — verify it works in Postgres (it does, but confirm the constraint names don't clash).
-
-### 5. Rust code — pool type change
-
-- [ ] **Replace `SqlitePool` with `PgPool`** everywhere in `src/`:
-  ```rust
-  // Remove:
-  use sqlx::SqlitePool;
-  let pool = SqlitePool::connect(&database_url).await?;
-
-  // Add:
-  use sqlx::PgPool;
-  let pool = PgPool::connect(&database_url).await?;
-  ```
-  Key files: `src/db/mod.rs`, `src/server.rs`, `src/bin/server.rs`, `src/repo_sync.rs`, `src/api/handlers.rs`, `src/api/admin.rs`, `src/api/jobs.rs`.
-- [ ] **Update `init_db` in `src/db/mod.rs`** — remove the `sqlite:` prefix-stripping logic; Postgres URLs don't need it. Pass the URL directly to `PgPoolOptions::new().connect(&url).await`.
-- [ ] **Remove `SQLX_OFFLINE=true` workaround** from `.env` — it will need to be regenerated against Postgres anyway (see step 6).
-- [ ] **Fix `query_unchecked!` usages in `src/repo_sync.rs`** — these were used to avoid SQLite offline-check failures. Replace with properly typed `query!` macros once the Postgres schema is stable.
-
-### 6. Regenerate .sqlx query cache
-
-- [ ] **Run `cargo sqlx prepare`** after `DATABASE_URL` points at a live Postgres instance:
-  ```bash
-  export DATABASE_URL=postgresql://rustassistant:changeme@localhost:5432/rustassistant
-  cargo sqlx database create
-  cargo sqlx migrate run
-  cargo sqlx prepare   # regenerates .sqlx/ — commit the result
-  ```
-  The compiler will surface every type mismatch between Rust types and the new Postgres schema. Fix each one the compiler reports.
-
-### 7. Data migration (optional — only if keeping existing SQLite data)
-
-- [ ] **Use `pgloader` to copy existing SQLite data** into Postgres if the dev/prod SQLite DB has data worth preserving:
-  ```bash
-  pip install pgloader
-  pgloader sqlite:./data/rustassistant.db postgresql://rustassistant:changeme@localhost/rustassistant
-  ```
-  After loading: manually inspect `JSONB` columns (`tags`, `metadata`) — `pgloader` copies them as text strings; cast with `ALTER TABLE ... ALTER COLUMN data TYPE JSONB USING data::jsonb`.
-
-### 8. Update RepoSyncService persistence
-
-- [ ] **Port `RepoSyncService` DB calls from SQLite to Postgres** — the `load_from_db`, `register`, `remove_repo_async`, and `sync` methods in `src/repo_sync.rs` use `query_unchecked!` with SQLite-flavoured upsert (`INSERT OR REPLACE`). Rewrite as standard Postgres `INSERT ... ON CONFLICT (local_path) DO UPDATE SET ...`.
-
----
-
-### 📋 Postgres Migration — Order of Operations
-
-```
-1. Add Postgres to docker-compose, spin it up locally
-2. Swap DATABASE_URL in .env
-3. Swap sqlx feature flag in Cargo.toml
-4. Audit and rewrite all 15 migration files for Postgres syntax
-5. cargo sqlx database create && cargo sqlx migrate run
-6. cargo sqlx prepare  (regenerates .sqlx/ cache — commit this)
-7. cargo build         (fix every type error the compiler surfaces)
-8. Port RepoSyncService upsert logic to Postgres ON CONFLICT syntax
-9. Run full test suite: cargo test
-10. Update docker-compose depends_on, redeploy
-```
-
-> **Blocking note:** Steps 3–6 must happen together in one sitting — once you flip the sqlx
-> feature flag, `SQLX_OFFLINE=true cargo build` will fail until `.sqlx/` is regenerated
-> against the new Postgres schema. Plan for ~2–3 hours of uninterrupted migration work.
+- ✅ `12542b08` — Implement proper document listing with filters
+- ✅ `7048cea1` — Implement document stats `by_type` counts
+- ✅ `7167a7b9` — Calculate average chunk size

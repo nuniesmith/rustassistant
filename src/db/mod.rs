@@ -22,6 +22,9 @@ pub use config::{
     print_env_help, DatabaseConfig, DatabaseHealth,
 };
 
+// Convenience type alias — consumers can use `db::PgPool` instead of `sqlx::PgPool`
+pub use sqlx::PgPool;
+
 // Re-export core database types and functions
 pub use core::*;
 

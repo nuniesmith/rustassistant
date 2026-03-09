@@ -10,7 +10,7 @@ use crate::research::{
 use anyhow::Result;
 use clap::Subcommand;
 use colored::Colorize;
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 
 // ============================================================================
 // Research Commands
@@ -68,7 +68,7 @@ pub enum ResearchCommands {
     },
 }
 
-pub async fn handle_research_command(pool: &SqlitePool, cmd: ResearchCommands) -> Result<()> {
+pub async fn handle_research_command(pool: &PgPool, cmd: ResearchCommands) -> Result<()> {
     match cmd {
         ResearchCommands::Start {
             topic,

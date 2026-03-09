@@ -18,9 +18,9 @@
 //! ```rust,no_run
 //! use rustassistant::indexing::{DocumentIndexer, IndexingConfig};
 //! use rustassistant::db::get_document;
-//! use sqlx::SqlitePool;
+//! use sqlx::PgPool;
 //!
-//! # async fn example(pool: &SqlitePool) -> anyhow::Result<()> {
+//! # async fn example(pool: &PgPool) -> anyhow::Result<()> {
 //! let indexer = DocumentIndexer::new(IndexingConfig::default()).await?;
 //!
 //! // Index a document by ID
@@ -37,7 +37,7 @@ use crate::db::{create_chunks, get_document, mark_document_indexed, store_embedd
 use crate::embeddings::{EmbeddingConfig, EmbeddingGenerator};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use std::sync::Arc;
 
 // ============================================================================
@@ -206,7 +206,7 @@ impl DocumentIndexer {
     /// 5. Mark document as indexed
     pub async fn index_document(
         &self,
-        pool: &SqlitePool,
+        pool: &PgPool,
         document_id: &str,
     ) -> Result<IndexingResult> {
         tracing::info!("Starting indexing for document: {}", document_id);
@@ -328,7 +328,7 @@ impl DocumentIndexer {
     /// Index multiple documents in sequence
     pub async fn index_documents(
         &self,
-        pool: &SqlitePool,
+        pool: &PgPool,
         document_ids: &[&str],
     ) -> Result<Vec<IndexingResult>> {
         let mut results = Vec::new();
@@ -390,7 +390,7 @@ impl BatchIndexer {
     /// returns the results for documents that succeeded.
     pub async fn index_batch(
         &self,
-        pool: &SqlitePool,
+        pool: &PgPool,
         document_ids: &[String],
     ) -> Result<Vec<IndexingResult>> {
         if document_ids.is_empty() {

@@ -137,7 +137,7 @@ pub struct RoutingStats {
 pub struct QueryRouter {
     /// Database connection pool
     #[allow(dead_code)]
-    pool: sqlx::SqlitePool,
+    pool: sqlx::PgPool,
 
     /// Response cache
     cache: ResponseCache,
@@ -151,7 +151,7 @@ pub struct QueryRouter {
 
 impl QueryRouter {
     /// Create a new query router
-    pub async fn new(pool: sqlx::SqlitePool, cache_path: &str) -> Result<Self> {
+    pub async fn new(pool: sqlx::PgPool, cache_path: &str) -> Result<Self> {
         let cache = ResponseCache::new(cache_path)
             .await
             .context("Failed to initialize response cache")?;

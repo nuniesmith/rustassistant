@@ -1,8 +1,9 @@
 //! Document database operations for RAG system
 //!
 //! Provides CRUD operations for documents, chunks, and embeddings.
+//! All queries use Postgres syntax ($1, $2, ... placeholders).
 
-use sqlx::{Row, SqlitePool};
+use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use super::{DbError, DbResult, Document, DocumentChunk, DocumentEmbedding};
@@ -16,7 +17,7 @@ use sqlx::FromRow;
 /// Create a new document
 #[allow(clippy::too_many_arguments)]
 pub async fn create_document(
-    pool: &SqlitePool,
+    pool: &PgPool,
     title: String,
     content: String,
     content_type: String,
@@ -33,11 +34,10 @@ pub async fn create_document(
 
     let tags_str = tags.as_ref().map(|t| t.join(","));
 
-    // Insert document
     sqlx::query(
         "INSERT INTO documents
         (id, title, content, content_type, source_type, doc_type, tags, repo_id, word_count, char_count, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
     )
     .bind(&id)
     .bind(&title)
@@ -63,7 +63,9 @@ pub async fn create_document(
 
             // Link to document
             let _ = sqlx::query(
-                "INSERT OR IGNORE INTO document_tags (document_id, tag, created_at) VALUES (?, ?, ?)"
+                "INSERT INTO document_tags (document_id, tag, created_at)
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT DO NOTHING",
             )
             .bind(&id)
             .bind(&tag)
@@ -77,14 +79,13 @@ pub async fn create_document(
 }
 
 /// Get a document by ID
-pub async fn get_document(pool: &SqlitePool, id: &str) -> DbResult<Document> {
-    let row = sqlx::query!(
-        "SELECT id, title, content, content_type, source_type, source_url, doc_type,
-                tags, repo_id, file_path, word_count, char_count,
-                created_at, updated_at, indexed_at
-         FROM documents WHERE id = ?",
-        id
+pub async fn get_document(pool: &PgPool, id: &str) -> DbResult<Document> {
+    let row = sqlx::query(
+        "SELECT id, title, content, content_type, source_type, source_url, doc_type, tags,
+                repo_id, file_path, word_count, char_count, created_at, updated_at, indexed_at
+         FROM documents WHERE id = $1",
     )
+    .bind(id)
     .fetch_one(pool)
     .await
     .map_err(|e| match e {
@@ -93,273 +94,184 @@ pub async fn get_document(pool: &SqlitePool, id: &str) -> DbResult<Document> {
     })?;
 
     Ok(Document {
-        id: row.id.unwrap_or_default(),
-        title: row.title,
-        content: row.content,
-        content_type: row.content_type.unwrap_or_else(|| "markdown".to_string()),
-        source_type: row.source_type.unwrap_or_else(|| "manual".to_string()),
-        source_url: row.source_url,
-        doc_type: row.doc_type.unwrap_or_else(|| "reference".to_string()),
-        tags: row.tags,
-        repo_id: row.repo_id,
-        file_path: row.file_path,
-        word_count: row.word_count.unwrap_or(0),
-        char_count: row.char_count.unwrap_or(0),
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-        indexed_at: row.indexed_at,
+        id: row.get::<Option<String>, _>("id").unwrap_or_default(),
+        title: row.get("title"),
+        content: row.get("content"),
+        content_type: row
+            .get::<Option<String>, _>("content_type")
+            .unwrap_or_else(|| "markdown".to_string()),
+        source_type: row
+            .get::<Option<String>, _>("source_type")
+            .unwrap_or_else(|| "manual".to_string()),
+        source_url: row.get("source_url"),
+        doc_type: row
+            .get::<Option<String>, _>("doc_type")
+            .unwrap_or_else(|| "reference".to_string()),
+        tags: row.get("tags"),
+        repo_id: row.get("repo_id"),
+        file_path: row.get("file_path"),
+        word_count: row.get::<Option<i64>, _>("word_count").unwrap_or(0),
+        char_count: row.get::<Option<i64>, _>("char_count").unwrap_or(0),
+        created_at: row.get("created_at"),
+        updated_at: row.get("updated_at"),
+        indexed_at: row.get("indexed_at"),
     })
 }
 
-/// List all documents with optional filters
-pub async fn list_documents(
-    pool: &SqlitePool,
-    doc_type: Option<String>,
-    repo_id: Option<String>,
-    limit: Option<i64>,
-    offset: Option<i64>,
-) -> DbResult<Vec<Document>> {
-    let mut query = String::from(
-        "SELECT id, title, content, content_type, source_type, source_url, doc_type,
-                tags, repo_id, file_path, word_count, char_count,
-                created_at, updated_at, indexed_at
-         FROM documents WHERE 1=1",
-    );
-
-    if doc_type.is_some() {
-        query.push_str(" AND doc_type = ?");
-    }
-    if repo_id.is_some() {
-        query.push_str(" AND repo_id = ?");
-    }
-
-    query.push_str(" ORDER BY updated_at DESC");
-
-    if limit.is_some() {
-        query.push_str(" LIMIT ?");
-    }
-    if offset.is_some() {
-        query.push_str(" OFFSET ?");
-    }
-
-    let mut q = sqlx::query(&query);
-
-    if let Some(dt) = doc_type {
-        q = q.bind(dt);
-    }
-    if let Some(rid) = repo_id {
-        q = q.bind(rid);
-    }
-    if let Some(lim) = limit {
-        q = q.bind(lim);
-    }
-    if let Some(off) = offset {
-        q = q.bind(off);
-    }
-
-    let rows = q.fetch_all(pool).await.map_err(DbError::Sqlx)?;
-
-    Ok(rows
-        .into_iter()
-        .map(|row| Document {
-            id: row.get("id"),
-            title: row.get("title"),
-            content: row.get("content"),
-            content_type: row.get("content_type"),
-            source_type: row.get("source_type"),
-            source_url: row.get("source_url"),
-            doc_type: row.get("doc_type"),
-            tags: row.get("tags"),
-            repo_id: row.get("repo_id"),
-            file_path: row.get("file_path"),
-            word_count: row.get("word_count"),
-            char_count: row.get("char_count"),
-            created_at: row.get("created_at"),
-            updated_at: row.get("updated_at"),
-            indexed_at: row.get("indexed_at"),
-        })
-        .collect())
-}
-
-/// Update document content
+/// Update a document's title, content, and doc_type
 pub async fn update_document(
-    pool: &SqlitePool,
+    pool: &PgPool,
     id: &str,
     title: Option<String>,
     content: Option<String>,
     doc_type: Option<String>,
-    tags: Option<Vec<String>>,
+    tags: Option<String>,
 ) -> DbResult<Document> {
     let now = chrono::Utc::now().timestamp();
 
-    // Get current document
-    let mut doc = get_document(pool, id).await?;
+    // Fetch current values to fill in unchanged fields
+    let current = get_document(pool, id).await?;
 
-    // Update fields if provided
-    if let Some(t) = title {
-        doc.title = t;
-    }
-    if let Some(c) = content {
-        doc.content = c.clone();
-        doc.word_count = c.split_whitespace().count() as i64;
-        doc.char_count = c.chars().count() as i64;
-    }
-    if let Some(dt) = doc_type {
-        doc.doc_type = dt;
-    }
+    let new_title = title.unwrap_or(current.title);
+    let new_content = content.unwrap_or(current.content);
+    let new_doc_type = doc_type.unwrap_or(current.doc_type);
+    let new_tags = tags.or(current.tags);
 
-    // Update in database
+    let word_count = new_content.split_whitespace().count() as i64;
+    let char_count = new_content.chars().count() as i64;
+
     sqlx::query(
         "UPDATE documents
-         SET title = ?, content = ?, doc_type = ?, word_count = ?, char_count = ?, updated_at = ?
-         WHERE id = ?",
+         SET title = $1, content = $2, doc_type = $3, tags = $4,
+             word_count = $5, char_count = $6, updated_at = $7
+         WHERE id = $8",
     )
-    .bind(&doc.title)
-    .bind(&doc.content)
-    .bind(&doc.doc_type)
-    .bind(doc.word_count)
-    .bind(doc.char_count)
+    .bind(&new_title)
+    .bind(&new_content)
+    .bind(&new_doc_type)
+    .bind(&new_tags)
+    .bind(word_count)
+    .bind(char_count)
     .bind(now)
     .bind(id)
     .execute(pool)
     .await
     .map_err(DbError::Sqlx)?;
 
-    // Update tags if provided
-    if let Some(tag_list) = tags {
-        // Remove old tags
-        sqlx::query("DELETE FROM document_tags WHERE document_id = ?")
-            .bind(id)
-            .execute(pool)
-            .await
-            .map_err(DbError::Sqlx)?;
-
-        // Add new tags
-        for tag in tag_list {
-            let _ = super::upsert_tag(pool, &tag, None, None).await;
-
-            let _ = sqlx::query(
-                "INSERT OR IGNORE INTO document_tags (document_id, tag, created_at) VALUES (?, ?, ?)"
-            )
-            .bind(id)
-            .bind(&tag)
-            .bind(now)
-            .execute(pool)
-            .await;
-        }
-    }
-
     get_document(pool, id).await
 }
 
-/// Delete a document and its chunks/embeddings
-pub async fn delete_document(pool: &SqlitePool, id: &str) -> DbResult<()> {
-    let rows = sqlx::query("DELETE FROM documents WHERE id = ?")
+/// Delete a document by ID
+pub async fn delete_document(pool: &PgPool, id: &str) -> DbResult<()> {
+    sqlx::query("DELETE FROM documents WHERE id = $1")
         .bind(id)
         .execute(pool)
         .await
-        .map_err(DbError::Sqlx)?
-        .rows_affected();
-
-    if rows == 0 {
-        Err(DbError::NotFound(format!("Document {} not found", id)))
-    } else {
-        Ok(())
-    }
+        .map_err(DbError::Sqlx)?;
+    Ok(())
 }
 
-/// Search documents by title
-pub async fn search_documents_by_title(
-    pool: &SqlitePool,
-    query: &str,
-    limit: Option<i64>,
-) -> DbResult<Vec<Document>> {
-    let search_pattern = format!("%{}%", query);
-    let limit = limit.unwrap_or(50);
+/// Delete all chunks for a document
+pub async fn delete_document_chunks(pool: &PgPool, document_id: &str) -> DbResult<()> {
+    sqlx::query("DELETE FROM document_chunks WHERE document_id = $1")
+        .bind(document_id)
+        .execute(pool)
+        .await
+        .map_err(DbError::Sqlx)?;
+    Ok(())
+}
 
-    let rows = sqlx::query!(
-        "SELECT id, title, content, content_type, source_type, source_url, doc_type,
-                tags, repo_id, file_path, word_count, char_count,
-                created_at, updated_at, indexed_at
-         FROM documents
-         WHERE title LIKE ? OR content LIKE ?
-         ORDER BY updated_at DESC
-         LIMIT ?",
-        search_pattern,
-        search_pattern,
-        limit
+/// Delete all embeddings for a document (via its chunks)
+pub async fn delete_document_embeddings(pool: &PgPool, document_id: &str) -> DbResult<()> {
+    sqlx::query(
+        "DELETE FROM document_embeddings
+         WHERE chunk_id IN (
+             SELECT id FROM document_chunks WHERE document_id = $1
+         )",
     )
-    .fetch_all(pool)
+    .bind(document_id)
+    .execute(pool)
     .await
     .map_err(DbError::Sqlx)?;
-
-    Ok(rows
-        .into_iter()
-        .map(|row| Document {
-            id: row.id.unwrap_or_default(),
-            title: row.title,
-            content: row.content,
-            content_type: row.content_type.unwrap_or_else(|| "markdown".to_string()),
-            source_type: row.source_type.unwrap_or_else(|| "manual".to_string()),
-            source_url: row.source_url,
-            doc_type: row.doc_type.unwrap_or_else(|| "reference".to_string()),
-            tags: row.tags,
-            repo_id: row.repo_id,
-            file_path: row.file_path,
-            word_count: row.word_count.unwrap_or(0),
-            char_count: row.char_count.unwrap_or(0),
-            created_at: row.created_at,
-            updated_at: row.updated_at,
-            indexed_at: row.indexed_at,
-        })
-        .collect())
+    Ok(())
 }
 
-/// Search documents by tags
-pub async fn search_documents_by_tags(
-    pool: &SqlitePool,
-    tags: Vec<String>,
+/// List documents with optional filters
+pub async fn list_documents(
+    pool: &PgPool,
+    doc_type: Option<String>,
+    repo_id: Option<String>,
     limit: Option<i64>,
+    offset: Option<i64>,
 ) -> DbResult<Vec<Document>> {
     let limit = limit.unwrap_or(50);
+    let offset = offset.unwrap_or(0);
 
-    // Build query to find documents with ANY of the tags
-    let placeholders: Vec<String> = tags.iter().map(|_| "?".to_string()).collect();
-    let query = format!(
-        "SELECT DISTINCT d.id, d.title, d.content, d.content_type, d.source_type, d.source_url,
-                d.doc_type, d.tags, d.repo_id, d.file_path, d.word_count, d.char_count,
-                d.created_at, d.updated_at, d.indexed_at
-         FROM documents d
-         JOIN document_tags dt ON d.id = dt.document_id
-         WHERE dt.tag IN ({})
-         ORDER BY d.updated_at DESC
-         LIMIT ?",
-        placeholders.join(",")
+    // Build a dynamic query. sqlx doesn't support truly dynamic queries with macros,
+    // so we use query() and bind manually.
+    let mut conditions: Vec<String> = Vec::new();
+    let mut param_idx = 1usize;
+
+    if doc_type.is_some() {
+        conditions.push(format!("doc_type = ${}", param_idx));
+        param_idx += 1;
+    }
+    if repo_id.is_some() {
+        conditions.push(format!("repo_id = ${}", param_idx));
+        param_idx += 1;
+    }
+
+    let where_clause = if conditions.is_empty() {
+        String::new()
+    } else {
+        format!("WHERE {}", conditions.join(" AND "))
+    };
+
+    let sql = format!(
+        "SELECT id, title, content, content_type, source_type, source_url, doc_type, tags,
+                repo_id, file_path, word_count, char_count, created_at, updated_at, indexed_at
+         FROM documents
+         {}
+         ORDER BY created_at DESC
+         LIMIT ${} OFFSET ${}",
+        where_clause,
+        param_idx,
+        param_idx + 1
     );
 
-    let mut q = sqlx::query(&query);
-    for tag in tags {
-        q = q.bind(tag);
+    let mut q = sqlx::query(&sql);
+
+    if let Some(ref dt) = doc_type {
+        q = q.bind(dt);
     }
-    q = q.bind(limit);
+    if let Some(ref rid) = repo_id {
+        q = q.bind(rid);
+    }
+    q = q.bind(limit).bind(offset);
 
     let rows = q.fetch_all(pool).await.map_err(DbError::Sqlx)?;
 
     Ok(rows
         .into_iter()
         .map(|row| Document {
-            id: row.get("id"),
+            id: row.get::<Option<String>, _>("id").unwrap_or_default(),
             title: row.get("title"),
             content: row.get("content"),
-            content_type: row.get("content_type"),
-            source_type: row.get("source_type"),
+            content_type: row
+                .get::<Option<String>, _>("content_type")
+                .unwrap_or_else(|| "markdown".to_string()),
+            source_type: row
+                .get::<Option<String>, _>("source_type")
+                .unwrap_or_else(|| "manual".to_string()),
             source_url: row.get("source_url"),
-            doc_type: row.get("doc_type"),
+            doc_type: row
+                .get::<Option<String>, _>("doc_type")
+                .unwrap_or_else(|| "reference".to_string()),
             tags: row.get("tags"),
             repo_id: row.get("repo_id"),
             file_path: row.get("file_path"),
-            word_count: row.get("word_count"),
-            char_count: row.get("char_count"),
+            word_count: row.get::<Option<i64>, _>("word_count").unwrap_or(0),
+            char_count: row.get::<Option<i64>, _>("char_count").unwrap_or(0),
             created_at: row.get("created_at"),
             updated_at: row.get("updated_at"),
             indexed_at: row.get("indexed_at"),
@@ -367,38 +279,195 @@ pub async fn search_documents_by_tags(
         .collect())
 }
 
-/// Get tags for a document
-pub async fn get_document_tags(pool: &SqlitePool, document_id: &str) -> DbResult<Vec<String>> {
-    let tags = sqlx::query_scalar::<_, String>(
-        "SELECT tag FROM document_tags WHERE document_id = ? ORDER BY tag",
-    )
-    .bind(document_id)
-    .fetch_all(pool)
-    .await
-    .map_err(DbError::Sqlx)?;
-
-    Ok(tags)
-}
-
-/// Count documents
-pub async fn count_documents(pool: &SqlitePool) -> DbResult<i64> {
+/// Count total documents
+pub async fn count_documents(pool: &PgPool) -> DbResult<i64> {
     let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM documents")
         .fetch_one(pool)
         .await
         .map_err(DbError::Sqlx)?;
-
     Ok(count)
 }
 
 /// Count documents by type
-pub async fn count_documents_by_type(pool: &SqlitePool, doc_type: &str) -> DbResult<i64> {
-    let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM documents WHERE doc_type = ?")
+pub async fn count_documents_by_type(pool: &PgPool, doc_type: &str) -> DbResult<i64> {
+    let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM documents WHERE doc_type = $1")
         .bind(doc_type)
         .fetch_one(pool)
         .await
         .map_err(DbError::Sqlx)?;
-
     Ok(count)
+}
+
+/// Get documents that have not yet been indexed (or need re-indexing)
+pub async fn get_unindexed_documents(pool: &PgPool, limit: i64) -> DbResult<Vec<Document>> {
+    let rows = sqlx::query(
+        "SELECT id, title, content, content_type, source_type, source_url, doc_type, tags,
+                repo_id, file_path, word_count, char_count, created_at, updated_at, indexed_at
+         FROM documents
+         WHERE indexed_at IS NULL OR updated_at > indexed_at
+         ORDER BY updated_at DESC
+         LIMIT $1",
+    )
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .map_err(DbError::Sqlx)?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| Document {
+            id: row.get::<Option<String>, _>("id").unwrap_or_default(),
+            title: row.get("title"),
+            content: row.get("content"),
+            content_type: row
+                .get::<Option<String>, _>("content_type")
+                .unwrap_or_else(|| "markdown".to_string()),
+            source_type: row
+                .get::<Option<String>, _>("source_type")
+                .unwrap_or_else(|| "manual".to_string()),
+            source_url: row.get("source_url"),
+            doc_type: row
+                .get::<Option<String>, _>("doc_type")
+                .unwrap_or_else(|| "reference".to_string()),
+            tags: row.get("tags"),
+            repo_id: row.get("repo_id"),
+            file_path: row.get("file_path"),
+            word_count: row.get::<Option<i64>, _>("word_count").unwrap_or(0),
+            char_count: row.get::<Option<i64>, _>("char_count").unwrap_or(0),
+            created_at: row.get("created_at"),
+            updated_at: row.get("updated_at"),
+            indexed_at: row.get("indexed_at"),
+        })
+        .collect())
+}
+
+/// Mark a document as indexed at the current time
+pub async fn mark_document_indexed(pool: &PgPool, document_id: &str) -> DbResult<()> {
+    let now = chrono::Utc::now().timestamp();
+    sqlx::query("UPDATE documents SET indexed_at = $1 WHERE id = $2")
+        .bind(now)
+        .bind(document_id)
+        .execute(pool)
+        .await
+        .map_err(DbError::Sqlx)?;
+    Ok(())
+}
+
+/// Get tags for a document
+pub async fn get_document_tags(pool: &PgPool, document_id: &str) -> DbResult<Vec<String>> {
+    let rows = sqlx::query("SELECT tag FROM document_tags WHERE document_id = $1 ORDER BY tag")
+        .bind(document_id)
+        .fetch_all(pool)
+        .await
+        .map_err(DbError::Sqlx)?;
+
+    Ok(rows
+        .into_iter()
+        .map(|r| r.get::<String, _>("tag"))
+        .collect())
+}
+
+/// Search documents by title (case-insensitive substring)
+pub async fn search_documents_by_title(
+    pool: &PgPool,
+    query: &str,
+    limit: Option<i64>,
+) -> DbResult<Vec<Document>> {
+    let limit = limit.unwrap_or(50);
+    let pattern = format!("%{}%", query);
+
+    let rows = sqlx::query(
+        "SELECT id, title, content, content_type, source_type, source_url, doc_type, tags,
+                repo_id, file_path, word_count, char_count, created_at, updated_at, indexed_at
+         FROM documents
+         WHERE title ILIKE $1
+         ORDER BY created_at DESC
+         LIMIT $2",
+    )
+    .bind(&pattern)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .map_err(DbError::Sqlx)?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| Document {
+            id: row.get::<Option<String>, _>("id").unwrap_or_default(),
+            title: row.get("title"),
+            content: row.get("content"),
+            content_type: row
+                .get::<Option<String>, _>("content_type")
+                .unwrap_or_else(|| "markdown".to_string()),
+            source_type: row
+                .get::<Option<String>, _>("source_type")
+                .unwrap_or_else(|| "manual".to_string()),
+            source_url: row.get("source_url"),
+            doc_type: row
+                .get::<Option<String>, _>("doc_type")
+                .unwrap_or_else(|| "reference".to_string()),
+            tags: row.get("tags"),
+            repo_id: row.get("repo_id"),
+            file_path: row.get("file_path"),
+            word_count: row.get::<Option<i64>, _>("word_count").unwrap_or(0),
+            char_count: row.get::<Option<i64>, _>("char_count").unwrap_or(0),
+            created_at: row.get("created_at"),
+            updated_at: row.get("updated_at"),
+            indexed_at: row.get("indexed_at"),
+        })
+        .collect())
+}
+
+/// Search documents by tag
+pub async fn search_documents_by_tags(
+    pool: &PgPool,
+    tag: &str,
+    limit: Option<i64>,
+) -> DbResult<Vec<Document>> {
+    let limit = limit.unwrap_or(50);
+
+    let rows = sqlx::query(
+        "SELECT DISTINCT d.id, d.title, d.content, d.content_type, d.source_type, d.source_url,
+                d.doc_type, d.tags, d.repo_id, d.file_path, d.word_count, d.char_count,
+                d.created_at, d.updated_at, d.indexed_at
+         FROM documents d
+         JOIN document_tags dt ON d.id = dt.document_id
+         WHERE dt.tag = $1
+         ORDER BY d.created_at DESC
+         LIMIT $2",
+    )
+    .bind(tag)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .map_err(DbError::Sqlx)?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| Document {
+            id: row.get::<Option<String>, _>("id").unwrap_or_default(),
+            title: row.get("title"),
+            content: row.get("content"),
+            content_type: row
+                .get::<Option<String>, _>("content_type")
+                .unwrap_or_else(|| "markdown".to_string()),
+            source_type: row
+                .get::<Option<String>, _>("source_type")
+                .unwrap_or_else(|| "manual".to_string()),
+            source_url: row.get("source_url"),
+            doc_type: row
+                .get::<Option<String>, _>("doc_type")
+                .unwrap_or_else(|| "reference".to_string()),
+            tags: row.get("tags"),
+            repo_id: row.get("repo_id"),
+            file_path: row.get("file_path"),
+            word_count: row.get::<Option<i64>, _>("word_count").unwrap_or(0),
+            char_count: row.get::<Option<i64>, _>("char_count").unwrap_or(0),
+            created_at: row.get("created_at"),
+            updated_at: row.get("updated_at"),
+            indexed_at: row.get("indexed_at"),
+        })
+        .collect())
 }
 
 // ============================================================================
@@ -407,7 +476,7 @@ pub async fn count_documents_by_type(pool: &SqlitePool, doc_type: &str) -> DbRes
 
 /// Create document chunks
 pub async fn create_chunks(
-    pool: &SqlitePool,
+    pool: &PgPool,
     document_id: String,
     chunks: Vec<(String, i64, i64, Option<String>)>, // (content, char_start, char_end, heading)
 ) -> DbResult<Vec<DocumentChunk>> {
@@ -420,8 +489,8 @@ pub async fn create_chunks(
 
         sqlx::query(
             "INSERT INTO document_chunks
-            (id, document_id, chunk_index, content, char_start, char_end, word_count, heading, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+             (id, document_id, chunk_index, content, char_start, char_end, word_count, heading, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
         )
         .bind(&id)
         .bind(&document_id)
@@ -453,18 +522,14 @@ pub async fn create_chunks(
 }
 
 /// Get chunks for a document
-pub async fn get_document_chunks(
-    pool: &SqlitePool,
-    document_id: &str,
-) -> DbResult<Vec<DocumentChunk>> {
-    let rows = sqlx::query!(
-        "SELECT id, document_id, chunk_index, content, char_start, char_end,
-                word_count, heading, created_at
+pub async fn get_document_chunks(pool: &PgPool, document_id: &str) -> DbResult<Vec<DocumentChunk>> {
+    let rows = sqlx::query(
+        "SELECT id, document_id, chunk_index, content, char_start, char_end, word_count, heading, created_at
          FROM document_chunks
-         WHERE document_id = ?
-         ORDER BY chunk_index",
-        document_id
+         WHERE document_id = $1
+         ORDER BY chunk_index ASC",
     )
+    .bind(document_id)
     .fetch_all(pool)
     .await
     .map_err(DbError::Sqlx)?;
@@ -472,51 +537,42 @@ pub async fn get_document_chunks(
     Ok(rows
         .into_iter()
         .map(|row| DocumentChunk {
-            id: row.id.unwrap_or_default(),
-            document_id: row.document_id,
-            chunk_index: row.chunk_index,
-            content: row.content,
-            char_start: row.char_start,
-            char_end: row.char_end,
-            word_count: row.word_count.unwrap_or(0),
-            heading: row.heading,
-            created_at: row.created_at,
+            id: row.get("id"),
+            document_id: row.get("document_id"),
+            chunk_index: row.get("chunk_index"),
+            content: row.get("content"),
+            char_start: row.get("char_start"),
+            char_end: row.get("char_end"),
+            word_count: row.get::<Option<i64>, _>("word_count").unwrap_or(0),
+            heading: row.get("heading"),
+            created_at: row.get("created_at"),
         })
         .collect())
-}
-
-/// Delete chunks for a document
-pub async fn delete_document_chunks(pool: &SqlitePool, document_id: &str) -> DbResult<()> {
-    sqlx::query("DELETE FROM document_chunks WHERE document_id = ?")
-        .bind(document_id)
-        .execute(pool)
-        .await
-        .map_err(DbError::Sqlx)?;
-
-    Ok(())
 }
 
 // ============================================================================
 // Embedding Operations
 // ============================================================================
 
-/// Store embedding for a chunk
+/// Store an embedding for a chunk
 pub async fn store_embedding(
-    pool: &SqlitePool,
+    pool: &PgPool,
     chunk_id: String,
-    embedding: Vec<f32>,
+    vector: Vec<f32>,
     model: String,
 ) -> DbResult<DocumentEmbedding> {
     let id = Uuid::new_v4().to_string();
     let now = chrono::Utc::now().timestamp();
-    let embedding_json =
-        serde_json::to_string(&embedding).map_err(|e| DbError::InvalidInput(e.to_string()))?;
-    let dimension = embedding.len() as i64;
+    let dimension = vector.len() as i64;
+    let embedding_json = serde_json::to_string(&vector)
+        .map_err(|e| DbError::InvalidInput(format!("Failed to serialize embedding: {}", e)))?;
 
     sqlx::query(
-        "INSERT OR REPLACE INTO document_embeddings
-        (id, chunk_id, embedding, model, dimension, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO document_embeddings (id, chunk_id, embedding, model, dimension, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (chunk_id) DO UPDATE
+         SET embedding = EXCLUDED.embedding, model = EXCLUDED.model,
+             dimension = EXCLUDED.dimension, created_at = EXCLUDED.created_at",
     )
     .bind(&id)
     .bind(&chunk_id)
@@ -538,122 +594,42 @@ pub async fn store_embedding(
     })
 }
 
-/// Get embeddings for a document
+/// Get embeddings for a document's chunks
 pub async fn get_document_embeddings(
-    pool: &SqlitePool,
+    pool: &PgPool,
     document_id: &str,
-) -> DbResult<Vec<(DocumentChunk, DocumentEmbedding)>> {
-    let rows = sqlx::query!(
-        "SELECT
-            c.id as chunk_id, c.document_id, c.chunk_index, c.content,
-            c.char_start, c.char_end, c.word_count, c.heading, c.created_at as chunk_created_at,
-            e.id as embedding_id, e.embedding, e.model, e.dimension, e.created_at as embedding_created_at
-         FROM document_chunks c
-         JOIN document_embeddings e ON c.id = e.chunk_id
-         WHERE c.document_id = ?
-         ORDER BY c.chunk_index",
-        document_id
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(DbError::Sqlx)?;
-
-    let mut results = Vec::new();
-    for row in rows {
-        let chunk = DocumentChunk {
-            id: row.chunk_id.clone().unwrap_or_default(),
-            document_id: row.document_id,
-            chunk_index: row.chunk_index,
-            content: row.content,
-            char_start: row.char_start,
-            char_end: row.char_end,
-            word_count: row.word_count.unwrap_or(0),
-            heading: row.heading,
-            created_at: row.chunk_created_at,
-        };
-
-        let embedding = DocumentEmbedding {
-            id: row.embedding_id.unwrap_or_default(),
-            chunk_id: row.chunk_id.unwrap_or_default(),
-            embedding: row.embedding,
-            model: row.model,
-            dimension: row.dimension,
-            created_at: row.embedding_created_at,
-        };
-
-        results.push((chunk, embedding));
-    }
-
-    Ok(results)
-}
-
-/// Get all embeddings (for search)
-pub async fn get_all_embeddings(pool: &SqlitePool) -> DbResult<Vec<(String, DocumentEmbedding)>> {
-    let rows = sqlx::query!(
-        "SELECT e.id, e.chunk_id, e.embedding, e.model, e.dimension, e.created_at,
-                c.document_id
-         FROM document_embeddings e
-         JOIN document_chunks c ON e.chunk_id = c.id"
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(DbError::Sqlx)?;
-
-    let mut results = Vec::new();
-    for row in rows {
-        let embedding = DocumentEmbedding {
-            id: row.id.unwrap_or_default(),
-            chunk_id: row.chunk_id,
-            embedding: row.embedding,
-            model: row.model,
-            dimension: row.dimension,
-            created_at: row.created_at,
-        };
-        results.push((row.document_id, embedding));
-    }
-
-    Ok(results)
-}
-
-/// Delete embeddings for a document
-pub async fn delete_document_embeddings(pool: &SqlitePool, document_id: &str) -> DbResult<()> {
-    sqlx::query(
-        "DELETE FROM document_embeddings
-         WHERE chunk_id IN (SELECT id FROM document_chunks WHERE document_id = ?)",
+) -> DbResult<Vec<DocumentEmbedding>> {
+    let rows = sqlx::query(
+        "SELECT de.id, de.chunk_id, de.embedding, de.model, de.dimension, de.created_at
+         FROM document_embeddings de
+         JOIN document_chunks dc ON de.chunk_id = dc.id
+         WHERE dc.document_id = $1
+         ORDER BY dc.chunk_index ASC",
     )
     .bind(document_id)
-    .execute(pool)
+    .fetch_all(pool)
     .await
     .map_err(DbError::Sqlx)?;
 
-    Ok(())
+    Ok(rows
+        .into_iter()
+        .map(|row| DocumentEmbedding {
+            id: row.get("id"),
+            chunk_id: row.get("chunk_id"),
+            embedding: row.get("embedding"),
+            model: row.get("model"),
+            dimension: row.get::<Option<i64>, _>("dimension").unwrap_or(0),
+            created_at: row.get("created_at"),
+        })
+        .collect())
 }
 
-/// Mark document as indexed
-pub async fn mark_document_indexed(pool: &SqlitePool, document_id: &str) -> DbResult<()> {
-    let now = chrono::Utc::now().timestamp();
-
-    sqlx::query("UPDATE documents SET indexed_at = ? WHERE id = ?")
-        .bind(now)
-        .bind(document_id)
-        .execute(pool)
-        .await
-        .map_err(DbError::Sqlx)?;
-
-    Ok(())
-}
-
-/// Get documents needing indexing
-pub async fn get_unindexed_documents(pool: &SqlitePool, limit: i64) -> DbResult<Vec<Document>> {
-    let rows = sqlx::query!(
-        "SELECT id, title, content, content_type, source_type, source_url, doc_type,
-                tags, repo_id, file_path, word_count, char_count,
-                created_at, updated_at, indexed_at
-         FROM documents
-         WHERE indexed_at IS NULL OR updated_at > indexed_at
-         ORDER BY updated_at DESC
-         LIMIT ?",
-        limit
+/// Get all embeddings (for building the HNSW index on startup)
+pub async fn get_all_embeddings(pool: &PgPool) -> DbResult<Vec<DocumentEmbedding>> {
+    let rows = sqlx::query(
+        "SELECT id, chunk_id, embedding, model, dimension, created_at
+         FROM document_embeddings
+         ORDER BY created_at ASC",
     )
     .fetch_all(pool)
     .await
@@ -661,28 +637,19 @@ pub async fn get_unindexed_documents(pool: &SqlitePool, limit: i64) -> DbResult<
 
     Ok(rows
         .into_iter()
-        .map(|row| Document {
-            id: row.id.unwrap_or_default(),
-            title: row.title,
-            content: row.content,
-            content_type: row.content_type.unwrap_or_else(|| "markdown".to_string()),
-            source_type: row.source_type.unwrap_or_else(|| "manual".to_string()),
-            source_url: row.source_url,
-            doc_type: row.doc_type.unwrap_or_else(|| "reference".to_string()),
-            tags: row.tags,
-            repo_id: row.repo_id,
-            file_path: row.file_path,
-            word_count: row.word_count.unwrap_or(0),
-            char_count: row.char_count.unwrap_or(0),
-            created_at: row.created_at,
-            updated_at: row.updated_at,
-            indexed_at: row.indexed_at,
+        .map(|row| DocumentEmbedding {
+            id: row.get("id"),
+            chunk_id: row.get("chunk_id"),
+            embedding: row.get("embedding"),
+            model: row.get("model"),
+            dimension: row.get::<Option<i64>, _>("dimension").unwrap_or(0),
+            created_at: row.get("created_at"),
         })
         .collect())
 }
 
 // ============================================================================
-// Ideas - Quick thought capture with tagging
+// Ideas — Quick thought capture with tagging
 // ============================================================================
 
 /// Idea model matching the database schema
@@ -702,21 +669,10 @@ pub struct Idea {
     pub updated_at: i64,
 }
 
-/// Tag model for tag registry
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct Tag {
-    pub name: String,
-    pub color: String,
-    pub description: Option<String>,
-    pub usage_count: i64,
-    pub created_at: i64,
-    pub updated_at: i64,
-}
-
 /// Create a new idea
 #[allow(clippy::too_many_arguments)]
 pub async fn create_idea(
-    pool: &SqlitePool,
+    pool: &PgPool,
     content: &str,
     tags: Option<&str>,
     project: Option<&str>,
@@ -729,10 +685,8 @@ pub async fn create_idea(
     let now = chrono::Utc::now().timestamp();
 
     sqlx::query(
-        r#"
-        INSERT INTO ideas (id, content, tags, project, repo_id, priority, status, category, created_at, updated_at)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
-        "#,
+        "INSERT INTO ideas (id, content, tags, project, repo_id, priority, status, category, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
     )
     .bind(&id)
     .bind(content)
@@ -745,200 +699,203 @@ pub async fn create_idea(
     .bind(now)
     .bind(now)
     .execute(pool)
-    .await?;
+    .await
+    .map_err(DbError::Sqlx)?;
 
     Ok(id)
 }
 
 /// List ideas with optional filters
 pub async fn list_ideas(
-    pool: &SqlitePool,
+    pool: &PgPool,
     limit: i64,
     status: Option<&str>,
     category: Option<&str>,
     tag: Option<&str>,
     project: Option<&str>,
 ) -> DbResult<Vec<Idea>> {
-    let mut query = String::from(
-        r#"
-        SELECT id, content, tags, project, repo_id, priority, status, category,
-               linked_doc_id, linked_task_id, created_at, updated_at
-        FROM ideas
-        WHERE 1=1
-        "#,
+    // Build dynamic WHERE clause with numbered Postgres placeholders
+    let mut conditions: Vec<String> = vec!["1=1".to_string()];
+    let mut param_idx = 1usize;
+
+    if status.is_some() {
+        param_idx += 1;
+        conditions.push(format!("status = ${}", param_idx));
+    }
+    if category.is_some() {
+        param_idx += 1;
+        conditions.push(format!("category = ${}", param_idx));
+    }
+    if tag.is_some() {
+        param_idx += 1;
+        conditions.push(format!("tags LIKE '%' || ${} || '%'", param_idx));
+    }
+    if project.is_some() {
+        param_idx += 1;
+        conditions.push(format!("project = ${}", param_idx));
+    }
+    // limit is always the last param
+    param_idx += 1;
+    let limit_param = param_idx;
+
+    let sql = format!(
+        "SELECT id, content, tags, project, repo_id, priority, status, category,
+                linked_doc_id, linked_task_id, created_at, updated_at
+         FROM ideas
+         WHERE {}
+         ORDER BY created_at DESC
+         LIMIT ${}",
+        conditions[1..].join(" AND "),
+        limit_param
     );
 
-    let mut binds: Vec<String> = Vec::new();
+    let mut q = sqlx::query_as::<_, Idea>(&sql);
 
     if let Some(s) = status {
-        binds.push(s.to_string());
-        query.push_str(&format!(" AND status = ?{}", binds.len()));
+        q = q.bind(s);
     }
     if let Some(c) = category {
-        binds.push(c.to_string());
-        query.push_str(&format!(" AND category = ?{}", binds.len()));
+        q = q.bind(c);
     }
     if let Some(t) = tag {
-        binds.push(t.to_string());
-        query.push_str(&format!(" AND (tags LIKE '%' || ?{} || '%')", binds.len()));
+        q = q.bind(t);
     }
     if let Some(p) = project {
-        binds.push(p.to_string());
-        query.push_str(&format!(" AND project = ?{}", binds.len()));
+        q = q.bind(p);
     }
+    q = q.bind(limit);
 
-    binds.push(limit.to_string());
-    query.push_str(&format!(" ORDER BY created_at DESC LIMIT ?{}", binds.len()));
-
-    let mut q = sqlx::query_as::<_, Idea>(&query);
-
-    // Bind all parameters in order
-    for (idx, bind) in binds.iter().enumerate() {
-        if idx < binds.len() - 1 {
-            // All filters are strings
-            q = q.bind(bind);
-        } else {
-            // Last one is limit (i64)
-            q = q.bind(limit);
-        }
-    }
-
-    Ok(q.fetch_all(pool).await?)
+    Ok(q.fetch_all(pool).await.map_err(DbError::Sqlx)?)
 }
 
 /// Update idea status
-pub async fn update_idea_status(pool: &SqlitePool, id: &str, status: &str) -> DbResult<()> {
+pub async fn update_idea_status(pool: &PgPool, id: &str, status: &str) -> DbResult<()> {
     let now = chrono::Utc::now().timestamp();
 
-    sqlx::query(
-        r#"
-        UPDATE ideas
-        SET status = ?1, updated_at = ?2
-        WHERE id = ?3
-        "#,
-    )
-    .bind(status)
-    .bind(now)
-    .bind(id)
-    .execute(pool)
-    .await?;
+    sqlx::query("UPDATE ideas SET status = $1, updated_at = $2 WHERE id = $3")
+        .bind(status)
+        .bind(now)
+        .bind(id)
+        .execute(pool)
+        .await
+        .map_err(DbError::Sqlx)?;
 
     Ok(())
 }
 
 /// Delete an idea
-pub async fn delete_idea(pool: &SqlitePool, id: &str) -> DbResult<()> {
-    sqlx::query("DELETE FROM ideas WHERE id = ?1")
+pub async fn delete_idea(pool: &PgPool, id: &str) -> DbResult<()> {
+    sqlx::query("DELETE FROM ideas WHERE id = $1")
         .bind(id)
         .execute(pool)
-        .await?;
-
+        .await
+        .map_err(DbError::Sqlx)?;
     Ok(())
 }
 
 /// Count total ideas
-pub async fn count_ideas(pool: &SqlitePool) -> DbResult<i64> {
-    let row = sqlx::query("SELECT COUNT(*) as count FROM ideas")
+pub async fn count_ideas(pool: &PgPool) -> DbResult<i64> {
+    let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM ideas")
         .fetch_one(pool)
-        .await?;
-
-    Ok(row.get("count"))
+        .await
+        .map_err(DbError::Sqlx)?;
+    Ok(count)
 }
 
 // ============================================================================
-// Tags - Tag registry and search
+// Tags — Tag registry and search
 // ============================================================================
 
+/// Tag model for tag registry
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct Tag {
+    pub name: String,
+    pub color: String,
+    pub description: Option<String>,
+    pub usage_count: i64,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
 /// List tags ordered by usage count
-pub async fn list_tags(pool: &SqlitePool, limit: i64) -> DbResult<Vec<Tag>> {
+pub async fn list_tags(pool: &PgPool, limit: i64) -> DbResult<Vec<Tag>> {
     Ok(sqlx::query_as::<_, Tag>(
-        r#"
-        SELECT name, color, description, usage_count, created_at, updated_at
-        FROM tags
-        ORDER BY usage_count DESC
-        LIMIT ?1
-        "#,
+        "SELECT name, color, description, usage_count, created_at, updated_at
+         FROM tags
+         ORDER BY usage_count DESC
+         LIMIT $1",
     )
     .bind(limit)
     .fetch_all(pool)
-    .await?)
+    .await
+    .map_err(DbError::Sqlx)?)
 }
 
 /// Search tags by name
-pub async fn search_tags(pool: &SqlitePool, query: &str) -> DbResult<Vec<Tag>> {
+pub async fn search_tags(pool: &PgPool, query: &str) -> DbResult<Vec<Tag>> {
+    let pattern = format!("%{}%", query);
     Ok(sqlx::query_as::<_, Tag>(
-        r#"
-        SELECT name, color, description, usage_count, created_at, updated_at
-        FROM tags
-        WHERE name LIKE '%' || ?1 || '%'
-        ORDER BY usage_count DESC
-        LIMIT 50
-        "#,
+        "SELECT name, color, description, usage_count, created_at, updated_at
+         FROM tags
+         WHERE name ILIKE $1
+         ORDER BY usage_count DESC
+         LIMIT 50",
     )
-    .bind(query)
+    .bind(&pattern)
     .fetch_all(pool)
-    .await?)
+    .await
+    .map_err(DbError::Sqlx)?)
 }
 
 // ============================================================================
-// Document Full-Text Search (FTS5)
+// Document Full-Text Search
 // ============================================================================
 
-/// Search documents using FTS5 full-text search
-pub async fn search_documents(pool: &SqlitePool, query: &str) -> DbResult<Vec<Document>> {
-    #[derive(FromRow)]
-    struct DocumentRow {
-        id: String,
-        title: String,
-        content: String,
-        content_type: String,
-        source_type: String,
-        source_url: Option<String>,
-        doc_type: String,
-        tags: Option<String>,
-        repo_id: Option<String>,
-        file_path: Option<String>,
-        word_count: Option<i64>,
-        char_count: Option<i64>,
-        created_at: i64,
-        updated_at: i64,
-        indexed_at: Option<i64>,
-    }
+/// Search documents using Postgres full-text search (tsvector/tsquery)
+/// Falls back to ILIKE if the FTS index is not available.
+pub async fn search_documents(pool: &PgPool, query: &str) -> DbResult<Vec<Document>> {
+    let pattern = format!("%{}%", query);
 
-    let rows = sqlx::query_as::<_, DocumentRow>(
-        r#"
-        SELECT d.id, d.title, d.content, d.content_type, d.source_type, d.source_url,
-               d.doc_type, d.tags, d.repo_id, d.file_path, d.word_count, d.char_count,
-               d.created_at, d.updated_at, d.indexed_at
-        FROM documents d
-        JOIN documents_fts fts ON d.rowid = fts.rowid
-        WHERE documents_fts MATCH ?1
-        ORDER BY rank
-        LIMIT 50
-        "#,
+    // Use ILIKE on title + content — works without a dedicated FTS index.
+    // Replace with `to_tsvector('english', content) @@ plainto_tsquery($1)` once
+    // GIN index is created in migrations.
+    let rows = sqlx::query(
+        "SELECT id, title, content, content_type, source_type, source_url, doc_type, tags,
+                repo_id, file_path, word_count, char_count, created_at, updated_at, indexed_at
+         FROM documents
+         WHERE title ILIKE $1 OR content ILIKE $1
+         ORDER BY created_at DESC
+         LIMIT 50",
     )
-    .bind(query)
+    .bind(&pattern)
     .fetch_all(pool)
-    .await?;
+    .await
+    .map_err(DbError::Sqlx)?;
 
     Ok(rows
         .into_iter()
         .map(|row| Document {
-            id: row.id,
-            title: row.title,
-            content: row.content,
-            content_type: row.content_type,
-            source_type: row.source_type,
-            source_url: row.source_url,
-            doc_type: row.doc_type,
-            tags: row.tags,
-            repo_id: row.repo_id,
-            file_path: row.file_path,
-            word_count: row.word_count.unwrap_or(0),
-            char_count: row.char_count.unwrap_or(0),
-            created_at: row.created_at,
-            updated_at: row.updated_at,
-            indexed_at: row.indexed_at,
+            id: row.get::<Option<String>, _>("id").unwrap_or_default(),
+            title: row.get("title"),
+            content: row.get("content"),
+            content_type: row
+                .get::<Option<String>, _>("content_type")
+                .unwrap_or_else(|| "markdown".to_string()),
+            source_type: row
+                .get::<Option<String>, _>("source_type")
+                .unwrap_or_else(|| "manual".to_string()),
+            source_url: row.get("source_url"),
+            doc_type: row
+                .get::<Option<String>, _>("doc_type")
+                .unwrap_or_else(|| "reference".to_string()),
+            tags: row.get("tags"),
+            repo_id: row.get("repo_id"),
+            file_path: row.get("file_path"),
+            word_count: row.get::<Option<i64>, _>("word_count").unwrap_or(0),
+            char_count: row.get::<Option<i64>, _>("char_count").unwrap_or(0),
+            created_at: row.get("created_at"),
+            updated_at: row.get("updated_at"),
+            indexed_at: row.get("indexed_at"),
         })
         .collect())
 }

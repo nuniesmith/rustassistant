@@ -7,7 +7,7 @@ pub mod aggregator;
 pub mod worker;
 
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, SqlitePool};
+use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 
 // ============================================================================
@@ -176,7 +176,7 @@ impl WorkerResult {
 // Database Operations
 // ============================================================================
 
-pub async fn create_research_tables(pool: &SqlitePool) -> anyhow::Result<()> {
+pub async fn create_research_tables(pool: &PgPool) -> anyhow::Result<()> {
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS research_requests (
@@ -229,7 +229,7 @@ pub async fn create_research_tables(pool: &SqlitePool) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn save_research_request(pool: &SqlitePool, req: &ResearchRequest) -> anyhow::Result<()> {
+pub async fn save_research_request(pool: &PgPool, req: &ResearchRequest) -> anyhow::Result<()> {
     sqlx::query(
         r#"
         INSERT INTO research_requests (
@@ -257,7 +257,7 @@ pub async fn save_research_request(pool: &SqlitePool, req: &ResearchRequest) -> 
     Ok(())
 }
 
-pub async fn save_worker_result(pool: &SqlitePool, result: &WorkerResult) -> anyhow::Result<()> {
+pub async fn save_worker_result(pool: &PgPool, result: &WorkerResult) -> anyhow::Result<()> {
     sqlx::query(
         r#"
         INSERT OR REPLACE INTO worker_results (
@@ -286,7 +286,7 @@ pub async fn save_worker_result(pool: &SqlitePool, result: &WorkerResult) -> any
 }
 
 pub async fn get_research_with_results(
-    pool: &SqlitePool,
+    pool: &PgPool,
     research_id: &str,
 ) -> anyhow::Result<(ResearchRequest, Vec<WorkerResult>)> {
     let request =
@@ -305,7 +305,7 @@ pub async fn get_research_with_results(
     Ok((request, results))
 }
 
-pub async fn list_research(pool: &SqlitePool, limit: i32) -> anyhow::Result<Vec<ResearchRequest>> {
+pub async fn list_research(pool: &PgPool, limit: i32) -> anyhow::Result<Vec<ResearchRequest>> {
     let requests = sqlx::query_as::<_, ResearchRequest>(
         "SELECT * FROM research_requests ORDER BY created_at DESC LIMIT ?",
     )

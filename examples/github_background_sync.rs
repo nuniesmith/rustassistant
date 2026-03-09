@@ -10,7 +10,7 @@
 use rustassistant::github::{
     start_background_sync_with_config, BackgroundSyncConfig, BackgroundSyncManager, GitHubClient,
 };
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use std::env;
 use tokio::time::{sleep, Duration};
 
@@ -37,11 +37,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Get database URL
-    let database_url =
-        env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:rustassistant.db".to_string());
+    let database_url = env::var("DATABASE_URL").unwrap_or_else(|_| {
+        "postgresql://rustassistant:changeme@localhost:5432/rustassistant".to_string()
+    });
 
     println!("🔧 Connecting to database: {}", database_url);
-    let pool = SqlitePool::connect(&database_url).await?;
+    let pool = PgPool::connect(&database_url).await?;
 
     // Initialize GitHub client
     println!("🔑 Initializing GitHub client...");

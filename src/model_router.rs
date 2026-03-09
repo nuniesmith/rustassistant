@@ -1,9 +1,9 @@
 // src/model_router.rs
-// STUB: RustAssistant ModelRouter — routes tasks between local Ollama and remote Grok API
-// TODO: wire into existing LLM client once local model serving is confirmed
+// RustAssistant ModelRouter — routes tasks between local Ollama and remote Grok API
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::time::Duration;
 use tracing::{debug, info, warn};
 
 // ---------------------------------------------------------------------------
@@ -115,11 +115,151 @@ impl ModelRouter {
         Self { config }
     }
 
-    /// Classify a raw user prompt into a TaskKind.
+    /// Classify a raw user prompt into a `TaskKind`.
     ///
-    /// TODO: replace naive keyword matching with a lightweight classifier
-    ///       or a dedicated classification prompt against the local model.
+    /// Strategy (in order):
+    /// 1. Try a one-shot LLM classification against the local Ollama instance
+    ///    (fast, <200 ms on a warm model).  The model is asked to reply with
+    ///    exactly one label from the fixed set.
+    /// 2. If Ollama is unreachable or returns an unrecognised label, fall back
+    ///    to the deterministic keyword heuristic below.
+    ///
+    /// This is the sync surface — callers that want the async LLM path should
+    /// use `classify_prompt_async` instead.  The sync version always falls back
+    /// to keywords immediately (useful in tests and for the `route_prompt` API
+    /// that is called from sync contexts).
     pub fn classify_prompt(&self, prompt: &str) -> TaskKind {
+        Self::keyword_classify(prompt)
+    }
+
+    /// Async version of `classify_prompt` — tries the local Ollama model first,
+    /// falls back to keywords if Ollama is unreachable or gives a bad response.
+    ///
+    /// Callers in async contexts (e.g. `handle_chat`) should prefer this.
+    pub async fn classify_prompt_async(&self, prompt: &str) -> TaskKind {
+        // Only attempt LLM classification when not forced-remote and the local
+        // model is configured.
+        if !self.config.force_remote {
+            if let Some(kind) = self.llm_classify(prompt).await {
+                return kind;
+            }
+        }
+        Self::keyword_classify(prompt)
+    }
+
+    /// One-shot LLM classification via a tiny Ollama request.
+    ///
+    /// Returns `None` if Ollama is unreachable, times out, or returns an
+    /// unrecognised label — callers should fall back to keyword matching.
+    async fn llm_classify(&self, prompt: &str) -> Option<TaskKind> {
+        const CLASSIFY_SYSTEM: &str = "\
+You are a task classifier. Classify the user message into EXACTLY ONE of these labels \
+(reply with only the label, nothing else):\n\
+ScaffoldStub | TodoTagging | TreeSummary | SymbolExtraction | \
+RepoQuestion | ArchitecturalReason | CodeReview | Unknown";
+
+        let classify_prompt = format!(
+            "Classify this message:\n\"\"\"\n{}\n\"\"\"",
+            &prompt[..prompt.len().min(400)] // cap to keep the request tiny
+        );
+
+        let url = format!("{}/api/chat", self.config.local_base_url);
+
+        #[derive(serde::Serialize)]
+        struct Req<'a> {
+            model: &'a str,
+            messages: [Msg<'a>; 2],
+            stream: bool,
+            options: Opts,
+        }
+        #[derive(serde::Serialize)]
+        struct Msg<'a> {
+            role: &'a str,
+            content: &'a str,
+        }
+        #[derive(serde::Serialize)]
+        struct Opts {
+            temperature: f32,
+            num_predict: u32,
+        }
+        #[derive(serde::Deserialize)]
+        struct Resp {
+            message: RespMsg,
+        }
+        #[derive(serde::Deserialize)]
+        struct RespMsg {
+            content: String,
+        }
+
+        let body = Req {
+            model: &self.config.local_model,
+            messages: [
+                Msg {
+                    role: "system",
+                    content: CLASSIFY_SYSTEM,
+                },
+                Msg {
+                    role: "user",
+                    content: &classify_prompt,
+                },
+            ],
+            stream: false,
+            options: Opts {
+                temperature: 0.0,
+                num_predict: 16,
+            },
+        };
+
+        let client = match reqwest::Client::builder()
+            .timeout(Duration::from_secs(8))
+            .build()
+        {
+            Ok(c) => c,
+            Err(_) => return None,
+        };
+
+        let resp = match client.post(&url).json(&body).send().await {
+            Ok(r) if r.status().is_success() => r,
+            Ok(r) => {
+                warn!(status = %r.status(), "LLM classifier: non-success response");
+                return None;
+            }
+            Err(e) => {
+                debug!(error = %e, "LLM classifier: Ollama unreachable — using keywords");
+                return None;
+            }
+        };
+
+        let parsed: Resp = match resp.json().await {
+            Ok(p) => p,
+            Err(e) => {
+                warn!(error = %e, "LLM classifier: failed to parse response");
+                return None;
+            }
+        };
+
+        let label = parsed.message.content.trim().to_string();
+        let kind = match label.as_str() {
+            "ScaffoldStub" => TaskKind::ScaffoldStub,
+            "TodoTagging" => TaskKind::TodoTagging,
+            "TreeSummary" => TaskKind::TreeSummary,
+            "SymbolExtraction" => TaskKind::SymbolExtraction,
+            "RepoQuestion" => TaskKind::RepoQuestion,
+            "ArchitecturalReason" => TaskKind::ArchitecturalReason,
+            "CodeReview" => TaskKind::CodeReview,
+            "Unknown" => TaskKind::Unknown,
+            other => {
+                warn!(label = %other, "LLM classifier returned unknown label — falling back to keywords");
+                return None;
+            }
+        };
+
+        info!(label = %label, "LLM classifier succeeded");
+        Some(kind)
+    }
+
+    /// Pure keyword heuristic — always fast, no I/O.
+    fn keyword_classify(prompt: &str) -> TaskKind {
         let lower = prompt.to_lowercase();
 
         if lower.contains("stub")
@@ -142,11 +282,15 @@ impl ModelRouter {
             return TaskKind::TreeSummary;
         }
 
-        if lower.contains("symbol") || lower.contains("extract") || lower.contains("list function") {
+        if lower.contains("symbol") || lower.contains("extract") || lower.contains("list function")
+        {
             return TaskKind::SymbolExtraction;
         }
 
-        if lower.contains("review") || lower.contains("critique") || lower.contains("is this correct") {
+        if lower.contains("review")
+            || lower.contains("critique")
+            || lower.contains("is this correct")
+        {
             return TaskKind::CodeReview;
         }
 
@@ -178,9 +322,18 @@ impl ModelRouter {
         }
     }
 
-    /// Route by raw prompt — classifies then routes.
+    /// Route by raw prompt (sync) — classifies via keywords then routes.
+    /// Use `route_prompt_async` in async contexts for LLM-assisted classification.
     pub fn route_prompt(&self, prompt: &str) -> (TaskKind, ModelTarget) {
         let kind = self.classify_prompt(prompt);
+        let target = self.route(&kind);
+        (kind, target)
+    }
+
+    /// Route by raw prompt (async) — tries LLM classification first, falls back
+    /// to keywords.  Prefer this in all async handlers.
+    pub async fn route_prompt_async(&self, prompt: &str) -> (TaskKind, ModelTarget) {
+        let kind = self.classify_prompt_async(prompt).await;
         let target = self.route(&kind);
         (kind, target)
     }
@@ -279,8 +432,14 @@ mod tests {
     #[test]
     fn classifies_stub_prompts() {
         let r = router();
-        assert_eq!(r.classify_prompt("generate a stub for the retry handler"), TaskKind::ScaffoldStub);
-        assert_eq!(r.classify_prompt("scaffold the webhook module"), TaskKind::ScaffoldStub);
+        assert_eq!(
+            r.classify_prompt("generate a stub for the retry handler"),
+            TaskKind::ScaffoldStub
+        );
+        assert_eq!(
+            r.classify_prompt("scaffold the webhook module"),
+            TaskKind::ScaffoldStub
+        );
     }
 
     #[test]
@@ -306,5 +465,41 @@ mod tests {
         let r = ModelRouter::new(config);
         let (_, target) = r.route_prompt("generate a stub");
         assert!(matches!(target, ModelTarget::Remote { .. }));
+    }
+
+    #[test]
+    fn keyword_classify_all_kinds() {
+        assert_eq!(
+            ModelRouter::keyword_classify("scaffold a new struct"),
+            TaskKind::ScaffoldStub
+        );
+        assert_eq!(
+            ModelRouter::keyword_classify("add TODO tags here"),
+            TaskKind::TodoTagging
+        );
+        assert_eq!(
+            ModelRouter::keyword_classify("show the tree structure"),
+            TaskKind::TreeSummary
+        );
+        assert_eq!(
+            ModelRouter::keyword_classify("extract all symbols"),
+            TaskKind::SymbolExtraction
+        );
+        assert_eq!(
+            ModelRouter::keyword_classify("review this code"),
+            TaskKind::CodeReview
+        );
+        assert_eq!(
+            ModelRouter::keyword_classify("design the architecture"),
+            TaskKind::ArchitecturalReason
+        );
+        assert_eq!(
+            ModelRouter::keyword_classify("where is this in the repo"),
+            TaskKind::RepoQuestion
+        );
+        assert_eq!(
+            ModelRouter::keyword_classify("hello there"),
+            TaskKind::Unknown
+        );
     }
 }

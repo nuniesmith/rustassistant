@@ -4,7 +4,7 @@
 //! and initialize the database schema.
 
 use rustassistant::db::init_db;
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use std::env;
 
 #[tokio::main]
@@ -16,8 +16,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
     // Get database URL from environment or use default
-    let database_url =
-        env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:rustassistant.db".to_string());
+    let database_url = env::var("DATABASE_URL").unwrap_or_else(|_| {
+        "postgresql://rustassistant:changeme@localhost:5432/rustassistant".to_string()
+    });
 
     println!("🔧 Initializing database at: {}", database_url);
 
@@ -26,7 +27,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Main database initialized");
 
     // Connect to database
-    let pool = SqlitePool::connect(&database_url).await?;
+    let pool = PgPool::connect(&database_url).await?;
     println!("✅ Connected to database");
 
     // Read and execute the GitHub migration
@@ -41,7 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Verify tables were created
     let table_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name LIKE 'github_%'",
+        "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name LIKE 'github_%'",
     )
     .fetch_one(&pool)
     .await?;

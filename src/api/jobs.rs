@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::embeddings::EmbeddingGenerator;
 use crate::indexing::{DocumentIndexer, IndexingConfig};
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 
 // ============================================================================
 // Job Types
@@ -145,7 +145,7 @@ pub struct JobQueue {
     config: JobQueueConfig,
     jobs: Arc<RwLock<HashMap<String, IndexJob>>>,
     processing: Arc<Mutex<Vec<String>>>,
-    db_pool: SqlitePool,
+    db_pool: PgPool,
     _embedding_generator: Arc<Mutex<EmbeddingGenerator>>,
     indexing_config: IndexingConfig,
 }
@@ -153,7 +153,7 @@ pub struct JobQueue {
 impl JobQueue {
     pub fn new(
         config: JobQueueConfig,
-        db_pool: SqlitePool,
+        db_pool: PgPool,
         embedding_generator: Arc<Mutex<EmbeddingGenerator>>,
         indexing_config: IndexingConfig,
     ) -> Self {

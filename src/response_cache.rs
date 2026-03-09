@@ -44,7 +44,7 @@ const DEFAULT_TTL_HOURS: i64 = 24;
 
 /// Response cache for LLM API calls
 pub struct ResponseCache {
-    pool: sqlx::SqlitePool,
+    pool: sqlx::PgPool,
 }
 
 /// Cached response entry
@@ -75,7 +75,7 @@ impl ResponseCache {
     /// Create a new response cache
     pub async fn new(database_path: &str) -> Result<Self> {
         let database_url = format!("sqlite:{}?mode=rwc", database_path);
-        let pool = sqlx::SqlitePool::connect(&database_url)
+        let pool = sqlx::PgPool::connect(&database_url)
             .await
             .context("Failed to connect to cache database")?;
 
@@ -140,7 +140,7 @@ impl ResponseCache {
             r#"
             SELECT id, response, expires_at
             FROM response_cache
-            WHERE content_hash = ?
+            WHERE content_hash = $1
             AND expires_at > datetime('now')
             "#,
         )
@@ -156,7 +156,7 @@ impl ResponseCache {
                 UPDATE response_cache
                 SET hit_count = hit_count + 1,
                     last_accessed = datetime('now')
-                WHERE id = ?
+                WHERE id = $1
                 "#,
             )
             .bind(id)
@@ -190,7 +190,7 @@ impl ResponseCache {
             r#"
             INSERT OR REPLACE INTO response_cache
             (content_hash, operation, response, expires_at)
-            VALUES (?, ?, ?, ?)
+            VALUES ($1, $2, $3, $4)
             "#,
         )
         .bind(&hash)
@@ -244,7 +244,7 @@ impl ResponseCache {
         let result = sqlx::query(
             r#"
             DELETE FROM response_cache
-            WHERE operation = ?
+            WHERE operation = $1
             "#,
         )
         .bind(operation)
@@ -321,7 +321,7 @@ impl ResponseCache {
             r#"
             SELECT id, content_hash, operation, response, created_at, expires_at, hit_count, last_accessed
             FROM response_cache
-            WHERE operation = ?
+            WHERE operation = $1
             AND expires_at > datetime('now')
             ORDER BY created_at DESC
             "#,
@@ -373,7 +373,7 @@ impl ResponseCache {
             FROM response_cache
             WHERE expires_at > datetime('now')
             ORDER BY hit_count DESC
-            LIMIT ?
+            LIMIT $1
             "#,
         )
         .bind(limit)

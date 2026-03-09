@@ -17,7 +17,7 @@
 //!
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
-//!     # let pool = rustassistant::db::init_db("sqlite::memory:").await?;
+//!     # let pool = rustassistant::db::init_db(&std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgresql://rustassistant:changeme@localhost:5432/rustassistant_test".to_string())).await?;
 //!     let tracker = CostTracker::new(pool).await?;
 //!
 //!     // Log an API call
@@ -40,7 +40,7 @@ use crate::error::AuditError;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Datelike, Duration, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use tracing::{debug, info, warn};
 
 /// Grok 4.1 Fast pricing (per million tokens)
@@ -153,14 +153,14 @@ pub struct SavingsReport {
 
 /// LLM API cost tracker
 pub struct CostTracker {
-    pool: SqlitePool,
+    pool: PgPool,
     daily_budget: f64,
     monthly_budget: f64,
 }
 
 impl CostTracker {
     /// Create a new cost tracker
-    pub async fn new(pool: SqlitePool) -> Result<Self> {
+    pub async fn new(pool: PgPool) -> Result<Self> {
         let tracker = Self {
             pool,
             daily_budget: DEFAULT_DAILY_BUDGET,
@@ -174,7 +174,7 @@ impl CostTracker {
 
     /// Create with custom budget limits
     pub async fn with_budgets(
-        pool: SqlitePool,
+        pool: PgPool,
         daily_budget: f64,
         monthly_budget: f64,
     ) -> Result<Self> {
@@ -286,13 +286,14 @@ impl CostTracker {
     ) -> Result<i64> {
         let cost = self.calculate_cost(&usage);
 
-        let id = sqlx::query(
+        let row: (i64,) = sqlx::query_as(
             r#"
             INSERT INTO llm_costs (
                 operation, model, input_tokens, output_tokens, cached_tokens,
                 cost_usd, cache_hit
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            RETURNING id
             "#,
         )
         .bind(operation)
@@ -302,10 +303,10 @@ impl CostTracker {
         .bind(usage.cached_tokens as i64)
         .bind(cost)
         .bind(cache_hit)
-        .execute(&self.pool)
+        .fetch_one(&self.pool)
         .await
-        .context("Failed to log API call")?
-        .last_insert_rowid();
+        .context("Failed to log API call")?;
+        let id = row.0;
 
         info!(
             "Logged API call: {} | Cost: ${:.4} | Tokens: {}in/{}out/{}cached | Cache: {}",
@@ -342,7 +343,7 @@ impl CostTracker {
     /// call was made. This lets us track and report cost savings from static
     /// pre-filtering.
     pub async fn log_static_decision(&self, record: &StaticDecisionRecord) -> Result<i64> {
-        let id = sqlx::query(
+        let row: (i64,) = sqlx::query_as(
             r#"
             INSERT INTO static_decisions (
                 file_path, repo_id, recommendation, skip_reason,
@@ -350,7 +351,8 @@ impl CostTracker {
                 llm_called, estimated_cost_saved_usd, actual_cost_usd,
                 prompt_tier
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            RETURNING id
             "#,
         )
         .bind(&record.file_path)
@@ -363,10 +365,10 @@ impl CostTracker {
         .bind(record.estimated_cost_saved_usd)
         .bind(record.actual_cost_usd)
         .bind(&record.prompt_tier)
-        .execute(&self.pool)
+        .fetch_one(&self.pool)
         .await
-        .context("Failed to log static decision")?
-        .last_insert_rowid();
+        .context("Failed to log static decision")?;
+        let id = row.0;
 
         debug!(
             "Logged static decision: {} → {} (saved: ${:.4}, LLM: {})",
@@ -526,7 +528,7 @@ impl CostTracker {
                 COALESCE(SUM(cached_tokens), 0),
                 COALESCE(SUM(cost_usd), 0.0)
             FROM llm_costs
-            WHERE timestamp >= ? AND timestamp <= ?
+            WHERE timestamp >= $1 AND timestamp <= $2
             "#,
         )
         .bind(start)
@@ -539,7 +541,7 @@ impl CostTracker {
             r#"
             SELECT COUNT(*)
             FROM llm_costs
-            WHERE timestamp >= ? AND timestamp <= ?
+            WHERE timestamp >= $1 AND timestamp <= $2
             AND cache_hit = TRUE
             "#,
         )
@@ -597,7 +599,7 @@ impl CostTracker {
                 SUM(output_tokens) as output_tokens,
                 SUM(cached_tokens) as cached_tokens
             FROM llm_costs
-            WHERE timestamp >= ? AND timestamp <= ?
+            WHERE timestamp >= $1 AND timestamp <= $2
             GROUP BY operation
             ORDER BY total_cost DESC
             "#,
@@ -762,7 +764,7 @@ impl CostTracker {
             SELECT operation, cost_usd, timestamp
             FROM llm_costs
             ORDER BY cost_usd DESC
-            LIMIT ?
+            LIMIT $1
             "#,
         )
         .bind(limit)
@@ -786,7 +788,7 @@ impl CostTracker {
         let result = sqlx::query(
             r#"
             DELETE FROM llm_costs
-            WHERE timestamp < ?
+            WHERE timestamp < $1
             "#,
         )
         .bind(cutoff)
@@ -807,7 +809,7 @@ impl CostTracker {
         let result = sqlx::query(
             r#"
             DELETE FROM static_decisions
-            WHERE timestamp < ?
+            WHERE timestamp < $1
             "#,
         )
         .bind(cutoff)
@@ -866,10 +868,14 @@ impl std::fmt::Display for SavingsReport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqlx::SqlitePool;
+    use sqlx::PgPool;
 
-    async fn create_test_pool() -> SqlitePool {
-        crate::db::core::init_db("sqlite::memory:").await.unwrap()
+    async fn create_test_pool() -> PgPool {
+        crate::db::core::init_db(&std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgresql://rustassistant:changeme@localhost:5432/rustassistant_test".to_string()
+        }))
+        .await
+        .unwrap()
     }
 
     #[tokio::test]

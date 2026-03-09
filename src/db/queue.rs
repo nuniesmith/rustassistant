@@ -14,7 +14,7 @@
 //! consolidated into the `tasks` table.
 
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, SqlitePool};
+use sqlx::{FromRow, PgPool};
 
 // ============================================================================
 // Configuration
@@ -302,7 +302,7 @@ pub struct RepoCache {
 // Table Creation
 // ============================================================================
 
-pub async fn create_queue_tables(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+pub async fn create_queue_tables(pool: &PgPool) -> Result<(), sqlx::Error> {
     // Queue items table
     sqlx::query(
         r#"

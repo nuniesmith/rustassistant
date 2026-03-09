@@ -8,7 +8,7 @@
 
 use rustassistant::github::search::{GitHubSearcher, SearchQuery, SearchType};
 use rustassistant::github::{GitHubClient, SyncEngine, SyncOptions};
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use std::env;
 
 #[tokio::main]
@@ -30,11 +30,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Get database URL
-    let database_url =
-        env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:rustassistant.db".to_string());
+    let database_url = env::var("DATABASE_URL").unwrap_or_else(|_| {
+        "postgresql://rustassistant:changeme@localhost:5432/rustassistant".to_string()
+    });
 
     println!("🔧 Connecting to database: {}", database_url);
-    let pool = SqlitePool::connect(&database_url).await?;
+    let pool = PgPool::connect(&database_url).await?;
 
     // Initialize GitHub client
     println!("🚀 Initializing GitHub client...");

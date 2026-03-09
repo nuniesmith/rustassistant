@@ -3,7 +3,7 @@
 //! Provides real-time observability into what the scanner is doing.
 
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, SqlitePool};
+use sqlx::{FromRow, PgPool};
 
 // ============================================================================
 // Models
@@ -58,7 +58,7 @@ impl ScanProgress {
 
 /// Log a scan event
 pub async fn log_scan_event(
-    pool: &SqlitePool,
+    pool: &PgPool,
     repo_id: Option<&str>,
     event_type: &str,
     message: &str,
@@ -67,10 +67,11 @@ pub async fn log_scan_event(
 ) -> Result<i64, sqlx::Error> {
     let now = chrono::Utc::now().timestamp();
 
-    let result = sqlx::query(
+    let row: (i64,) = sqlx::query_as(
         r#"
         INSERT INTO scan_events (repo_id, event_type, message, details, level, created_at)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id
         "#,
     )
     .bind(repo_id)
@@ -79,15 +80,15 @@ pub async fn log_scan_event(
     .bind(details)
     .bind(level)
     .bind(now)
-    .execute(pool)
+    .fetch_one(pool)
     .await?;
 
-    Ok(result.last_insert_rowid())
+    Ok(row.0)
 }
 
 /// Convenience: log info event
 pub async fn log_info(
-    pool: &SqlitePool,
+    pool: &PgPool,
     repo_id: Option<&str>,
     event_type: &str,
     message: &str,
@@ -97,7 +98,7 @@ pub async fn log_info(
 
 /// Convenience: log error event
 pub async fn log_error(
-    pool: &SqlitePool,
+    pool: &PgPool,
     repo_id: Option<&str>,
     event_type: &str,
     message: &str,
@@ -116,7 +117,7 @@ pub async fn log_error(
 
 /// Get recent scan events (for activity feed)
 pub async fn get_recent_events(
-    pool: &SqlitePool,
+    pool: &PgPool,
     limit: i64,
     level_filter: Option<&str>,
 ) -> Result<Vec<ScanEvent>, sqlx::Error> {
@@ -125,9 +126,9 @@ pub async fn get_recent_events(
             r#"
             SELECT id, repo_id, event_type, message, details, level, created_at
             FROM scan_events
-            WHERE level = ?1
+            WHERE level = $11
             ORDER BY created_at DESC
-            LIMIT ?2
+            LIMIT $22
             "#,
         )
         .bind(level)
@@ -140,7 +141,7 @@ pub async fn get_recent_events(
             SELECT id, repo_id, event_type, message, details, level, created_at
             FROM scan_events
             ORDER BY created_at DESC
-            LIMIT ?1
+            LIMIT $11
             "#,
         )
         .bind(limit)
@@ -151,7 +152,7 @@ pub async fn get_recent_events(
 
 /// Get events for a specific repo
 pub async fn get_repo_events(
-    pool: &SqlitePool,
+    pool: &PgPool,
     repo_id: &str,
     limit: i64,
 ) -> Result<Vec<ScanEvent>, sqlx::Error> {
@@ -159,9 +160,9 @@ pub async fn get_repo_events(
         r#"
         SELECT id, repo_id, event_type, message, details, level, created_at
         FROM scan_events
-        WHERE repo_id = ?1
+        WHERE repo_id = $11
         ORDER BY created_at DESC
-        LIMIT ?2
+        LIMIT $22
         "#,
     )
     .bind(repo_id)
@@ -171,9 +172,9 @@ pub async fn get_repo_events(
 }
 
 /// Prune old events (keep last N days)
-pub async fn prune_events(pool: &SqlitePool, keep_days: i64) -> Result<u64, sqlx::Error> {
+pub async fn prune_events(pool: &PgPool, keep_days: i64) -> Result<u64, sqlx::Error> {
     let cutoff = chrono::Utc::now().timestamp() - (keep_days * 86400);
-    let result = sqlx::query("DELETE FROM scan_events WHERE created_at < ?1")
+    let result = sqlx::query("DELETE FROM scan_events WHERE created_at < $11")
         .bind(cutoff)
         .execute(pool)
         .await?;
@@ -186,7 +187,7 @@ pub async fn prune_events(pool: &SqlitePool, keep_days: i64) -> Result<u64, sqlx
 
 /// Update scan status for a repository
 pub async fn update_scan_status(
-    pool: &SqlitePool,
+    pool: &PgPool,
     repo_id: &str,
     status: &str,
     progress: Option<&ScanProgress>,
@@ -197,10 +198,10 @@ pub async fn update_scan_status(
     sqlx::query(
         r#"
         UPDATE repositories
-        SET scan_status = ?1,
-            scan_progress = ?2,
-            updated_at = ?3
-        WHERE id = ?4
+        SET scan_status = $11,
+            scan_progress = $22,
+            updated_at = $33
+        WHERE id = $44
         "#,
     )
     .bind(status)
@@ -215,7 +216,7 @@ pub async fn update_scan_status(
 
 /// Mark scan as started
 pub async fn mark_scan_started(
-    pool: &SqlitePool,
+    pool: &PgPool,
     repo_id: &str,
     total_files: i32,
 ) -> Result<(), sqlx::Error> {
@@ -233,7 +234,7 @@ pub async fn mark_scan_started(
 
 /// Update scan file progress
 pub async fn update_scan_file_progress(
-    pool: &SqlitePool,
+    pool: &PgPool,
     repo_id: &str,
     current_file: &str,
     files_done: i32,
@@ -257,11 +258,11 @@ pub async fn update_scan_file_progress(
         r#"
         UPDATE repositories
         SET scan_status = 'scanning',
-            scan_progress = ?1,
-            scan_files_processed = ?2,
-            scan_files_total = ?3,
-            updated_at = ?4
-        WHERE id = ?5
+            scan_progress = $11,
+            scan_files_processed = $22,
+            scan_files_total = $33,
+            updated_at = $44
+        WHERE id = $55
         "#,
     )
     .bind(&progress_json)
@@ -277,7 +278,7 @@ pub async fn update_scan_file_progress(
 
 /// Mark scan as complete
 pub async fn mark_scan_complete(
-    pool: &SqlitePool,
+    pool: &PgPool,
     repo_id: &str,
     files_scanned: i32,
     issues_found: i32,
@@ -290,14 +291,14 @@ pub async fn mark_scan_complete(
         UPDATE repositories
         SET scan_status = 'idle',
             scan_progress = NULL,
-            scan_files_processed = ?1,
-            scan_files_total = ?1,
-            last_scan_issues_found = ?2,
-            last_scan_duration_ms = ?3,
-            last_scanned_at = ?4,
+            scan_files_processed = $11,
+            scan_files_total = $21,
+            last_scan_issues_found = $32,
+            last_scan_duration_ms = $43,
+            last_scanned_at = $54,
             last_error = NULL,
-            updated_at = ?4
-        WHERE id = ?5
+            updated_at = $64
+        WHERE id = $75
         "#,
     )
     .bind(files_scanned)
@@ -325,11 +326,7 @@ pub async fn mark_scan_complete(
 }
 
 /// Mark scan as errored
-pub async fn mark_scan_error(
-    pool: &SqlitePool,
-    repo_id: &str,
-    error: &str,
-) -> Result<(), sqlx::Error> {
+pub async fn mark_scan_error(pool: &PgPool, repo_id: &str, error: &str) -> Result<(), sqlx::Error> {
     let now = chrono::Utc::now().timestamp();
 
     sqlx::query(
@@ -337,9 +334,9 @@ pub async fn mark_scan_error(
         UPDATE repositories
         SET scan_status = 'error',
             scan_progress = NULL,
-            last_error = ?1,
-            updated_at = ?2
-        WHERE id = ?3
+            last_error = $11,
+            updated_at = $22
+        WHERE id = $33
         "#,
     )
     .bind(error)

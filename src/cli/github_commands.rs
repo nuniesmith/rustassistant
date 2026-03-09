@@ -6,7 +6,7 @@ use crate::github::search::{GitHubSearcher, SearchQuery, SearchType};
 use crate::github::{GitHubClient, SyncEngine, SyncOptions};
 use anyhow::Result;
 use clap::Subcommand;
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use std::env;
 
 #[derive(Debug, Subcommand)]
@@ -102,7 +102,7 @@ pub enum GithubCommands {
     RateLimit,
 }
 
-pub async fn handle_github_command(command: GithubCommands, pool: &SqlitePool) -> Result<()> {
+pub async fn handle_github_command(command: GithubCommands, pool: &PgPool) -> Result<()> {
     // Get GitHub token
     let token = env::var("GITHUB_TOKEN").map_err(|_| {
         anyhow::anyhow!("GITHUB_TOKEN environment variable not set. Create a token at https://github.com/settings/tokens")
@@ -172,7 +172,7 @@ pub async fn handle_github_command(command: GithubCommands, pool: &SqlitePool) -
 
                 if let Some(ref _repo_name) = repo {
                     query.push_str(
-                        " WHERE repo_id = (SELECT id FROM github_repositories WHERE full_name = ?)",
+                        " WHERE repo_id = (SELECT id FROM github_repositories WHERE full_name = $1)",
                     );
                 }
 
@@ -207,7 +207,7 @@ pub async fn handle_github_command(command: GithubCommands, pool: &SqlitePool) -
 
                 if let Some(ref _repo_name) = repo {
                     query.push_str(
-                        " WHERE repo_id = (SELECT id FROM github_repositories WHERE full_name = ?)",
+                        " WHERE repo_id = (SELECT id FROM github_repositories WHERE full_name = $1)",
                     );
                 }
 
@@ -234,7 +234,7 @@ pub async fn handle_github_command(command: GithubCommands, pool: &SqlitePool) -
                 // Show recent activity
                 if let Some(repo_name) = &repo {
                     let repo_info: Option<(String, String, Option<String>, i64)> = sqlx::query_as(
-                        "SELECT full_name, language, description, last_synced_at FROM github_repositories WHERE full_name = ?"
+                        "SELECT full_name, language, description, last_synced_at FROM github_repositories WHERE full_name = $1"
                     )
                     .bind(repo_name)
                     .fetch_optional(pool)
@@ -254,9 +254,9 @@ pub async fn handle_github_command(command: GithubCommands, pool: &SqlitePool) -
                         let (commits, issues, prs): (i64, i64, i64) = sqlx::query_as(
                             r#"
                             SELECT
-                                (SELECT COUNT(*) FROM github_commits WHERE repo_id = (SELECT id FROM github_repositories WHERE full_name = ?)),
-                                (SELECT COUNT(*) FROM github_issues WHERE repo_id = (SELECT id FROM github_repositories WHERE full_name = ?)),
-                                (SELECT COUNT(*) FROM github_pull_requests WHERE repo_id = (SELECT id FROM github_repositories WHERE full_name = ?))
+                                (SELECT COUNT(*) FROM github_commits WHERE repo_id = (SELECT id FROM github_repositories WHERE full_name = $1)),
+                                (SELECT COUNT(*) FROM github_issues WHERE repo_id = (SELECT id FROM github_repositories WHERE full_name = $2)),
+                                (SELECT COUNT(*) FROM github_pull_requests WHERE repo_id = (SELECT id FROM github_repositories WHERE full_name = $3))
                             "#
                         )
                         .bind(repo_name)
@@ -285,12 +285,12 @@ pub async fn handle_github_command(command: GithubCommands, pool: &SqlitePool) -
 
                 let search_pattern = format!("%{}%", question);
                 let mut query = String::from(
-                    "SELECT sha, author_name, message, author_date FROM github_commits WHERE message LIKE ?"
+                    "SELECT sha, author_name, message, author_date FROM github_commits WHERE message LIKE $1"
                 );
 
                 if let Some(ref _repo_name) = repo {
                     query.push_str(
-                        " AND repo_id = (SELECT id FROM github_repositories WHERE full_name = ?)",
+                        " AND repo_id = (SELECT id FROM github_repositories WHERE full_name = $1)",
                     );
                 }
 

@@ -13,7 +13,7 @@ use super::types::*;
 use crate::embeddings::EmbeddingGenerator;
 use crate::indexing::IndexingConfig;
 use crate::search::{SearchConfig, SearchFilters, SearchQuery, SemanticSearcher};
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 
 // ============================================================================
 // Application State
@@ -21,7 +21,7 @@ use sqlx::SqlitePool;
 
 #[derive(Clone)]
 pub struct ApiState {
-    pub db_pool: SqlitePool,
+    pub db_pool: PgPool,
     pub embedding_generator: Arc<tokio::sync::Mutex<EmbeddingGenerator>>,
     pub searcher: Arc<SemanticSearcher>,
     pub job_queue: Arc<super::jobs::JobQueue>,
@@ -30,7 +30,7 @@ pub struct ApiState {
 
 impl ApiState {
     pub async fn new(
-        db_pool: SqlitePool,
+        db_pool: PgPool,
         embedding_generator: Arc<tokio::sync::Mutex<EmbeddingGenerator>>,
         indexing_config: IndexingConfig,
         job_queue_config: super::jobs::JobQueueConfig,
@@ -212,23 +212,23 @@ pub async fn upload_document(
     // uses a different vocabulary (reference/research/tutorial/…).
     let content_type = req.doc_type.clone();
 
-    let result: Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> = sqlx::query!(
+    let result: Result<sqlx::postgres::PgQueryResult, sqlx::Error> = sqlx::query(
         r#"
         INSERT INTO documents (
             id, title, content, content_type, tags,
             repo_id, source_type, source_url
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         "#,
-        doc_id,
-        req.title,
-        req.content,
-        content_type,
-        tags_json,
-        req.repo_id,
-        req.source_type,
-        req.source_url,
     )
+    .bind(&doc_id)
+    .bind(&req.title)
+    .bind(&req.content)
+    .bind(&content_type)
+    .bind(&tags_json)
+    .bind(&req.repo_id)
+    .bind(&req.source_type)
+    .bind(&req.source_url)
     .execute(&state.db_pool)
     .await;
 
@@ -266,48 +266,52 @@ pub async fn get_document(
     State(state): State<Arc<ApiState>>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    let result = sqlx::query!(
+    let result = sqlx::query(
         r#"
         SELECT
             d.id, d.title, d.content, d.doc_type, d.tags,
             d.repo_id, d.source_type, d.source_url,
             d.indexed_at, d.created_at, d.updated_at,
-            COALESCE(COUNT(c.id), 0) as "chunk_count!: i64"
+            COALESCE(COUNT(c.id), 0) AS chunk_count
         FROM documents d
         LEFT JOIN document_chunks c ON d.id = c.document_id
-        WHERE d.id = ?
+        WHERE d.id = $1
         GROUP BY d.id
         "#,
-        id
     )
+    .bind(&id)
     .fetch_optional(&state.db_pool)
     .await;
 
     match result {
         Ok(Some(row)) => {
-            let tags: Vec<String> = row
-                .tags
+            use sqlx::Row as _;
+            let tags_raw: Option<String> = row.get("tags");
+            let tags: Vec<String> = tags_raw
                 .as_ref()
                 .and_then(|t| serde_json::from_str(t).ok())
                 .unwrap_or_default();
 
+            let indexed_at_ts: Option<i64> = row.get("indexed_at");
+            let created_at_ts: i64 = row.get("created_at");
+            let updated_at_ts: i64 = row.get("updated_at");
+            let chunk_count: i64 = row.get("chunk_count");
+
             let response = DocumentResponse {
-                id: row.id.unwrap_or_default(),
-                title: row.title,
-                content: row.content,
-                doc_type: row.doc_type.unwrap_or_default(),
+                id: row.get::<Option<String>, _>("id").unwrap_or_default(),
+                title: row.get("title"),
+                content: row.get("content"),
+                doc_type: row.get::<Option<String>, _>("doc_type").unwrap_or_default(),
                 tags,
                 repo_id: None, // repo_id is String in DB but i64 in response - skip for now
-                source_type: row.source_type,
-                source_url: row.source_url,
-                indexed_at: row
-                    .indexed_at
-                    .and_then(|ts| chrono::DateTime::from_timestamp(ts, 0)),
-                created_at: chrono::DateTime::from_timestamp(row.created_at, 0)
+                source_type: row.get::<Option<String>, _>("source_type"),
+                source_url: row.get::<Option<String>, _>("source_url"),
+                indexed_at: indexed_at_ts.and_then(|ts| chrono::DateTime::from_timestamp(ts, 0)),
+                created_at: chrono::DateTime::from_timestamp(created_at_ts, 0)
                     .unwrap_or_else(chrono::Utc::now),
-                updated_at: chrono::DateTime::from_timestamp(row.updated_at, 0)
+                updated_at: chrono::DateTime::from_timestamp(updated_at_ts, 0)
                     .unwrap_or_else(chrono::Utc::now),
-                chunk_count: row.chunk_count,
+                chunk_count,
             };
 
             Json(ApiResponse::success(response)).into_response()
@@ -337,20 +341,24 @@ pub async fn list_documents(
     let page = params.page.max(1) as i64;
     let offset = (page - 1) * limit;
 
-    // Build dynamic WHERE clause
-    let mut where_clauses = Vec::new();
+    // Build dynamic WHERE clause with Postgres $N placeholders
+    let mut where_clauses: Vec<String> = Vec::new();
+    let mut param_idx = 1usize;
 
     if params.doc_type.is_some() {
-        where_clauses.push("content_type = ?");
+        where_clauses.push(format!("doc_type = ${}", param_idx));
+        param_idx += 1;
     }
     if params.repo_id.is_some() {
-        where_clauses.push("repo_id = ?");
+        where_clauses.push(format!("repo_id = ${}", param_idx));
+        param_idx += 1;
     }
     if params.indexed_only.unwrap_or(false) {
-        where_clauses.push("indexed_at IS NOT NULL");
+        where_clauses.push("indexed_at IS NOT NULL".to_string());
     }
     if params.tag.is_some() {
-        where_clauses.push("tags LIKE ?");
+        where_clauses.push(format!("tags ILIKE ${}", param_idx));
+        param_idx += 1;
     }
 
     let where_sql = if where_clauses.is_empty() {
@@ -373,26 +381,28 @@ pub async fn list_documents(
     }
     let total: i64 = count_q.fetch_one(&state.db_pool).await.unwrap_or(0);
 
-    // Fetch paginated rows
+    // Fetch paginated rows — limit/offset get the next two param slots
+    let limit_param = param_idx;
+    let offset_param = param_idx + 1;
     let list_query = format!(
-        "SELECT id, title, content_type, tags, repo_id, source_type, source_url, \
+        "SELECT id, title, doc_type, tags, repo_id, source_type, source_url, \
          indexed_at, created_at, updated_at \
-         FROM documents {} ORDER BY created_at DESC LIMIT ? OFFSET ?",
-        where_sql
+         FROM documents {} ORDER BY created_at DESC LIMIT ${} OFFSET ${}",
+        where_sql, limit_param, offset_param
     );
     let mut list_q = sqlx::query_as::<
         _,
         (
-            String,
-            String,
-            Option<String>,
-            Option<String>,
-            Option<String>,
-            Option<String>,
-            Option<String>,
-            Option<i64>,
-            i64,
-            i64,
+            String,         // id
+            String,         // title
+            Option<String>, // doc_type
+            Option<String>, // tags
+            Option<String>, // repo_id
+            Option<String>, // source_type
+            Option<String>, // source_url
+            Option<i64>,    // indexed_at
+            i64,            // created_at
+            i64,            // updated_at
         ),
     >(&list_query);
     if let Some(ref dt) = params.doc_type {
@@ -486,7 +496,7 @@ pub async fn update_document(
     }
 
     let query = format!(
-        "UPDATE documents SET {}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        "UPDATE documents SET {}, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
         updates.join(", ")
     );
 
@@ -519,18 +529,21 @@ pub async fn delete_document(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     // Delete embeddings first
-    let _ = sqlx::query!("DELETE FROM document_embeddings WHERE chunk_id IN (SELECT id FROM document_chunks WHERE document_id = ?)", id)
+    let _ = sqlx::query("DELETE FROM document_embeddings WHERE chunk_id IN (SELECT id FROM document_chunks WHERE document_id = $1)")
+        .bind(&id)
         .execute(&state.db_pool)
         .await;
 
     // Delete chunks
-    let _ = sqlx::query!("DELETE FROM document_chunks WHERE document_id = ?", id)
+    let _ = sqlx::query("DELETE FROM document_chunks WHERE document_id = $1")
+        .bind(&id)
         .execute(&state.db_pool)
         .await;
 
     // Delete document
-    let result: Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> =
-        sqlx::query!("DELETE FROM documents WHERE id = ?", id)
+    let result: Result<sqlx::postgres::PgQueryResult, sqlx::Error> =
+        sqlx::query("DELETE FROM documents WHERE id = $1")
+            .bind(&id)
             .execute(&state.db_pool)
             .await;
 

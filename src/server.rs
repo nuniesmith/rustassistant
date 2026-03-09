@@ -1,15 +1,18 @@
 //! Axum API server for the audit service + RustAssistant dashboard
 
 use crate::api::repos::{repo_router, RepoAppState};
+use crate::audit::endpoint::{audit_router, AuditState};
 use crate::config::Config;
 use crate::db::Database;
 use crate::db::{self, init_db, Repository};
 use crate::error::{AuditError, Result};
 use crate::git::GitManager;
+use crate::github::webhook::{WebhookHandler, WebhookPayload};
 use crate::llm::LlmClient;
 use crate::model_router::{ModelRouter, ModelRouterConfig};
 use crate::queue::{get_queue_stats, QueueStats};
 use crate::repo_sync::RepoSyncService;
+use crate::research::worker::refresh_rag_index;
 use crate::scanner::github::sync_repos_to_db;
 use crate::sync_scheduler::{SyncScheduler, SyncSchedulerConfig};
 use crate::web_api::{web_api_router, WebState};
@@ -17,23 +20,21 @@ use crate::web_api::{web_api_router, WebState};
 
 use crate::scanner::Scanner;
 use crate::tags::TagScanner;
-use crate::tasks::TaskGenerator;
-use crate::types::{AuditReport, AuditRequest, AuditTag, Task};
+use crate::types::{AuditRequest, AuditTag};
 use axum::{
-    extract::{Json, Path, Query, State},
-    http::{header, Method, StatusCode},
+    extract::{Json, Query, State},
+    http::{header, HeaderMap, Method, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
     Router,
 };
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::fs;
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
@@ -45,7 +46,7 @@ pub struct AppState {
     config: Arc<Config>,
     pub(crate) git_manager: Arc<GitManager>,
     llm_client: Option<Arc<LlmClient>>,
-    pub(crate) db_pool: SqlitePool,
+    pub(crate) db_pool: PgPool,
 }
 
 impl AppState {
@@ -74,8 +75,9 @@ impl AppState {
         };
 
         // Initialize database
-        let database_url =
-            std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:data/rustassistant.db".into());
+        let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgresql://rustassistant:changeme@localhost:5432/rustassistant.db".into()
+        });
         let db_pool = db::init_db(&database_url)
             .await
             .map_err(|e| AuditError::other(format!("Failed to initialize database: {}", e)))?;
@@ -90,6 +92,14 @@ impl AppState {
 }
 
 /// Run the audit server
+/// Combined state for the GitHub webhook handler (requires both `AppState` and
+/// the `RepoSyncService` so it can trigger a repo sync on push events).
+#[derive(Clone)]
+struct WebhookState {
+    sync_service: Arc<tokio::sync::RwLock<RepoSyncService>>,
+    webhook_secret: String,
+}
+
 pub async fn run_server(config: Config) -> Result<()> {
     let addr = format!("{}:{}", config.server.host, config.server.port);
     let socket_addr: SocketAddr = addr
@@ -127,8 +137,9 @@ pub async fn run_server(config: Config) -> Result<()> {
     // Re-use the same SQLite pool that the rest of the app already has.
     // This ensures registered_repos rows land in the same database file.
     let sync_repo_service = {
-        let db_url = std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "sqlite:data/rustassistant.db".to_string());
+        let db_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgresql://rustassistant:changeme@localhost:5432/rustassistant.db".to_string()
+        });
         match init_db(&db_url).await {
             Ok(pool) => {
                 let mut svc = RepoSyncService::with_db(pool);
@@ -163,32 +174,21 @@ pub async fn run_server(config: Config) -> Result<()> {
     }));
 
     // Build GrokClient for the repo chat handler (None when XAI_API_KEY is unset).
-    let grok_for_repo: Option<Arc<crate::grok_client::GrokClient>> = match std::env::var(
-        "XAI_API_KEY",
-    ) {
-        Ok(api_key) if !api_key.is_empty() => {
-            let db_url = std::env::var("DATABASE_URL")
-                .unwrap_or_else(|_| "data/rustassistant.db".to_string());
-            let db_path = db_url
-                .trim_start_matches("sqlite://")
-                .trim_start_matches("sqlite:");
-            match Database::new(db_path).await {
-                Ok(db) => {
-                    let client = crate::grok_client::GrokClient::new(api_key, db);
-                    info!("GrokClient ready for repo chat handler");
-                    Some(Arc::new(client))
-                }
-                Err(e) => {
-                    tracing::warn!(error = %e, "Failed to init DB for repo GrokClient — remote model unavailable");
-                    None
-                }
+    // Re-use the already-initialised PgPool from AppState so we don't open a second
+    // connection pool. Database::from_pool wraps an existing PgPool without reconnecting.
+    let grok_for_repo: Option<Arc<crate::grok_client::GrokClient>> =
+        match std::env::var("XAI_API_KEY") {
+            Ok(api_key) if !api_key.is_empty() => {
+                let db = Database::from_pool(state.db_pool.clone());
+                let client = crate::grok_client::GrokClient::new(api_key, db);
+                info!("GrokClient ready for repo chat handler (sharing existing PgPool)");
+                Some(Arc::new(client))
             }
-        }
-        _ => {
-            info!("XAI_API_KEY not set — repo chat will use local model only");
-            None
-        }
-    };
+            _ => {
+                info!("XAI_API_KEY not set — repo chat will use local model only");
+                None
+            }
+        };
 
     let repo_app_state = RepoAppState::from_env(
         Arc::clone(&sync_service),
@@ -212,6 +212,36 @@ pub async fn run_server(config: Config) -> Result<()> {
     .start();
     info!(interval_secs = sync_interval_secs, "SyncScheduler started");
 
+    // ------------------------------------------------------------------
+    // Bootstrap RAG index from existing embeddings in Postgres.
+    // Run in the background so it doesn't block server startup.
+    // ------------------------------------------------------------------
+    {
+        let rag_pool = state.db_pool.clone();
+        tokio::spawn(async move {
+            match refresh_rag_index(&rag_pool).await {
+                Ok(n) => info!(vectors = n, "RAG index loaded at startup"),
+                Err(e) => {
+                    warn!(error = %e, "RAG index failed to load at startup — RAG will be empty until next refresh")
+                }
+            }
+        });
+    }
+
+    // ------------------------------------------------------------------
+    // Build AuditState for the new audit router
+    // ------------------------------------------------------------------
+    let audit_db = Database::from_pool(state.db_pool.clone());
+    let audit_state = Arc::new(AuditState::from_env(audit_db).await);
+
+    // ------------------------------------------------------------------
+    // Build WebhookState for the GitHub push-event → sync trigger
+    // ------------------------------------------------------------------
+    let webhook_state = WebhookState {
+        sync_service: Arc::clone(&sync_service),
+        webhook_secret: std::env::var("GITHUB_WEBHOOK_SECRET").unwrap_or_default(),
+    };
+
     // SECURITY: Configure restrictive CORS policy
     let cors = build_cors_layer();
 
@@ -225,11 +255,8 @@ pub async fn run_server(config: Config) -> Result<()> {
     // Compose routers
     // ------------------------------------------------------------------
     let app = Router::new()
-        // Legacy audit API
+        // Legacy endpoints (AppState)
         .route("/health", get(health_check))
-        .route("/api/audit", post(create_audit))
-        .route("/api/audit/{id}", get(get_audit))
-        .route("/api/audit/{id}/tasks", get(get_audit_tasks))
         .route("/api/clone", post(clone_repository))
         .route("/api/scan/tags", post(scan_tags))
         .route("/api/scan/static", post(scan_static))
@@ -243,6 +270,13 @@ pub async fn run_server(config: Config) -> Result<()> {
         .route("/api/github/search", get(github_search))
         .route("/api/github/sync", post(github_sync))
         .with_state(state)
+        // New audit pipeline (AuditState) — replaces the legacy /api/audit routes
+        .merge(audit_router(audit_state))
+        // GitHub push-event webhook → repo sync trigger
+        .route(
+            "/api/github/webhook",
+            post(handle_github_webhook).with_state(webhook_state),
+        )
         // New dashboard API (separate state)
         .merge(web_api_router(web_state))
         // Repo management + chat API at /api/v1
@@ -311,148 +345,162 @@ fn build_cors_layer() -> CorsLayer {
         .max_age(Duration::from_secs(3600))
 }
 
+// ============================================================================
+// GitHub Webhook → Repo Sync
+// ============================================================================
+
+/// `POST /api/github/webhook`
+///
+/// Receives GitHub push (and other) webhook events and triggers a
+/// `RepoSyncService::sync` for any registered repo whose `remote_url`
+/// matches the repository in the event payload.
+///
+/// The endpoint always returns **200 OK** quickly — the sync itself runs in a
+/// background `tokio::spawn` so GitHub doesn't time out waiting for us.
+async fn handle_github_webhook(
+    State(wh_state): State<WebhookState>,
+    headers: HeaderMap,
+    body: String,
+) -> impl IntoResponse {
+    use crate::github::webhook::WebhookEvent;
+
+    let event_type = headers
+        .get("x-github-event")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+
+    let delivery_id = headers
+        .get("x-github-delivery")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+
+    let signature = headers
+        .get("x-hub-signature-256")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+
+    let payload = WebhookPayload::new(&event_type, &delivery_id, signature, &body);
+
+    // Verify signature when a secret is configured.
+    if !wh_state.webhook_secret.is_empty() {
+        let handler = WebhookHandler::new(&wh_state.webhook_secret);
+        match handler.verify_signature(&payload) {
+            Ok(true) => {}
+            Ok(false) => {
+                warn!(delivery = %delivery_id, "Webhook signature verification failed — ignoring");
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({ "error": "Invalid webhook signature" })),
+                )
+                    .into_response();
+            }
+            Err(e) => {
+                warn!(delivery = %delivery_id, error = %e, "Webhook signature error");
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({ "error": format!("Signature error: {}", e) })),
+                )
+                    .into_response();
+            }
+        }
+    }
+
+    // Parse the event — unsupported types are silently acked.
+    let event = match payload.parse_event() {
+        Ok(e) => e,
+        Err(e) => {
+            info!(
+                delivery = %delivery_id,
+                event_type = %event_type,
+                "Unrecognised webhook event type — acking without action: {}",
+                e
+            );
+            return (
+                StatusCode::OK,
+                Json(serde_json::json!({ "status": "ignored" })),
+            )
+                .into_response();
+        }
+    };
+
+    // Only push events trigger a repo sync.
+    if let WebhookEvent::Push(ref push) = event {
+        let repo_full_name = push.repository.full_name.clone();
+        let branch = push.branch_name().unwrap_or("unknown").to_string();
+
+        info!(
+            delivery = %delivery_id,
+            repo = %repo_full_name,
+            branch = %branch,
+            "Push webhook received — checking for matching registered repo"
+        );
+
+        // Clone the sync_service Arc so we can move it into the background task.
+        let sync_service = Arc::clone(&wh_state.sync_service);
+
+        tokio::spawn(async move {
+            let svc = sync_service.read().await;
+
+            // Find any registered repo whose remote_url ends with the GitHub
+            // full name (handles both HTTPS and SSH remote URL formats).
+            let matching_ids: Vec<String> = svc
+                .list_repos()
+                .iter()
+                .filter(|r| {
+                    r.remote_url
+                        .as_deref()
+                        .map(|u| u.contains(&repo_full_name))
+                        .unwrap_or(false)
+                })
+                .map(|r| r.id.clone())
+                .collect();
+
+            drop(svc); // release read lock before acquiring write lock
+
+            if matching_ids.is_empty() {
+                info!(
+                    repo = %repo_full_name,
+                    "No registered repo matches push event — skipping sync"
+                );
+                return;
+            }
+
+            let mut svc = sync_service.write().await;
+            for repo_id in matching_ids {
+                info!(repo_id = %repo_id, "Triggering sync from push webhook");
+                match svc.sync(&repo_id).await {
+                    Ok(result) => info!(
+                        repo_id = %repo_id,
+                        files = result.files_walked,
+                        todos = result.todos_found,
+                        duration_ms = result.duration_ms,
+                        "Webhook-triggered sync complete"
+                    ),
+                    Err(e) => warn!(
+                        repo_id = %repo_id,
+                        error = %e,
+                        "Webhook-triggered sync failed"
+                    ),
+                }
+            }
+        });
+    }
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({ "status": "accepted" })),
+    )
+        .into_response()
+}
+
 /// Health check endpoint
 async fn health_check() -> impl IntoResponse {
     Json(HealthResponse {
         status: "healthy".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
     })
-}
-
-/// Create a new audit
-async fn create_audit(
-    State(state): State<AppState>,
-    Json(request): Json<AuditRequest>,
-) -> Result<Json<AuditResponse>> {
-    info!("Creating audit for repository: {}", request.repository);
-
-    // SECURITY: Validate repository URL/path before cloning to prevent SSRF attacks
-    let repo_path =
-        if request.repository.starts_with("http") || request.repository.starts_with("git@") {
-            // Validate Git URL against whitelist (SSRF prevention)
-            state
-                .config
-                .security
-                .validate_git_url(&request.repository)?;
-
-            // Clone from validated URL
-            state.git_manager.clone_repo(&request.repository, None)?
-        } else {
-            // Validate local path (path traversal prevention)
-            state
-                .config
-                .security
-                .validate_local_path(&request.repository)?;
-
-            // Use local path
-            std::path::PathBuf::from(&request.repository)
-        };
-
-    // Checkout branch if specified
-    if let Some(branch) = &request.branch {
-        state.git_manager.checkout(&repo_path, branch)?;
-    }
-
-    // Create scanner
-    let scanner = Scanner::new(
-        repo_path.clone(),
-        state.config.scanner.max_file_size,
-        request.include_tests,
-    )?;
-
-    // Perform scan
-    let mut report = scanner.scan(&request)?;
-
-    // If LLM is enabled, perform LLM analysis
-    if request.enable_llm {
-        if let Some(llm_client) = &state.llm_client {
-            info!("Performing LLM analysis");
-
-            // Analyze files (simplified - in production, batch this)
-            for file_analysis in &mut report.files {
-                if file_analysis.priority as u8 >= 3 {
-                    // High and Critical priority
-                    if let Ok(content) = tokio::fs::read_to_string(&file_analysis.path).await {
-                        if let Ok(llm_result) = llm_client
-                            .analyze_file(&file_analysis.path, &content, file_analysis.category)
-                            .await
-                        {
-                            file_analysis.llm_analysis = Some(llm_result.summary.clone());
-                            file_analysis.security_rating =
-                                Some(crate::types::SecurityRating::from_importance(
-                                    llm_result.importance,
-                                ));
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Generate tasks
-    let mut task_gen = TaskGenerator::new();
-
-    // Collect all tags
-    let all_tags: Vec<_> = report.files.iter().flat_map(|f| &f.tags).cloned().collect();
-    task_gen.generate_from_tags(&all_tags)?;
-    task_gen.generate_from_analyses(&report.files)?;
-
-    report.tasks = task_gen.tasks().to_vec();
-    report.summary.total_tasks = report.tasks.len();
-
-    // Save report
-    let report_id = report.id.clone();
-    save_report(&state.config.storage.reports_dir, &report).await?;
-
-    // Save tasks
-    save_tasks(&state.config.storage.tasks_dir, &report.tasks).await?;
-
-    info!(
-        "Audit completed: {} files, {} issues, {} tasks",
-        report.summary.total_files, report.summary.total_issues, report.summary.total_tasks
-    );
-
-    Ok(Json(AuditResponse {
-        id: report_id,
-        status: "completed".to_string(),
-        report,
-    }))
-}
-
-/// Get an audit report by ID
-async fn get_audit(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<AuditReport>> {
-    let report_path = state
-        .config
-        .storage
-        .reports_dir
-        .join(format!("{}.json", id));
-
-    let content = tokio::fs::read_to_string(&report_path)
-        .await
-        .map_err(|_| AuditError::FileNotFound(report_path.clone()))?;
-
-    let report: AuditReport = serde_json::from_str(&content)?;
-
-    Ok(Json(report))
-}
-
-/// Get tasks for an audit
-async fn get_audit_tasks(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<TasksResponse>> {
-    let tasks_path = state.config.storage.tasks_dir.join(format!("{}.json", id));
-
-    let content = tokio::fs::read_to_string(&tasks_path)
-        .await
-        .map_err(|_| AuditError::FileNotFound(tasks_path.clone()))?;
-
-    let tasks: Vec<Task> = serde_json::from_str(&content)?;
-
-    Ok(Json(TasksResponse { tasks }))
 }
 
 /// Clone a repository endpoint
@@ -542,45 +590,12 @@ async fn scan_static(
     }))
 }
 
-/// Save report to disk
-async fn save_report(dir: &std::path::Path, report: &AuditReport) -> Result<()> {
-    fs::create_dir_all(dir).await?;
-    let path = dir.join(format!("{}.json", report.id));
-    let content = serde_json::to_string_pretty(report)?;
-    fs::write(path, content).await?;
-    Ok(())
-}
-
-/// Save tasks to disk
-async fn save_tasks(dir: &std::path::Path, tasks: &[crate::types::Task]) -> Result<()> {
-    fs::create_dir_all(dir).await?;
-
-    // Use the first task's associated report ID or generate a new one
-    let id = if !tasks.is_empty() {
-        tasks[0].id.split('-').next().unwrap_or("tasks")
-    } else {
-        "tasks"
-    };
-
-    let path = dir.join(format!("{}.json", id));
-    let content = serde_json::to_string_pretty(tasks)?;
-    fs::write(path, content).await?;
-    Ok(())
-}
-
 // ===== Response Types =====
 
 #[derive(Debug, Serialize)]
 struct HealthResponse {
     status: String,
     version: String,
-}
-
-#[derive(Debug, Serialize)]
-struct AuditResponse {
-    id: String,
-    status: String,
-    report: AuditReport,
 }
 
 #[derive(Debug, Deserialize)]
@@ -606,11 +621,6 @@ struct TagsResponse {
     total: usize,
     by_type: HashMap<String, usize>,
     tags: Vec<AuditTag>,
-}
-
-#[derive(Debug, Serialize)]
-struct TasksResponse {
-    tasks: Vec<Task>,
 }
 
 #[derive(Debug, Serialize)]

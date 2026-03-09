@@ -13,7 +13,7 @@ use rustassistant::api::{
     ApiConfig, ApiResponse, SearchRequest, SearchType, UploadDocumentRequest,
 };
 use serde_json::Value;
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use std::time::Duration;
 use tokio::time::sleep;
 
@@ -22,13 +22,23 @@ use tokio::time::sleep;
 // ============================================================================
 
 /// Setup test database and API
-async fn setup_test_env() -> (SqlitePool, String) {
-    // Create in-memory database
-    let pool = SqlitePool::connect("sqlite::memory:")
-        .await
-        .expect("Failed to create test database");
+///
+/// Requires a running Postgres instance. Set TEST_DATABASE_URL or DATABASE_URL
+/// in the environment before running integration tests:
+///
+///   TEST_DATABASE_URL=postgresql://rustassistant:changeme@localhost:5432/rustassistant_test
+async fn setup_test_env() -> (PgPool, String) {
+    let database_url = std::env::var("TEST_DATABASE_URL")
+        .or_else(|_| std::env::var("DATABASE_URL"))
+        .unwrap_or_else(|_| {
+            "postgresql://rustassistant:changeme@localhost:5432/rustassistant_test".to_string()
+        });
 
-    // Run migrations
+    let pool = PgPool::connect(&database_url)
+        .await
+        .expect("Failed to connect to test Postgres database. Set TEST_DATABASE_URL.");
+
+    // Run migrations to ensure schema is up to date
     sqlx::migrate!("./migrations")
         .run(&pool)
         .await
@@ -41,7 +51,7 @@ async fn setup_test_env() -> (SqlitePool, String) {
 }
 
 /// Create test server and return its base URL
-async fn create_test_server(pool: SqlitePool, api_key: String) -> String {
+async fn create_test_server(pool: PgPool, api_key: String) -> String {
     use std::net::TcpListener;
     use tokio::net::TcpListener as TokioTcpListener;
 

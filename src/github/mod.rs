@@ -28,13 +28,13 @@
 //!
 //! ```rust,no_run
 //! use rustassistant::github::{GitHubClient, SyncEngine};
-//! use sqlx::SqlitePool;
+//! use sqlx::PgPool;
 //!
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
 //!     // Initialize client with PAT
 //!     let client = GitHubClient::new("ghp_your_token_here")?;
-//!     let pool = SqlitePool::connect("sqlite:data.db").await?;
+//!     let pool = PgPool::connect(&std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgresql://rustassistant:changeme@localhost:5432/rustassistant".to_string())).await?;
 //!
 //!     // Sync all user repositories
 //!     let sync = SyncEngine::new(client, pool);

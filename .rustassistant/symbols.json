@@ -16,910 +16,6 @@
     "is_async": false
   },
   {
-    "kind": "Struct",
-    "name": "RepoAppState",
-    "file": "todo/repos_api.rs",
-    "line": 26,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "repo_router",
-    "file": "todo/repos_api.rs",
-    "line": 38,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Struct",
-    "name": "RegisterRepoRequest",
-    "file": "todo/repos_api.rs",
-    "line": 59,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Struct",
-    "name": "RegisterRepoResponse",
-    "file": "todo/repos_api.rs",
-    "line": 69,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Struct",
-    "name": "ChatRequest",
-    "file": "todo/repos_api.rs",
-    "line": 77,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Struct",
-    "name": "ChatMessage",
-    "file": "todo/repos_api.rs",
-    "line": 88,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Struct",
-    "name": "ChatResponse",
-    "file": "todo/repos_api.rs",
-    "line": 94,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Struct",
-    "name": "ApiError",
-    "file": "todo/repos_api.rs",
-    "line": 104,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Impl",
-    "name": "ApiError",
-    "file": "todo/repos_api.rs",
-    "line": 109,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "not_found",
-    "file": "todo/repos_api.rs",
-    "line": 110,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "internal",
-    "file": "todo/repos_api.rs",
-    "line": 117,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "list_repos",
-    "file": "todo/repos_api.rs",
-    "line": 129,
-    "is_pub": false,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "register_repo",
-    "file": "todo/repos_api.rs",
-    "line": 146,
-    "is_pub": false,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "get_repo",
-    "file": "todo/repos_api.rs",
-    "line": 191,
-    "is_pub": false,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "remove_repo",
-    "file": "todo/repos_api.rs",
-    "line": 211,
-    "is_pub": false,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "sync_repo",
-    "file": "todo/repos_api.rs",
-    "line": 223,
-    "is_pub": false,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "get_repo_context",
-    "file": "todo/repos_api.rs",
-    "line": 235,
-    "is_pub": false,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "get_repo_todos",
-    "file": "todo/repos_api.rs",
-    "line": 246,
-    "is_pub": false,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "get_repo_symbols",
-    "file": "todo/repos_api.rs",
-    "line": 253,
-    "is_pub": false,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "get_repo_tree",
-    "file": "todo/repos_api.rs",
-    "line": 260,
-    "is_pub": false,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "chat",
-    "file": "todo/repos_api.rs",
-    "line": 271,
-    "is_pub": false,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "chat_with_repo",
-    "file": "todo/repos_api.rs",
-    "line": 278,
-    "is_pub": false,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "handle_chat",
-    "file": "todo/repos_api.rs",
-    "line": 286,
-    "is_pub": false,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "call_model_stub",
-    "file": "todo/repos_api.rs",
-    "line": 336,
-    "is_pub": false,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "serve_cache_file",
-    "file": "todo/repos_api.rs",
-    "line": 361,
-    "is_pub": false,
-    "is_async": true
-  },
-  {
-    "kind": "Struct",
-    "name": "SyncSchedulerConfig",
-    "file": "todo/sync_scheduler.rs",
-    "line": 20,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Impl",
-    "name": "SyncSchedulerConfig",
-    "file": "todo/sync_scheduler.rs",
-    "line": 29,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "default",
-    "file": "todo/sync_scheduler.rs",
-    "line": 30,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Struct",
-    "name": "SyncScheduler",
-    "file": "todo/sync_scheduler.rs",
-    "line": 43,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Impl",
-    "name": "SyncScheduler",
-    "file": "todo/sync_scheduler.rs",
-    "line": 48,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "new",
-    "file": "todo/sync_scheduler.rs",
-    "line": 49,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "start",
-    "file": "todo/sync_scheduler.rs",
-    "line": 54,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "run_sync_pass",
-    "file": "todo/sync_scheduler.rs",
-    "line": 68,
-    "is_pub": false,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "unix_now",
-    "file": "todo/sync_scheduler.rs",
-    "line": 120,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Const",
-    "name": "RUSTASSISTANT_DIR_SPEC",
-    "file": "todo/sync_scheduler.rs",
-    "line": 135,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Struct",
-    "name": "RegisteredRepo",
-    "file": "todo/repo_sync.rs",
-    "line": 19,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Impl",
-    "name": "RegisteredRepo",
-    "file": "todo/repo_sync.rs",
-    "line": 29,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "new",
-    "file": "todo/repo_sync.rs",
-    "line": 30,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "cache_dir",
-    "file": "todo/repo_sync.rs",
-    "line": 45,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "manifest_path",
-    "file": "todo/repo_sync.rs",
-    "line": 49,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "tree_path",
-    "file": "todo/repo_sync.rs",
-    "line": 53,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "todos_path",
-    "file": "todo/repo_sync.rs",
-    "line": 57,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "symbols_path",
-    "file": "todo/repo_sync.rs",
-    "line": 61,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "context_path",
-    "file": "todo/repo_sync.rs",
-    "line": 65,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Struct",
-    "name": "RepoManifest",
-    "file": "todo/repo_sync.rs",
-    "line": 75,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Struct",
-    "name": "TodoItem",
-    "file": "todo/repo_sync.rs",
-    "line": 92,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Enum",
-    "name": "TodoKind",
-    "file": "todo/repo_sync.rs",
-    "line": 100,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Impl",
-    "name": "TodoKind",
-    "file": "todo/repo_sync.rs",
-    "line": 108,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "from_tag",
-    "file": "todo/repo_sync.rs",
-    "line": 109,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Struct",
-    "name": "Symbol",
-    "file": "todo/repo_sync.rs",
-    "line": 126,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Enum",
-    "name": "SymbolKind",
-    "file": "todo/repo_sync.rs",
-    "line": 136,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Struct",
-    "name": "SyncResult",
-    "file": "todo/repo_sync.rs",
-    "line": 152,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Struct",
-    "name": "RepoSyncService",
-    "file": "todo/repo_sync.rs",
-    "line": 166,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Impl",
-    "name": "RepoSyncService",
-    "file": "todo/repo_sync.rs",
-    "line": 175,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "default",
-    "file": "todo/repo_sync.rs",
-    "line": 176,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Impl",
-    "name": "RepoSyncService",
-    "file": "todo/repo_sync.rs",
-    "line": 192,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "new",
-    "file": "todo/repo_sync.rs",
-    "line": 193,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "register",
-    "file": "todo/repo_sync.rs",
-    "line": 202,
-    "is_pub": true,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "get_repo",
-    "file": "todo/repo_sync.rs",
-    "line": 223,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "list_repos",
-    "file": "todo/repo_sync.rs",
-    "line": 227,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "remove_repo",
-    "file": "todo/repo_sync.rs",
-    "line": 231,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "sync",
-    "file": "todo/repo_sync.rs",
-    "line": 240,
-    "is_pub": true,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "walk_tree",
-    "file": "todo/repo_sync.rs",
-    "line": 327,
-    "is_pub": false,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "extract_todos",
-    "file": "todo/repo_sync.rs",
-    "line": 349,
-    "is_pub": false,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "extract_symbols",
-    "file": "todo/repo_sync.rs",
-    "line": 390,
-    "is_pub": false,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "build_prompt_context",
-    "file": "todo/repo_sync.rs",
-    "line": 429,
-    "is_pub": true,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "walk_dir",
-    "file": "todo/repo_sync.rs",
-    "line": 463,
-    "is_pub": false,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "parse_todo_line",
-    "file": "todo/repo_sync.rs",
-    "line": 497,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "parse_symbol_line",
-    "file": "todo/repo_sync.rs",
-    "line": 529,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "extract_name",
-    "file": "todo/repo_sync.rs",
-    "line": 578,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "extract_impl_name",
-    "file": "todo/repo_sync.rs",
-    "line": 587,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "read_crate_name",
-    "file": "todo/repo_sync.rs",
-    "line": 612,
-    "is_pub": false,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "build_context_md",
-    "file": "todo/repo_sync.rs",
-    "line": 626,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "write_file",
-    "file": "todo/repo_sync.rs",
-    "line": 669,
-    "is_pub": false,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "write_json",
-    "file": "todo/repo_sync.rs",
-    "line": 675,
-    "is_pub": false,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "slugify",
-    "file": "todo/repo_sync.rs",
-    "line": 680,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "unix_now",
-    "file": "todo/repo_sync.rs",
-    "line": 689,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Mod",
-    "name": "tests",
-    "file": "todo/repo_sync.rs",
-    "line": 701,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "parse_todo_rust_comment",
-    "file": "todo/repo_sync.rs",
-    "line": 705,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "parse_stub_tag",
-    "file": "todo/repo_sync.rs",
-    "line": 715,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "parse_symbol_pub_fn",
-    "file": "todo/repo_sync.rs",
-    "line": 722,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "parse_symbol_struct",
-    "file": "todo/repo_sync.rs",
-    "line": 733,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "slugify_basic",
-    "file": "todo/repo_sync.rs",
-    "line": 740,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Enum",
-    "name": "TaskKind",
-    "file": "todo/model_router.rs",
-    "line": 15,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Impl",
-    "name": "TaskKind",
-    "file": "todo/model_router.rs",
-    "line": 34,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "is_local",
-    "file": "todo/model_router.rs",
-    "line": 36,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Impl",
-    "name": "TaskKind",
-    "file": "todo/model_router.rs",
-    "line": 48,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "fmt",
-    "file": "todo/model_router.rs",
-    "line": 49,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Enum",
-    "name": "ModelTarget",
-    "file": "todo/model_router.rs",
-    "line": 59,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Impl",
-    "name": "ModelTarget",
-    "file": "todo/model_router.rs",
-    "line": 66,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "fmt",
-    "file": "todo/model_router.rs",
-    "line": 67,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Struct",
-    "name": "ModelRouterConfig",
-    "file": "todo/model_router.rs",
-    "line": 80,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Impl",
-    "name": "ModelRouterConfig",
-    "file": "todo/model_router.rs",
-    "line": 91,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "default",
-    "file": "todo/model_router.rs",
-    "line": 92,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Struct",
-    "name": "ModelRouter",
-    "file": "todo/model_router.rs",
-    "line": 109,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Impl",
-    "name": "ModelRouter",
-    "file": "todo/model_router.rs",
-    "line": 113,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "new",
-    "file": "todo/model_router.rs",
-    "line": 114,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "classify_prompt",
-    "file": "todo/model_router.rs",
-    "line": 122,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "route",
-    "file": "todo/model_router.rs",
-    "line": 165,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "route_prompt",
-    "file": "todo/model_router.rs",
-    "line": 182,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "on_local_failure",
-    "file": "todo/model_router.rs",
-    "line": 189,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Struct",
-    "name": "CompletionRequest",
-    "file": "todo/model_router.rs",
-    "line": 207,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Impl",
-    "name": "CompletionRequest",
-    "file": "todo/model_router.rs",
-    "line": 216,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "for_stub",
-    "file": "todo/model_router.rs",
-    "line": 217,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "build_prompt",
-    "file": "todo/model_router.rs",
-    "line": 228,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Struct",
-    "name": "CompletionResponse",
-    "file": "todo/model_router.rs",
-    "line": 240,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Const",
-    "name": "RUST_STUB_SYSTEM_PROMPT",
-    "file": "todo/model_router.rs",
-    "line": 252,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Mod",
-    "name": "tests",
-    "file": "todo/model_router.rs",
-    "line": 272,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "router",
-    "file": "todo/model_router.rs",
-    "line": 275,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "classifies_stub_prompts",
-    "file": "todo/model_router.rs",
-    "line": 280,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "classifies_review_as_remote",
-    "file": "todo/model_router.rs",
-    "line": 287,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "stub_routes_local",
-    "file": "todo/model_router.rs",
-    "line": 295,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "force_remote_overrides",
-    "file": "todo/model_router.rs",
-    "line": 303,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
     "kind": "Function",
     "name": "main",
     "file": "examples/test_chunking.rs",
@@ -955,7 +51,7 @@
     "kind": "Function",
     "name": "root_handler",
     "file": "examples/rag_server.rs",
-    "line": 122,
+    "line": 123,
     "is_pub": false,
     "is_async": true
   },
@@ -963,7 +59,7 @@
     "kind": "Function",
     "name": "health_handler",
     "file": "examples/rag_server.rs",
-    "line": 145,
+    "line": 146,
     "is_pub": false,
     "is_async": true
   },
@@ -971,7 +67,7 @@
     "kind": "Function",
     "name": "print_usage_examples",
     "file": "examples/rag_server.rs",
-    "line": 149,
+    "line": 150,
     "is_pub": false,
     "is_async": false
   },
@@ -987,7 +83,7 @@
     "kind": "Function",
     "name": "create_sample_documents",
     "file": "examples/test_search.rs",
-    "line": 77,
+    "line": 79,
     "is_pub": false,
     "is_async": true
   },
@@ -995,31 +91,15 @@
     "kind": "Function",
     "name": "index_documents",
     "file": "examples/test_search.rs",
-    "line": 150,
+    "line": 152,
     "is_pub": false,
     "is_async": true
   },
   {
     "kind": "Function",
-    "name": "test_basic_search",
+    "name": "test_semantic_search",
     "file": "examples/test_search.rs",
-    "line": 174,
-    "is_pub": false,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "test_filtered_search",
-    "file": "examples/test_search.rs",
-    "line": 204,
-    "is_pub": false,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "test_semantic_vs_keyword",
-    "file": "examples/test_search.rs",
-    "line": 235,
+    "line": 176,
     "is_pub": false,
     "is_async": true
   },
@@ -1027,7 +107,23 @@
     "kind": "Function",
     "name": "test_hybrid_search",
     "file": "examples/test_search.rs",
-    "line": 268,
+    "line": 206,
+    "is_pub": false,
+    "is_async": true
+  },
+  {
+    "kind": "Function",
+    "name": "test_semantic_vs_keyword",
+    "file": "examples/test_search.rs",
+    "line": 237,
+    "is_pub": false,
+    "is_async": true
+  },
+  {
+    "kind": "Function",
+    "name": "test_filtered_search",
+    "file": "examples/test_search.rs",
+    "line": 270,
     "is_pub": false,
     "is_async": true
   },
@@ -1267,7 +363,7 @@
     "kind": "Function",
     "name": "setup_test_env",
     "file": "tests/api_integration_tests.rs",
-    "line": 25,
+    "line": 30,
     "is_pub": false,
     "is_async": true
   },
@@ -1275,7 +371,7 @@
     "kind": "Function",
     "name": "create_test_server",
     "file": "tests/api_integration_tests.rs",
-    "line": 44,
+    "line": 54,
     "is_pub": false,
     "is_async": true
   },
@@ -1283,7 +379,7 @@
     "kind": "Function",
     "name": "test_upload_document",
     "file": "tests/api_integration_tests.rs",
-    "line": 87,
+    "line": 97,
     "is_pub": false,
     "is_async": true
   },
@@ -1291,7 +387,7 @@
     "kind": "Function",
     "name": "test_list_documents",
     "file": "tests/api_integration_tests.rs",
-    "line": 123,
+    "line": 133,
     "is_pub": false,
     "is_async": true
   },
@@ -1299,7 +395,7 @@
     "kind": "Function",
     "name": "test_get_document_by_id",
     "file": "tests/api_integration_tests.rs",
-    "line": 164,
+    "line": 174,
     "is_pub": false,
     "is_async": true
   },
@@ -1307,7 +403,7 @@
     "kind": "Function",
     "name": "test_delete_document",
     "file": "tests/api_integration_tests.rs",
-    "line": 210,
+    "line": 220,
     "is_pub": false,
     "is_async": true
   },
@@ -1315,7 +411,7 @@
     "kind": "Function",
     "name": "test_search_documents",
     "file": "tests/api_integration_tests.rs",
-    "line": 266,
+    "line": 276,
     "is_pub": false,
     "is_async": true
   },
@@ -1323,7 +419,7 @@
     "kind": "Function",
     "name": "test_auth_missing_key",
     "file": "tests/api_integration_tests.rs",
-    "line": 329,
+    "line": 339,
     "is_pub": false,
     "is_async": true
   },
@@ -1331,7 +427,7 @@
     "kind": "Function",
     "name": "test_auth_invalid_key",
     "file": "tests/api_integration_tests.rs",
-    "line": 357,
+    "line": 367,
     "is_pub": false,
     "is_async": true
   },
@@ -1339,7 +435,7 @@
     "kind": "Function",
     "name": "test_auth_anonymous_read",
     "file": "tests/api_integration_tests.rs",
-    "line": 385,
+    "line": 395,
     "is_pub": false,
     "is_async": true
   },
@@ -1347,7 +443,7 @@
     "kind": "Function",
     "name": "test_rate_limiting",
     "file": "tests/api_integration_tests.rs",
-    "line": 406,
+    "line": 416,
     "is_pub": false,
     "is_async": true
   },
@@ -1355,7 +451,7 @@
     "kind": "Function",
     "name": "test_index_job_lifecycle",
     "file": "tests/api_integration_tests.rs",
-    "line": 442,
+    "line": 452,
     "is_pub": false,
     "is_async": true
   },
@@ -1363,7 +459,7 @@
     "kind": "Function",
     "name": "test_health_check",
     "file": "tests/api_integration_tests.rs",
-    "line": 515,
+    "line": 525,
     "is_pub": false,
     "is_async": true
   },
@@ -1371,7 +467,7 @@
     "kind": "Function",
     "name": "test_stats_endpoint",
     "file": "tests/api_integration_tests.rs",
-    "line": 535,
+    "line": 545,
     "is_pub": false,
     "is_async": true
   },
@@ -1379,7 +475,7 @@
     "kind": "Function",
     "name": "test_invalid_document_id",
     "file": "tests/api_integration_tests.rs",
-    "line": 563,
+    "line": 573,
     "is_pub": false,
     "is_async": true
   },
@@ -1387,7 +483,7 @@
     "kind": "Function",
     "name": "test_invalid_json",
     "file": "tests/api_integration_tests.rs",
-    "line": 579,
+    "line": 589,
     "is_pub": false,
     "is_async": true
   },
@@ -1395,7 +491,7 @@
     "kind": "Function",
     "name": "test_pagination",
     "file": "tests/api_integration_tests.rs",
-    "line": 602,
+    "line": 612,
     "is_pub": false,
     "is_async": true
   },
@@ -2443,7 +1539,7 @@
     "kind": "Struct",
     "name": "WorkerConfig",
     "file": "src/research/worker.rs",
-    "line": 20,
+    "line": 24,
     "is_pub": true,
     "is_async": false
   },
@@ -2451,7 +1547,7 @@
     "kind": "Impl",
     "name": "WorkerConfig",
     "file": "src/research/worker.rs",
-    "line": 31,
+    "line": 35,
     "is_pub": false,
     "is_async": false
   },
@@ -2459,7 +1555,7 @@
     "kind": "Function",
     "name": "default",
     "file": "src/research/worker.rs",
-    "line": 32,
+    "line": 36,
     "is_pub": false,
     "is_async": false
   },
@@ -2467,7 +1563,7 @@
     "kind": "Struct",
     "name": "ResearchOrchestrator",
     "file": "src/research/worker.rs",
-    "line": 46,
+    "line": 50,
     "is_pub": true,
     "is_async": false
   },
@@ -2475,7 +1571,7 @@
     "kind": "Impl",
     "name": "ResearchOrchestrator",
     "file": "src/research/worker.rs",
-    "line": 53,
+    "line": 57,
     "is_pub": false,
     "is_async": false
   },
@@ -2483,7 +1579,7 @@
     "kind": "Function",
     "name": "new",
     "file": "src/research/worker.rs",
-    "line": 54,
+    "line": 58,
     "is_pub": true,
     "is_async": false
   },
@@ -2491,7 +1587,7 @@
     "kind": "Function",
     "name": "execute",
     "file": "src/research/worker.rs",
-    "line": 65,
+    "line": 69,
     "is_pub": true,
     "is_async": true
   },
@@ -2499,7 +1595,7 @@
     "kind": "Function",
     "name": "generate_subtopics",
     "file": "src/research/worker.rs",
-    "line": 137,
+    "line": 141,
     "is_pub": false,
     "is_async": true
   },
@@ -2507,7 +1603,7 @@
     "kind": "Function",
     "name": "run_worker",
     "file": "src/research/worker.rs",
-    "line": 192,
+    "line": 196,
     "is_pub": false,
     "is_async": true
   },
@@ -2515,7 +1611,7 @@
     "kind": "Function",
     "name": "calculate_confidence",
     "file": "src/research/worker.rs",
-    "line": 230,
+    "line": 234,
     "is_pub": false,
     "is_async": false
   },
@@ -2523,7 +1619,7 @@
     "kind": "Struct",
     "name": "RagContext",
     "file": "src/research/worker.rs",
-    "line": 259,
+    "line": 263,
     "is_pub": true,
     "is_async": false
   },
@@ -2531,15 +1627,39 @@
     "kind": "Struct",
     "name": "RagResult",
     "file": "src/research/worker.rs",
-    "line": 264,
+    "line": 268,
     "is_pub": true,
     "is_async": false
+  },
+  {
+    "kind": "Struct",
+    "name": "RagIndex",
+    "file": "src/research/worker.rs",
+    "line": 280,
+    "is_pub": false,
+    "is_async": false
+  },
+  {
+    "kind": "Function",
+    "name": "rag_index_cell",
+    "file": "src/research/worker.rs",
+    "line": 288,
+    "is_pub": false,
+    "is_async": false
+  },
+  {
+    "kind": "Function",
+    "name": "refresh_rag_index",
+    "file": "src/research/worker.rs",
+    "line": 298,
+    "is_pub": true,
+    "is_async": true
   },
   {
     "kind": "Function",
     "name": "search_rag_context",
     "file": "src/research/worker.rs",
-    "line": 271,
+    "line": 364,
     "is_pub": true,
     "is_async": true
   },
@@ -2547,7 +1667,7 @@
     "kind": "Function",
     "name": "enhance_prompt_with_rag",
     "file": "src/research/worker.rs",
-    "line": 283,
+    "line": 464,
     "is_pub": true,
     "is_async": false
   },
@@ -3731,7 +2851,7 @@
     "kind": "Function",
     "name": "list_documents",
     "file": "src/api/handlers.rs",
-    "line": 332,
+    "line": 336,
     "is_pub": true,
     "is_async": true
   },
@@ -3739,7 +2859,7 @@
     "kind": "Function",
     "name": "update_document",
     "file": "src/api/handlers.rs",
-    "line": 464,
+    "line": 474,
     "is_pub": true,
     "is_async": true
   },
@@ -3747,7 +2867,7 @@
     "kind": "Function",
     "name": "delete_document",
     "file": "src/api/handlers.rs",
-    "line": 517,
+    "line": 527,
     "is_pub": true,
     "is_async": true
   },
@@ -3755,7 +2875,7 @@
     "kind": "Function",
     "name": "search_documents",
     "file": "src/api/handlers.rs",
-    "line": 563,
+    "line": 576,
     "is_pub": true,
     "is_async": true
   },
@@ -3763,7 +2883,7 @@
     "kind": "Function",
     "name": "index_document",
     "file": "src/api/handlers.rs",
-    "line": 636,
+    "line": 649,
     "is_pub": true,
     "is_async": true
   },
@@ -3771,7 +2891,7 @@
     "kind": "Function",
     "name": "batch_index_documents",
     "file": "src/api/handlers.rs",
-    "line": 657,
+    "line": 670,
     "is_pub": true,
     "is_async": true
   },
@@ -3779,7 +2899,7 @@
     "kind": "Function",
     "name": "get_index_job_status",
     "file": "src/api/handlers.rs",
-    "line": 687,
+    "line": 700,
     "is_pub": true,
     "is_async": true
   },
@@ -3787,7 +2907,7 @@
     "kind": "Function",
     "name": "list_index_jobs",
     "file": "src/api/handlers.rs",
-    "line": 721,
+    "line": 734,
     "is_pub": true,
     "is_async": true
   },
@@ -3795,7 +2915,7 @@
     "kind": "Function",
     "name": "cancel_index_job",
     "file": "src/api/handlers.rs",
-    "line": 742,
+    "line": 755,
     "is_pub": true,
     "is_async": true
   },
@@ -3803,7 +2923,7 @@
     "kind": "Struct",
     "name": "RepoAppState",
     "file": "src/api/repos.rs",
-    "line": 28,
+    "line": 38,
     "is_pub": true,
     "is_async": false
   },
@@ -3811,7 +2931,7 @@
     "kind": "Const",
     "name": "CHAT_CACHE_TTL_SECS",
     "file": "src/api/repos.rs",
-    "line": 39,
+    "line": 49,
     "is_pub": false,
     "is_async": false
   },
@@ -3819,7 +2939,7 @@
     "kind": "Function",
     "name": "repo_router",
     "file": "src/api/repos.rs",
-    "line": 45,
+    "line": 55,
     "is_pub": true,
     "is_async": false
   },
@@ -3827,7 +2947,7 @@
     "kind": "Struct",
     "name": "RegisterRepoRequest",
     "file": "src/api/repos.rs",
-    "line": 70,
+    "line": 80,
     "is_pub": true,
     "is_async": false
   },
@@ -3835,7 +2955,7 @@
     "kind": "Struct",
     "name": "RegisterRepoResponse",
     "file": "src/api/repos.rs",
-    "line": 80,
+    "line": 90,
     "is_pub": true,
     "is_async": false
   },
@@ -3843,7 +2963,7 @@
     "kind": "Struct",
     "name": "ChatRequest",
     "file": "src/api/repos.rs",
-    "line": 88,
+    "line": 98,
     "is_pub": true,
     "is_async": false
   },
@@ -3851,7 +2971,7 @@
     "kind": "Struct",
     "name": "ChatMessage",
     "file": "src/api/repos.rs",
-    "line": 101,
+    "line": 111,
     "is_pub": true,
     "is_async": false
   },
@@ -3859,7 +2979,7 @@
     "kind": "Struct",
     "name": "ChatResponse",
     "file": "src/api/repos.rs",
-    "line": 107,
+    "line": 117,
     "is_pub": true,
     "is_async": false
   },
@@ -3867,7 +2987,7 @@
     "kind": "Struct",
     "name": "ApiError",
     "file": "src/api/repos.rs",
-    "line": 119,
+    "line": 129,
     "is_pub": true,
     "is_async": false
   },
@@ -3875,7 +2995,7 @@
     "kind": "Impl",
     "name": "ApiError",
     "file": "src/api/repos.rs",
-    "line": 124,
+    "line": 134,
     "is_pub": false,
     "is_async": false
   },
@@ -3883,7 +3003,7 @@
     "kind": "Function",
     "name": "not_found",
     "file": "src/api/repos.rs",
-    "line": 125,
+    "line": 135,
     "is_pub": false,
     "is_async": false
   },
@@ -3891,7 +3011,7 @@
     "kind": "Function",
     "name": "internal",
     "file": "src/api/repos.rs",
-    "line": 135,
+    "line": 145,
     "is_pub": false,
     "is_async": false
   },
@@ -3899,7 +3019,7 @@
     "kind": "Function",
     "name": "list_repos",
     "file": "src/api/repos.rs",
-    "line": 150,
+    "line": 160,
     "is_pub": false,
     "is_async": true
   },
@@ -3907,7 +3027,7 @@
     "kind": "Function",
     "name": "register_repo",
     "file": "src/api/repos.rs",
-    "line": 169,
+    "line": 179,
     "is_pub": false,
     "is_async": true
   },
@@ -3915,7 +3035,7 @@
     "kind": "Function",
     "name": "get_repo",
     "file": "src/api/repos.rs",
-    "line": 214,
+    "line": 224,
     "is_pub": false,
     "is_async": true
   },
@@ -3923,7 +3043,7 @@
     "kind": "Function",
     "name": "remove_repo",
     "file": "src/api/repos.rs",
-    "line": 231,
+    "line": 241,
     "is_pub": false,
     "is_async": true
   },
@@ -3931,7 +3051,7 @@
     "kind": "Function",
     "name": "sync_repo",
     "file": "src/api/repos.rs",
-    "line": 243,
+    "line": 253,
     "is_pub": false,
     "is_async": true
   },
@@ -3939,7 +3059,7 @@
     "kind": "Function",
     "name": "get_repo_context",
     "file": "src/api/repos.rs",
-    "line": 252,
+    "line": 262,
     "is_pub": false,
     "is_async": true
   },
@@ -3947,7 +3067,7 @@
     "kind": "Function",
     "name": "get_repo_todos",
     "file": "src/api/repos.rs",
-    "line": 263,
+    "line": 273,
     "is_pub": false,
     "is_async": true
   },
@@ -3955,7 +3075,7 @@
     "kind": "Function",
     "name": "get_repo_symbols",
     "file": "src/api/repos.rs",
-    "line": 270,
+    "line": 280,
     "is_pub": false,
     "is_async": true
   },
@@ -3963,7 +3083,7 @@
     "kind": "Function",
     "name": "get_repo_tree",
     "file": "src/api/repos.rs",
-    "line": 277,
+    "line": 287,
     "is_pub": false,
     "is_async": true
   },
@@ -3971,7 +3091,7 @@
     "kind": "Function",
     "name": "ollama_health",
     "file": "src/api/repos.rs",
-    "line": 288,
+    "line": 298,
     "is_pub": false,
     "is_async": true
   },
@@ -3979,7 +3099,7 @@
     "kind": "Function",
     "name": "ollama_models",
     "file": "src/api/repos.rs",
-    "line": 297,
+    "line": 307,
     "is_pub": false,
     "is_async": true
   },
@@ -3987,7 +3107,7 @@
     "kind": "Function",
     "name": "chat",
     "file": "src/api/repos.rs",
-    "line": 308,
+    "line": 318,
     "is_pub": false,
     "is_async": true
   },
@@ -3995,7 +3115,7 @@
     "kind": "Function",
     "name": "chat_with_repo",
     "file": "src/api/repos.rs",
-    "line": 315,
+    "line": 325,
     "is_pub": false,
     "is_async": true
   },
@@ -4003,7 +3123,7 @@
     "kind": "Function",
     "name": "handle_chat",
     "file": "src/api/repos.rs",
-    "line": 323,
+    "line": 333,
     "is_pub": false,
     "is_async": true
   },
@@ -4011,7 +3131,7 @@
     "kind": "Function",
     "name": "dispatch_completion",
     "file": "src/api/repos.rs",
-    "line": 422,
+    "line": 468,
     "is_pub": false,
     "is_async": true
   },
@@ -4019,7 +3139,7 @@
     "kind": "Function",
     "name": "build_cache_key",
     "file": "src/api/repos.rs",
-    "line": 500,
+    "line": 546,
     "is_pub": false,
     "is_async": false
   },
@@ -4027,7 +3147,7 @@
     "kind": "Struct",
     "name": "CachedChatResponse",
     "file": "src/api/repos.rs",
-    "line": 522,
+    "line": 568,
     "is_pub": false,
     "is_async": false
   },
@@ -4035,7 +3155,7 @@
     "kind": "Function",
     "name": "serve_cache_file",
     "file": "src/api/repos.rs",
-    "line": 533,
+    "line": 579,
     "is_pub": false,
     "is_async": true
   },
@@ -4043,7 +3163,7 @@
     "kind": "Impl",
     "name": "RepoAppState",
     "file": "src/api/repos.rs",
-    "line": 560,
+    "line": 606,
     "is_pub": false,
     "is_async": false
   },
@@ -4051,7 +3171,7 @@
     "kind": "Function",
     "name": "from_env",
     "file": "src/api/repos.rs",
-    "line": 566,
+    "line": 612,
     "is_pub": true,
     "is_async": true
   },
@@ -5728,10 +4848,50 @@
     "is_async": false
   },
   {
+    "kind": "Enum",
+    "name": "CargoTestEvent",
+    "file": "src/tests_runner.rs",
+    "line": 15,
+    "is_pub": false,
+    "is_async": false
+  },
+  {
+    "kind": "Struct",
+    "name": "CargoTestEventTest",
+    "file": "src/tests_runner.rs",
+    "line": 23,
+    "is_pub": false,
+    "is_async": false
+  },
+  {
+    "kind": "Struct",
+    "name": "CargoTestEventSuite",
+    "file": "src/tests_runner.rs",
+    "line": 31,
+    "is_pub": false,
+    "is_async": false
+  },
+  {
+    "kind": "Struct",
+    "name": "PytestReport",
+    "file": "src/tests_runner.rs",
+    "line": 40,
+    "is_pub": false,
+    "is_async": false
+  },
+  {
+    "kind": "Struct",
+    "name": "PytestTest",
+    "file": "src/tests_runner.rs",
+    "line": 46,
+    "is_pub": false,
+    "is_async": false
+  },
+  {
     "kind": "Struct",
     "name": "TestRunner",
     "file": "src/tests_runner.rs",
-    "line": 12,
+    "line": 54,
     "is_pub": true,
     "is_async": false
   },
@@ -5739,7 +4899,7 @@
     "kind": "Struct",
     "name": "TestResults",
     "file": "src/tests_runner.rs",
-    "line": 18,
+    "line": 60,
     "is_pub": true,
     "is_async": false
   },
@@ -5747,7 +4907,7 @@
     "kind": "Struct",
     "name": "FileTestResult",
     "file": "src/tests_runner.rs",
-    "line": 43,
+    "line": 85,
     "is_pub": true,
     "is_async": false
   },
@@ -5755,7 +4915,7 @@
     "kind": "Enum",
     "name": "ProjectType",
     "file": "src/tests_runner.rs",
-    "line": 59,
+    "line": 101,
     "is_pub": true,
     "is_async": false
   },
@@ -5763,7 +4923,7 @@
     "kind": "Impl",
     "name": "TestRunner",
     "file": "src/tests_runner.rs",
-    "line": 68,
+    "line": 110,
     "is_pub": false,
     "is_async": false
   },
@@ -5771,7 +4931,7 @@
     "kind": "Function",
     "name": "new",
     "file": "src/tests_runner.rs",
-    "line": 70,
+    "line": 112,
     "is_pub": true,
     "is_async": false
   },
@@ -5779,7 +4939,7 @@
     "kind": "Function",
     "name": "detect_project_types",
     "file": "src/tests_runner.rs",
-    "line": 75,
+    "line": 117,
     "is_pub": true,
     "is_async": false
   },
@@ -5787,7 +4947,7 @@
     "kind": "Function",
     "name": "run_all_tests",
     "file": "src/tests_runner.rs",
-    "line": 119,
+    "line": 161,
     "is_pub": true,
     "is_async": false
   },
@@ -5795,7 +4955,7 @@
     "kind": "Function",
     "name": "run_tests_for_type",
     "file": "src/tests_runner.rs",
-    "line": 137,
+    "line": 179,
     "is_pub": true,
     "is_async": false
   },
@@ -5803,7 +4963,7 @@
     "kind": "Function",
     "name": "run_rust_tests",
     "file": "src/tests_runner.rs",
-    "line": 150,
+    "line": 192,
     "is_pub": false,
     "is_async": false
   },
@@ -5811,7 +4971,7 @@
     "kind": "Function",
     "name": "run_python_tests",
     "file": "src/tests_runner.rs",
-    "line": 190,
+    "line": 248,
     "is_pub": false,
     "is_async": false
   },
@@ -5819,7 +4979,7 @@
     "kind": "Function",
     "name": "run_js_tests",
     "file": "src/tests_runner.rs",
-    "line": 229,
+    "line": 297,
     "is_pub": false,
     "is_async": false
   },
@@ -5827,7 +4987,7 @@
     "kind": "Function",
     "name": "run_kotlin_tests",
     "file": "src/tests_runner.rs",
-    "line": 265,
+    "line": 333,
     "is_pub": false,
     "is_async": false
   },
@@ -5835,7 +4995,7 @@
     "kind": "Function",
     "name": "find_rust_test_files",
     "file": "src/tests_runner.rs",
-    "line": 299,
+    "line": 367,
     "is_pub": false,
     "is_async": false
   },
@@ -5843,7 +5003,7 @@
     "kind": "Function",
     "name": "find_python_test_files",
     "file": "src/tests_runner.rs",
-    "line": 319,
+    "line": 387,
     "is_pub": false,
     "is_async": false
   },
@@ -5851,7 +5011,7 @@
     "kind": "Function",
     "name": "find_js_test_files",
     "file": "src/tests_runner.rs",
-    "line": 341,
+    "line": 409,
     "is_pub": false,
     "is_async": false
   },
@@ -5859,7 +5019,23 @@
     "kind": "Function",
     "name": "find_kotlin_test_files",
     "file": "src/tests_runner.rs",
-    "line": 369,
+    "line": 437,
+    "is_pub": false,
+    "is_async": false
+  },
+  {
+    "kind": "Function",
+    "name": "parse_cargo_test_json",
+    "file": "src/tests_runner.rs",
+    "line": 464,
+    "is_pub": false,
+    "is_async": false
+  },
+  {
+    "kind": "Function",
+    "name": "parse_pytest_json_report",
+    "file": "src/tests_runner.rs",
+    "line": 533,
     "is_pub": false,
     "is_async": false
   },
@@ -5867,7 +5043,7 @@
     "kind": "Function",
     "name": "parse_cargo_test_output",
     "file": "src/tests_runner.rs",
-    "line": 391,
+    "line": 599,
     "is_pub": false,
     "is_async": false
   },
@@ -5875,7 +5051,7 @@
     "kind": "Function",
     "name": "parse_pytest_output",
     "file": "src/tests_runner.rs",
-    "line": 426,
+    "line": 634,
     "is_pub": false,
     "is_async": false
   },
@@ -5883,7 +5059,7 @@
     "kind": "Function",
     "name": "parse_jest_output",
     "file": "src/tests_runner.rs",
-    "line": 455,
+    "line": 663,
     "is_pub": false,
     "is_async": false
   },
@@ -5891,7 +5067,7 @@
     "kind": "Function",
     "name": "parse_gradle_output",
     "file": "src/tests_runner.rs",
-    "line": 469,
+    "line": 677,
     "is_pub": false,
     "is_async": false
   },
@@ -5899,7 +5075,7 @@
     "kind": "Function",
     "name": "get_rust_coverage",
     "file": "src/tests_runner.rs",
-    "line": 491,
+    "line": 699,
     "is_pub": false,
     "is_async": false
   },
@@ -5907,7 +5083,15 @@
     "kind": "Function",
     "name": "get_python_coverage",
     "file": "src/tests_runner.rs",
-    "line": 520,
+    "line": 728,
+    "is_pub": false,
+    "is_async": false
+  },
+  {
+    "kind": "Function",
+    "name": "derive_rust_file_key",
+    "file": "src/tests_runner.rs",
+    "line": 769,
     "is_pub": false,
     "is_async": false
   },
@@ -5915,7 +5099,7 @@
     "kind": "Mod",
     "name": "tests",
     "file": "src/tests_runner.rs",
-    "line": 550,
+    "line": 815,
     "is_pub": false,
     "is_async": false
   },
@@ -5923,7 +5107,7 @@
     "kind": "Function",
     "name": "test_parse_cargo_output",
     "file": "src/tests_runner.rs",
-    "line": 554,
+    "line": 819,
     "is_pub": false,
     "is_async": false
   },
@@ -5931,7 +5115,87 @@
     "kind": "Function",
     "name": "test_parse_pytest_output",
     "file": "src/tests_runner.rs",
-    "line": 566,
+    "line": 831,
+    "is_pub": false,
+    "is_async": false
+  },
+  {
+    "kind": "Function",
+    "name": "file_key_top_level_test",
+    "file": "src/tests_runner.rs",
+    "line": 845,
+    "is_pub": false,
+    "is_async": false
+  },
+  {
+    "kind": "Function",
+    "name": "file_key_single_module",
+    "file": "src/tests_runner.rs",
+    "line": 853,
+    "is_pub": false,
+    "is_async": false
+  },
+  {
+    "kind": "Function",
+    "name": "file_key_two_module_components",
+    "file": "src/tests_runner.rs",
+    "line": 861,
+    "is_pub": false,
+    "is_async": false
+  },
+  {
+    "kind": "Function",
+    "name": "file_key_three_module_components",
+    "file": "src/tests_runner.rs",
+    "line": 869,
+    "is_pub": false,
+    "is_async": false
+  },
+  {
+    "kind": "Function",
+    "name": "file_key_no_tests_module_in_name",
+    "file": "src/tests_runner.rs",
+    "line": 877,
+    "is_pub": false,
+    "is_async": false
+  },
+  {
+    "kind": "Function",
+    "name": "file_key_module_with_underscores",
+    "file": "src/tests_runner.rs",
+    "line": 891,
+    "is_pub": false,
+    "is_async": false
+  },
+  {
+    "kind": "Function",
+    "name": "file_key_single_segment_module_name",
+    "file": "src/tests_runner.rs",
+    "line": 905,
+    "is_pub": false,
+    "is_async": false
+  },
+  {
+    "kind": "Function",
+    "name": "parse_cargo_json_counts_ok_failed_ignored",
+    "file": "src/tests_runner.rs",
+    "line": 916,
+    "is_pub": false,
+    "is_async": false
+  },
+  {
+    "kind": "Function",
+    "name": "parse_cargo_json_empty_input_returns_zeros",
+    "file": "src/tests_runner.rs",
+    "line": 960,
+    "is_pub": false,
+    "is_async": false
+  },
+  {
+    "kind": "Function",
+    "name": "parse_cargo_json_ignores_non_json_lines",
+    "file": "src/tests_runner.rs",
+    "line": 971,
     "is_pub": false,
     "is_async": false
   },
@@ -5971,7 +5235,7 @@
     "kind": "Enum",
     "name": "NoteAction",
     "file": "src/bin/cli.rs",
-    "line": 260,
+    "line": 271,
     "is_pub": false,
     "is_async": false
   },
@@ -5979,7 +5243,7 @@
     "kind": "Enum",
     "name": "RepoAction",
     "file": "src/bin/cli.rs",
-    "line": 306,
+    "line": 317,
     "is_pub": false,
     "is_async": false
   },
@@ -5987,7 +5251,7 @@
     "kind": "Enum",
     "name": "DocsAction",
     "file": "src/bin/cli.rs",
-    "line": 350,
+    "line": 361,
     "is_pub": false,
     "is_async": false
   },
@@ -5995,7 +5259,7 @@
     "kind": "Enum",
     "name": "RefactorAction",
     "file": "src/bin/cli.rs",
-    "line": 374,
+    "line": 385,
     "is_pub": false,
     "is_async": false
   },
@@ -6003,7 +5267,7 @@
     "kind": "Enum",
     "name": "CacheAction",
     "file": "src/bin/cli.rs",
-    "line": 393,
+    "line": 404,
     "is_pub": false,
     "is_async": false
   },
@@ -6011,7 +5275,7 @@
     "kind": "Enum",
     "name": "TaskAction",
     "file": "src/bin/cli.rs",
-    "line": 444,
+    "line": 455,
     "is_pub": false,
     "is_async": false
   },
@@ -6019,7 +5283,7 @@
     "kind": "Function",
     "name": "main",
     "file": "src/bin/cli.rs",
-    "line": 478,
+    "line": 489,
     "is_pub": false,
     "is_async": true
   },
@@ -6027,7 +5291,7 @@
     "kind": "Function",
     "name": "handle_todo_command",
     "file": "src/bin/cli.rs",
-    "line": 518,
+    "line": 530,
     "is_pub": false,
     "is_async": true
   },
@@ -6035,7 +5299,7 @@
     "kind": "Function",
     "name": "handle_todo_scan",
     "file": "src/bin/cli.rs",
-    "line": 561,
+    "line": 580,
     "is_pub": false,
     "is_async": true
   },
@@ -6043,7 +5307,7 @@
     "kind": "Function",
     "name": "render_scan_table_items",
     "file": "src/bin/cli.rs",
-    "line": 653,
+    "line": 672,
     "is_pub": false,
     "is_async": false
   },
@@ -6051,7 +5315,7 @@
     "kind": "Function",
     "name": "handle_todo_scaffold",
     "file": "src/bin/cli.rs",
-    "line": 697,
+    "line": 716,
     "is_pub": false,
     "is_async": true
   },
@@ -6059,7 +5323,7 @@
     "kind": "Function",
     "name": "handle_todo_plan",
     "file": "src/bin/cli.rs",
-    "line": 753,
+    "line": 772,
     "is_pub": false,
     "is_async": true
   },
@@ -6067,7 +5331,7 @@
     "kind": "Function",
     "name": "handle_todo_work",
     "file": "src/bin/cli.rs",
-    "line": 814,
+    "line": 833,
     "is_pub": false,
     "is_async": true
   },
@@ -6075,7 +5339,7 @@
     "kind": "Function",
     "name": "handle_todo_sync",
     "file": "src/bin/cli.rs",
-    "line": 1094,
+    "line": 1164,
     "is_pub": false,
     "is_async": true
   },
@@ -6083,7 +5347,7 @@
     "kind": "Function",
     "name": "handle_note_action",
     "file": "src/bin/cli.rs",
-    "line": 1144,
+    "line": 1214,
     "is_pub": false,
     "is_async": true
   },
@@ -6091,7 +5355,7 @@
     "kind": "Function",
     "name": "print_note",
     "file": "src/bin/cli.rs",
-    "line": 1210,
+    "line": 1280,
     "is_pub": false,
     "is_async": false
   },
@@ -6099,7 +5363,7 @@
     "kind": "Function",
     "name": "handle_repo_action",
     "file": "src/bin/cli.rs",
-    "line": 1237,
+    "line": 1307,
     "is_pub": false,
     "is_async": true
   },
@@ -6107,7 +5371,7 @@
     "kind": "Function",
     "name": "handle_task_action",
     "file": "src/bin/cli.rs",
-    "line": 1372,
+    "line": 1442,
     "is_pub": false,
     "is_async": true
   },
@@ -6115,7 +5379,7 @@
     "kind": "Function",
     "name": "print_task",
     "file": "src/bin/cli.rs",
-    "line": 1405,
+    "line": 1475,
     "is_pub": false,
     "is_async": false
   },
@@ -6123,7 +5387,7 @@
     "kind": "Function",
     "name": "handle_next",
     "file": "src/bin/cli.rs",
-    "line": 1459,
+    "line": 1529,
     "is_pub": false,
     "is_async": true
   },
@@ -6131,7 +5395,7 @@
     "kind": "Function",
     "name": "handle_stats",
     "file": "src/bin/cli.rs",
-    "line": 1478,
+    "line": 1548,
     "is_pub": false,
     "is_async": true
   },
@@ -6139,7 +5403,7 @@
     "kind": "Function",
     "name": "handle_test_api",
     "file": "src/bin/cli.rs",
-    "line": 1491,
+    "line": 1561,
     "is_pub": false,
     "is_async": true
   },
@@ -6147,7 +5411,7 @@
     "kind": "Function",
     "name": "handle_refactor_action",
     "file": "src/bin/cli.rs",
-    "line": 1527,
+    "line": 1668,
     "is_pub": false,
     "is_async": true
   },
@@ -6155,7 +5419,7 @@
     "kind": "Function",
     "name": "handle_docs_action",
     "file": "src/bin/cli.rs",
-    "line": 1702,
+    "line": 1840,
     "is_pub": false,
     "is_async": true
   },
@@ -6163,7 +5427,7 @@
     "kind": "Function",
     "name": "handle_cache_action",
     "file": "src/bin/cli.rs",
-    "line": 1791,
+    "line": 1929,
     "is_pub": false,
     "is_async": true
   },
@@ -8027,7 +7291,7 @@
     "kind": "Struct",
     "name": "RegisteredRepo",
     "file": "src/repo_sync.rs",
-    "line": 20,
+    "line": 22,
     "is_pub": true,
     "is_async": false
   },
@@ -8035,7 +7299,7 @@
     "kind": "Impl",
     "name": "RegisteredRepo",
     "file": "src/repo_sync.rs",
-    "line": 30,
+    "line": 32,
     "is_pub": false,
     "is_async": false
   },
@@ -8043,7 +7307,7 @@
     "kind": "Function",
     "name": "new",
     "file": "src/repo_sync.rs",
-    "line": 31,
+    "line": 33,
     "is_pub": true,
     "is_async": false
   },
@@ -8051,7 +7315,7 @@
     "kind": "Function",
     "name": "cache_dir",
     "file": "src/repo_sync.rs",
-    "line": 46,
+    "line": 48,
     "is_pub": true,
     "is_async": false
   },
@@ -8059,7 +7323,7 @@
     "kind": "Function",
     "name": "manifest_path",
     "file": "src/repo_sync.rs",
-    "line": 50,
+    "line": 52,
     "is_pub": true,
     "is_async": false
   },
@@ -8067,7 +7331,7 @@
     "kind": "Function",
     "name": "tree_path",
     "file": "src/repo_sync.rs",
-    "line": 54,
+    "line": 56,
     "is_pub": true,
     "is_async": false
   },
@@ -8075,7 +7339,7 @@
     "kind": "Function",
     "name": "todos_path",
     "file": "src/repo_sync.rs",
-    "line": 58,
+    "line": 60,
     "is_pub": true,
     "is_async": false
   },
@@ -8083,7 +7347,7 @@
     "kind": "Function",
     "name": "symbols_path",
     "file": "src/repo_sync.rs",
-    "line": 62,
+    "line": 64,
     "is_pub": true,
     "is_async": false
   },
@@ -8091,7 +7355,7 @@
     "kind": "Function",
     "name": "context_path",
     "file": "src/repo_sync.rs",
-    "line": 66,
+    "line": 68,
     "is_pub": true,
     "is_async": false
   },
@@ -8099,7 +7363,7 @@
     "kind": "Struct",
     "name": "RepoManifest",
     "file": "src/repo_sync.rs",
-    "line": 76,
+    "line": 78,
     "is_pub": true,
     "is_async": false
   },
@@ -8107,7 +7371,7 @@
     "kind": "Struct",
     "name": "TodoItem",
     "file": "src/repo_sync.rs",
-    "line": 93,
+    "line": 95,
     "is_pub": true,
     "is_async": false
   },
@@ -8115,7 +7379,7 @@
     "kind": "Enum",
     "name": "TodoKind",
     "file": "src/repo_sync.rs",
-    "line": 101,
+    "line": 103,
     "is_pub": true,
     "is_async": false
   },
@@ -8123,7 +7387,7 @@
     "kind": "Impl",
     "name": "TodoKind",
     "file": "src/repo_sync.rs",
-    "line": 109,
+    "line": 111,
     "is_pub": false,
     "is_async": false
   },
@@ -8131,7 +7395,7 @@
     "kind": "Function",
     "name": "from_tag",
     "file": "src/repo_sync.rs",
-    "line": 110,
+    "line": 112,
     "is_pub": false,
     "is_async": false
   },
@@ -8139,7 +7403,7 @@
     "kind": "Struct",
     "name": "Symbol",
     "file": "src/repo_sync.rs",
-    "line": 127,
+    "line": 129,
     "is_pub": true,
     "is_async": false
   },
@@ -8147,7 +7411,7 @@
     "kind": "Enum",
     "name": "SymbolKind",
     "file": "src/repo_sync.rs",
-    "line": 137,
+    "line": 139,
     "is_pub": true,
     "is_async": false
   },
@@ -8155,7 +7419,7 @@
     "kind": "Struct",
     "name": "SyncResult",
     "file": "src/repo_sync.rs",
-    "line": 153,
+    "line": 155,
     "is_pub": true,
     "is_async": false
   },
@@ -8163,7 +7427,7 @@
     "kind": "Struct",
     "name": "RepoSyncService",
     "file": "src/repo_sync.rs",
-    "line": 167,
+    "line": 169,
     "is_pub": true,
     "is_async": false
   },
@@ -8171,7 +7435,7 @@
     "kind": "Impl",
     "name": "RepoSyncService",
     "file": "src/repo_sync.rs",
-    "line": 178,
+    "line": 180,
     "is_pub": false,
     "is_async": false
   },
@@ -8179,7 +7443,7 @@
     "kind": "Function",
     "name": "default",
     "file": "src/repo_sync.rs",
-    "line": 179,
+    "line": 181,
     "is_pub": false,
     "is_async": false
   },
@@ -8187,7 +7451,7 @@
     "kind": "Impl",
     "name": "RepoSyncService",
     "file": "src/repo_sync.rs",
-    "line": 204,
+    "line": 206,
     "is_pub": false,
     "is_async": false
   },
@@ -8195,7 +7459,7 @@
     "kind": "Function",
     "name": "new",
     "file": "src/repo_sync.rs",
-    "line": 206,
+    "line": 208,
     "is_pub": true,
     "is_async": false
   },
@@ -8203,7 +7467,15 @@
     "kind": "Function",
     "name": "with_db",
     "file": "src/repo_sync.rs",
-    "line": 214,
+    "line": 216,
+    "is_pub": true,
+    "is_async": false
+  },
+  {
+    "kind": "Function",
+    "name": "db_pool",
+    "file": "src/repo_sync.rs",
+    "line": 227,
     "is_pub": true,
     "is_async": false
   },
@@ -8211,7 +7483,7 @@
     "kind": "Function",
     "name": "load_from_db",
     "file": "src/repo_sync.rs",
-    "line": 225,
+    "line": 235,
     "is_pub": true,
     "is_async": true
   },
@@ -8219,7 +7491,7 @@
     "kind": "Function",
     "name": "register",
     "file": "src/repo_sync.rs",
-    "line": 275,
+    "line": 285,
     "is_pub": true,
     "is_async": true
   },
@@ -8227,7 +7499,7 @@
     "kind": "Function",
     "name": "get_repo",
     "file": "src/repo_sync.rs",
-    "line": 328,
+    "line": 337,
     "is_pub": true,
     "is_async": false
   },
@@ -8235,7 +7507,7 @@
     "kind": "Function",
     "name": "list_repos",
     "file": "src/repo_sync.rs",
-    "line": 332,
+    "line": 341,
     "is_pub": true,
     "is_async": false
   },
@@ -8243,7 +7515,7 @@
     "kind": "Function",
     "name": "remove_repo",
     "file": "src/repo_sync.rs",
-    "line": 337,
+    "line": 346,
     "is_pub": true,
     "is_async": false
   },
@@ -8251,7 +7523,7 @@
     "kind": "Function",
     "name": "remove_repo_async",
     "file": "src/repo_sync.rs",
-    "line": 342,
+    "line": 351,
     "is_pub": true,
     "is_async": true
   },
@@ -8259,7 +7531,7 @@
     "kind": "Function",
     "name": "sync",
     "file": "src/repo_sync.rs",
-    "line": 363,
+    "line": 373,
     "is_pub": true,
     "is_async": true
   },
@@ -8267,7 +7539,7 @@
     "kind": "Function",
     "name": "walk_tree",
     "file": "src/repo_sync.rs",
-    "line": 470,
+    "line": 502,
     "is_pub": false,
     "is_async": true
   },
@@ -8275,7 +7547,7 @@
     "kind": "Function",
     "name": "extract_todos",
     "file": "src/repo_sync.rs",
-    "line": 500,
+    "line": 532,
     "is_pub": false,
     "is_async": true
   },
@@ -8283,7 +7555,7 @@
     "kind": "Function",
     "name": "extract_symbols",
     "file": "src/repo_sync.rs",
-    "line": 548,
+    "line": 580,
     "is_pub": false,
     "is_async": true
   },
@@ -8291,23 +7563,31 @@
     "kind": "Function",
     "name": "build_prompt_context",
     "file": "src/repo_sync.rs",
-    "line": 593,
+    "line": 625,
     "is_pub": true,
+    "is_async": true
+  },
+  {
+    "kind": "Function",
+    "name": "embed_rust_files",
+    "file": "src/repo_sync.rs",
+    "line": 726,
+    "is_pub": false,
     "is_async": true
   },
   {
     "kind": "Function",
     "name": "walk_dir",
     "file": "src/repo_sync.rs",
-    "line": 680,
+    "line": 800,
     "is_pub": false,
-    "is_async": true
+    "is_async": false
   },
   {
     "kind": "Function",
     "name": "parse_todo_line",
     "file": "src/repo_sync.rs",
-    "line": 714,
+    "line": 836,
     "is_pub": false,
     "is_async": false
   },
@@ -8315,7 +7595,7 @@
     "kind": "Function",
     "name": "extract_symbols_syn",
     "file": "src/repo_sync.rs",
-    "line": 754,
+    "line": 876,
     "is_pub": false,
     "is_async": false
   },
@@ -8323,7 +7603,7 @@
     "kind": "Function",
     "name": "extract_symbols_lines",
     "file": "src/repo_sync.rs",
-    "line": 933,
+    "line": 1055,
     "is_pub": false,
     "is_async": false
   },
@@ -8331,7 +7611,7 @@
     "kind": "Function",
     "name": "parse_symbol_line",
     "file": "src/repo_sync.rs",
-    "line": 944,
+    "line": 1066,
     "is_pub": false,
     "is_async": false
   },
@@ -8339,7 +7619,7 @@
     "kind": "Function",
     "name": "extract_name",
     "file": "src/repo_sync.rs",
-    "line": 991,
+    "line": 1113,
     "is_pub": false,
     "is_async": false
   },
@@ -8347,7 +7627,7 @@
     "kind": "Function",
     "name": "extract_impl_name",
     "file": "src/repo_sync.rs",
-    "line": 1004,
+    "line": 1126,
     "is_pub": false,
     "is_async": false
   },
@@ -8355,7 +7635,7 @@
     "kind": "Function",
     "name": "read_crate_name",
     "file": "src/repo_sync.rs",
-    "line": 1033,
+    "line": 1155,
     "is_pub": false,
     "is_async": true
   },
@@ -8363,7 +7643,7 @@
     "kind": "Function",
     "name": "build_context_md",
     "file": "src/repo_sync.rs",
-    "line": 1047,
+    "line": 1169,
     "is_pub": false,
     "is_async": false
   },
@@ -8371,7 +7651,7 @@
     "kind": "Function",
     "name": "write_file",
     "file": "src/repo_sync.rs",
-    "line": 1098,
+    "line": 1220,
     "is_pub": false,
     "is_async": true
   },
@@ -8379,7 +7659,7 @@
     "kind": "Function",
     "name": "write_json",
     "file": "src/repo_sync.rs",
-    "line": 1104,
+    "line": 1226,
     "is_pub": false,
     "is_async": true
   },
@@ -8387,7 +7667,7 @@
     "kind": "Function",
     "name": "slugify",
     "file": "src/repo_sync.rs",
-    "line": 1109,
+    "line": 1231,
     "is_pub": false,
     "is_async": false
   },
@@ -8395,7 +7675,7 @@
     "kind": "Function",
     "name": "unix_now",
     "file": "src/repo_sync.rs",
-    "line": 1118,
+    "line": 1240,
     "is_pub": false,
     "is_async": false
   },
@@ -8403,7 +7683,7 @@
     "kind": "Mod",
     "name": "tests",
     "file": "src/repo_sync.rs",
-    "line": 1130,
+    "line": 1252,
     "is_pub": false,
     "is_async": false
   },
@@ -8411,7 +7691,7 @@
     "kind": "Function",
     "name": "parse_todo_rust_comment",
     "file": "src/repo_sync.rs",
-    "line": 1134,
+    "line": 1256,
     "is_pub": false,
     "is_async": false
   },
@@ -8419,7 +7699,7 @@
     "kind": "Function",
     "name": "parse_stub_tag",
     "file": "src/repo_sync.rs",
-    "line": 1144,
+    "line": 1266,
     "is_pub": false,
     "is_async": false
   },
@@ -8427,7 +7707,7 @@
     "kind": "Function",
     "name": "parse_symbol_pub_fn",
     "file": "src/repo_sync.rs",
-    "line": 1155,
+    "line": 1277,
     "is_pub": false,
     "is_async": false
   },
@@ -8435,7 +7715,7 @@
     "kind": "Function",
     "name": "parse_symbol_struct",
     "file": "src/repo_sync.rs",
-    "line": 1166,
+    "line": 1288,
     "is_pub": false,
     "is_async": false
   },
@@ -8443,9 +7723,25 @@
     "kind": "Function",
     "name": "slugify_basic",
     "file": "src/repo_sync.rs",
-    "line": 1173,
+    "line": 1295,
     "is_pub": false,
     "is_async": false
+  },
+  {
+    "kind": "Function",
+    "name": "register_writes_gitignore_with_embeddings_bin",
+    "file": "src/repo_sync.rs",
+    "line": 1304,
+    "is_pub": false,
+    "is_async": true
+  },
+  {
+    "kind": "Function",
+    "name": "register_does_not_overwrite_existing_gitignore",
+    "file": "src/repo_sync.rs",
+    "line": 1329,
+    "is_pub": false,
+    "is_async": true
   },
   {
     "kind": "Enum",
@@ -14339,7 +13635,7 @@
     "kind": "Function",
     "name": "search_issues",
     "file": "src/github/search.rs",
-    "line": 406,
+    "line": 413,
     "is_pub": false,
     "is_async": true
   },
@@ -14347,7 +13643,7 @@
     "kind": "Function",
     "name": "search_pull_requests",
     "file": "src/github/search.rs",
-    "line": 488,
+    "line": 504,
     "is_pub": false,
     "is_async": true
   },
@@ -14355,7 +13651,7 @@
     "kind": "Function",
     "name": "search_commits",
     "file": "src/github/search.rs",
-    "line": 573,
+    "line": 587,
     "is_pub": false,
     "is_async": true
   },
@@ -14363,7 +13659,7 @@
     "kind": "Function",
     "name": "search_all",
     "file": "src/github/search.rs",
-    "line": 643,
+    "line": 657,
     "is_pub": false,
     "is_async": true
   },
@@ -14371,7 +13667,7 @@
     "kind": "Function",
     "name": "get_stats",
     "file": "src/github/search.rs",
-    "line": 674,
+    "line": 688,
     "is_pub": true,
     "is_async": true
   },
@@ -14379,7 +13675,7 @@
     "kind": "Struct",
     "name": "GitHubStats",
     "file": "src/github/search.rs",
-    "line": 720,
+    "line": 734,
     "is_pub": true,
     "is_async": false
   },
@@ -14387,7 +13683,7 @@
     "kind": "Mod",
     "name": "tests",
     "file": "src/github/search.rs",
-    "line": 730,
+    "line": 744,
     "is_pub": false,
     "is_async": false
   },
@@ -14395,7 +13691,7 @@
     "kind": "Function",
     "name": "test_search_query_builder",
     "file": "src/github/search.rs",
-    "line": 734,
+    "line": 748,
     "is_pub": false,
     "is_async": false
   },
@@ -14403,7 +13699,7 @@
     "kind": "Function",
     "name": "test_search_type_display",
     "file": "src/github/search.rs",
-    "line": 749,
+    "line": 763,
     "is_pub": false,
     "is_async": false
   },
@@ -18987,7 +18283,7 @@
     "kind": "Function",
     "name": "calculate_cost",
     "file": "src/cost_tracker.rs",
-    "line": 327,
+    "line": 328,
     "is_pub": false,
     "is_async": false
   },
@@ -18995,7 +18291,7 @@
     "kind": "Function",
     "name": "log_static_decision",
     "file": "src/cost_tracker.rs",
-    "line": 344,
+    "line": 345,
     "is_pub": true,
     "is_async": true
   },
@@ -19003,7 +18299,7 @@
     "kind": "Function",
     "name": "get_daily_savings_report",
     "file": "src/cost_tracker.rs",
-    "line": 383,
+    "line": 385,
     "is_pub": true,
     "is_async": true
   },
@@ -19011,7 +18307,7 @@
     "kind": "Function",
     "name": "get_weekly_savings_report",
     "file": "src/cost_tracker.rs",
-    "line": 389,
+    "line": 391,
     "is_pub": true,
     "is_async": true
   },
@@ -19019,7 +18315,7 @@
     "kind": "Function",
     "name": "get_monthly_savings_report",
     "file": "src/cost_tracker.rs",
-    "line": 395,
+    "line": 397,
     "is_pub": true,
     "is_async": true
   },
@@ -19027,7 +18323,7 @@
     "kind": "Function",
     "name": "get_repo_savings_report",
     "file": "src/cost_tracker.rs",
-    "line": 403,
+    "line": 405,
     "is_pub": true,
     "is_async": true
   },
@@ -19035,7 +18331,7 @@
     "kind": "Function",
     "name": "get_savings_report_for_period",
     "file": "src/cost_tracker.rs",
-    "line": 410,
+    "line": 412,
     "is_pub": false,
     "is_async": true
   },
@@ -19043,7 +18339,7 @@
     "kind": "Function",
     "name": "estimate_file_cost",
     "file": "src/cost_tracker.rs",
-    "line": 463,
+    "line": 465,
     "is_pub": true,
     "is_async": false
   },
@@ -19051,7 +18347,7 @@
     "kind": "Function",
     "name": "get_all_time_stats",
     "file": "src/cost_tracker.rs",
-    "line": 472,
+    "line": 474,
     "is_pub": true,
     "is_async": true
   },
@@ -19059,7 +18355,7 @@
     "kind": "Function",
     "name": "get_daily_stats",
     "file": "src/cost_tracker.rs",
-    "line": 478,
+    "line": 480,
     "is_pub": true,
     "is_async": true
   },
@@ -19067,7 +18363,7 @@
     "kind": "Function",
     "name": "get_weekly_stats",
     "file": "src/cost_tracker.rs",
-    "line": 491,
+    "line": 493,
     "is_pub": true,
     "is_async": true
   },
@@ -19075,7 +18371,7 @@
     "kind": "Function",
     "name": "get_monthly_stats",
     "file": "src/cost_tracker.rs",
-    "line": 500,
+    "line": 502,
     "is_pub": true,
     "is_async": true
   },
@@ -19083,7 +18379,7 @@
     "kind": "Function",
     "name": "get_stats_for_period",
     "file": "src/cost_tracker.rs",
-    "line": 513,
+    "line": 515,
     "is_pub": false,
     "is_async": true
   },
@@ -19091,7 +18387,7 @@
     "kind": "Function",
     "name": "get_operation_breakdown",
     "file": "src/cost_tracker.rs",
-    "line": 585,
+    "line": 587,
     "is_pub": true,
     "is_async": true
   },
@@ -19099,7 +18395,7 @@
     "kind": "Function",
     "name": "get_budget_status",
     "file": "src/cost_tracker.rs",
-    "line": 629,
+    "line": 631,
     "is_pub": true,
     "is_async": true
   },
@@ -19107,7 +18403,7 @@
     "kind": "Function",
     "name": "check_budget_alerts",
     "file": "src/cost_tracker.rs",
-    "line": 679,
+    "line": 681,
     "is_pub": false,
     "is_async": true
   },
@@ -19115,7 +18411,7 @@
     "kind": "Function",
     "name": "daily_report",
     "file": "src/cost_tracker.rs",
-    "line": 690,
+    "line": 692,
     "is_pub": true,
     "is_async": true
   },
@@ -19123,7 +18419,7 @@
     "kind": "Function",
     "name": "get_expensive_queries",
     "file": "src/cost_tracker.rs",
-    "line": 759,
+    "line": 761,
     "is_pub": true,
     "is_async": true
   },
@@ -19131,7 +18427,7 @@
     "kind": "Function",
     "name": "clear_old_records",
     "file": "src/cost_tracker.rs",
-    "line": 783,
+    "line": 785,
     "is_pub": true,
     "is_async": true
   },
@@ -19139,7 +18435,7 @@
     "kind": "Function",
     "name": "clear_old_static_decisions",
     "file": "src/cost_tracker.rs",
-    "line": 804,
+    "line": 806,
     "is_pub": true,
     "is_async": true
   },
@@ -19147,7 +18443,7 @@
     "kind": "Function",
     "name": "get_combined_daily_report",
     "file": "src/cost_tracker.rs",
-    "line": 830,
+    "line": 832,
     "is_pub": true,
     "is_async": true
   },
@@ -19155,7 +18451,7 @@
     "kind": "Impl",
     "name": "SavingsReport",
     "file": "src/cost_tracker.rs",
-    "line": 840,
+    "line": 842,
     "is_pub": false,
     "is_async": false
   },
@@ -19163,7 +18459,7 @@
     "kind": "Function",
     "name": "format_summary",
     "file": "src/cost_tracker.rs",
-    "line": 842,
+    "line": 844,
     "is_pub": true,
     "is_async": false
   },
@@ -19171,7 +18467,7 @@
     "kind": "Impl",
     "name": "SavingsReport",
     "file": "src/cost_tracker.rs",
-    "line": 860,
+    "line": 862,
     "is_pub": false,
     "is_async": false
   },
@@ -19179,7 +18475,7 @@
     "kind": "Function",
     "name": "fmt",
     "file": "src/cost_tracker.rs",
-    "line": 861,
+    "line": 863,
     "is_pub": false,
     "is_async": false
   },
@@ -19187,7 +18483,7 @@
     "kind": "Mod",
     "name": "tests",
     "file": "src/cost_tracker.rs",
-    "line": 867,
+    "line": 869,
     "is_pub": false,
     "is_async": false
   },
@@ -19195,7 +18491,7 @@
     "kind": "Function",
     "name": "create_test_pool",
     "file": "src/cost_tracker.rs",
-    "line": 871,
+    "line": 873,
     "is_pub": false,
     "is_async": true
   },
@@ -19203,7 +18499,7 @@
     "kind": "Function",
     "name": "test_cost_calculation",
     "file": "src/cost_tracker.rs",
-    "line": 876,
+    "line": 882,
     "is_pub": false,
     "is_async": true
   },
@@ -19211,7 +18507,7 @@
     "kind": "Function",
     "name": "test_log_call",
     "file": "src/cost_tracker.rs",
-    "line": 893,
+    "line": 899,
     "is_pub": false,
     "is_async": true
   },
@@ -19219,7 +18515,7 @@
     "kind": "Function",
     "name": "test_daily_stats",
     "file": "src/cost_tracker.rs",
-    "line": 912,
+    "line": 918,
     "is_pub": false,
     "is_async": true
   },
@@ -19227,7 +18523,7 @@
     "kind": "Function",
     "name": "test_budget_status",
     "file": "src/cost_tracker.rs",
-    "line": 944,
+    "line": 950,
     "is_pub": false,
     "is_async": true
   },
@@ -24905,9 +24201,17 @@
   },
   {
     "kind": "Function",
+    "name": "run",
+    "file": "src/audit/runner.rs",
+    "line": 137,
+    "is_pub": true,
+    "is_async": true
+  },
+  {
+    "kind": "Function",
     "name": "run_static_only",
     "file": "src/audit/runner.rs",
-    "line": 135,
+    "line": 148,
     "is_pub": true,
     "is_async": true
   },
@@ -24915,7 +24219,7 @@
     "kind": "Function",
     "name": "collect_files",
     "file": "src/audit/runner.rs",
-    "line": 185,
+    "line": 198,
     "is_pub": true,
     "is_async": false
   },
@@ -24923,7 +24227,7 @@
     "kind": "Function",
     "name": "static_score",
     "file": "src/audit/runner.rs",
-    "line": 242,
+    "line": 255,
     "is_pub": true,
     "is_async": false
   },
@@ -24931,7 +24235,7 @@
     "kind": "Function",
     "name": "findings_from_static",
     "file": "src/audit/runner.rs",
-    "line": 250,
+    "line": 263,
     "is_pub": false,
     "is_async": false
   },
@@ -24939,7 +24243,7 @@
     "kind": "Function",
     "name": "finding_from_score",
     "file": "src/audit/runner.rs",
-    "line": 289,
+    "line": 302,
     "is_pub": true,
     "is_async": false
   },
@@ -24947,7 +24251,7 @@
     "kind": "Struct",
     "name": "AuditRunnerWithGrok",
     "file": "src/audit/runner.rs",
-    "line": 364,
+    "line": 377,
     "is_pub": true,
     "is_async": false
   },
@@ -24955,7 +24259,7 @@
     "kind": "Impl",
     "name": "AuditRunnerWithGrok",
     "file": "src/audit/runner.rs",
-    "line": 369,
+    "line": 382,
     "is_pub": false,
     "is_async": false
   },
@@ -24963,7 +24267,7 @@
     "kind": "Function",
     "name": "run",
     "file": "src/audit/runner.rs",
-    "line": 380,
+    "line": 393,
     "is_pub": true,
     "is_async": true
   },
@@ -24971,7 +24275,7 @@
     "kind": "Function",
     "name": "append_findings_to_todo",
     "file": "src/audit/runner.rs",
-    "line": 612,
+    "line": 625,
     "is_pub": false,
     "is_async": false
   },
@@ -24979,7 +24283,7 @@
     "kind": "Mod",
     "name": "tests",
     "file": "src/audit/runner.rs",
-    "line": 658,
+    "line": 671,
     "is_pub": false,
     "is_async": false
   },
@@ -24987,7 +24291,7 @@
     "kind": "Function",
     "name": "test_runner_config_defaults",
     "file": "src/audit/runner.rs",
-    "line": 662,
+    "line": 675,
     "is_pub": false,
     "is_async": false
   },
@@ -24995,7 +24299,7 @@
     "kind": "Function",
     "name": "test_runner_with_defaults",
     "file": "src/audit/runner.rs",
-    "line": 672,
+    "line": 685,
     "is_pub": false,
     "is_async": false
   },
@@ -25003,7 +24307,7 @@
     "kind": "Function",
     "name": "test_run_returns_not_implemented",
     "file": "src/audit/runner.rs",
-    "line": 678,
+    "line": 691,
     "is_pub": false,
     "is_async": true
   },
@@ -25011,7 +24315,7 @@
     "kind": "Function",
     "name": "test_run_static_only_returns_not_implemented",
     "file": "src/audit/runner.rs",
-    "line": 691,
+    "line": 704,
     "is_pub": false,
     "is_async": true
   },
@@ -25019,7 +24323,7 @@
     "kind": "Function",
     "name": "test_collect_files_returns_empty_stub",
     "file": "src/audit/runner.rs",
-    "line": 698,
+    "line": 711,
     "is_pub": false,
     "is_async": false
   },
@@ -25027,7 +24331,7 @@
     "kind": "Function",
     "name": "test_static_score_returns_zero_stub",
     "file": "src/audit/runner.rs",
-    "line": 708,
+    "line": 721,
     "is_pub": false,
     "is_async": false
   },
@@ -25035,7 +24339,7 @@
     "kind": "Function",
     "name": "test_skip_extensions_config_is_comprehensive",
     "file": "src/audit/runner.rs",
-    "line": 715,
+    "line": 728,
     "is_pub": false,
     "is_async": false
   },
@@ -25043,7 +24347,7 @@
     "kind": "Function",
     "name": "test_config_serialise_round_trip",
     "file": "src/audit/runner.rs",
-    "line": 728,
+    "line": 741,
     "is_pub": false,
     "is_async": false
   },
@@ -25424,10 +24728,34 @@
     "is_async": false
   },
   {
+    "kind": "Struct",
+    "name": "AuditState",
+    "file": "src/audit/endpoint.rs",
+    "line": 46,
+    "is_pub": true,
+    "is_async": false
+  },
+  {
+    "kind": "Impl",
+    "name": "AuditState",
+    "file": "src/audit/endpoint.rs",
+    "line": 57,
+    "is_pub": false,
+    "is_async": false
+  },
+  {
+    "kind": "Function",
+    "name": "from_env",
+    "file": "src/audit/endpoint.rs",
+    "line": 65,
+    "is_pub": true,
+    "is_async": true
+  },
+  {
     "kind": "Function",
     "name": "audit_router",
     "file": "src/audit/endpoint.rs",
-    "line": 43,
+    "line": 115,
     "is_pub": true,
     "is_async": false
   },
@@ -25435,7 +24763,7 @@
     "kind": "Function",
     "name": "handle_audit_get",
     "file": "src/audit/endpoint.rs",
-    "line": 81,
+    "line": 131,
     "is_pub": true,
     "is_async": true
   },
@@ -25443,7 +24771,7 @@
     "kind": "Function",
     "name": "handle_audit_post",
     "file": "src/audit/endpoint.rs",
-    "line": 121,
+    "line": 218,
     "is_pub": true,
     "is_async": true
   },
@@ -25451,15 +24779,23 @@
     "kind": "Function",
     "name": "handle_audit_get_by_id",
     "file": "src/audit/endpoint.rs",
-    "line": 155,
+    "line": 324,
     "is_pub": true,
+    "is_async": true
+  },
+  {
+    "kind": "Function",
+    "name": "persist_audit_result",
+    "file": "src/audit/endpoint.rs",
+    "line": 377,
+    "is_pub": false,
     "is_async": true
   },
   {
     "kind": "Struct",
     "name": "AuditReportSummary",
     "file": "src/audit/endpoint.rs",
-    "line": 178,
+    "line": 394,
     "is_pub": true,
     "is_async": false
   },
@@ -25467,7 +24803,7 @@
     "kind": "Struct",
     "name": "AuditListResponse",
     "file": "src/audit/endpoint.rs",
-    "line": 195,
+    "line": 411,
     "is_pub": true,
     "is_async": false
   },
@@ -25475,47 +24811,63 @@
     "kind": "Struct",
     "name": "AuditJobAccepted",
     "file": "src/audit/endpoint.rs",
-    "line": 202,
+    "line": 418,
     "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Struct",
-    "name": "ErrorResponse",
-    "file": "src/audit/endpoint.rs",
-    "line": 213,
-    "is_pub": false,
     "is_async": false
   },
   {
     "kind": "Mod",
     "name": "tests",
     "file": "src/audit/endpoint.rs",
-    "line": 222,
+    "line": 432,
     "is_pub": false,
     "is_async": false
   },
   {
     "kind": "Function",
-    "name": "test_handle_audit_get_returns_200",
+    "name": "make_state",
     "file": "src/audit/endpoint.rs",
-    "line": 226,
+    "line": 438,
     "is_pub": false,
     "is_async": true
   },
   {
     "kind": "Function",
-    "name": "test_handle_audit_post_returns_202",
+    "name": "test_handle_audit_get_empty_dir_returns_200",
     "file": "src/audit/endpoint.rs",
-    "line": 232,
+    "line": 455,
     "is_pub": false,
     "is_async": true
   },
   {
     "kind": "Function",
-    "name": "test_handle_audit_get_by_id_returns_404",
+    "name": "test_handle_audit_get_by_id_nonexistent_returns_404",
     "file": "src/audit/endpoint.rs",
-    "line": 242,
+    "line": 473,
+    "is_pub": false,
+    "is_async": true
+  },
+  {
+    "kind": "Function",
+    "name": "test_handle_audit_get_by_id_path_traversal_rejected",
+    "file": "src/audit/endpoint.rs",
+    "line": 491,
+    "is_pub": false,
+    "is_async": true
+  },
+  {
+    "kind": "Function",
+    "name": "test_handle_audit_post_invalid_repo_returns_422",
+    "file": "src/audit/endpoint.rs",
+    "line": 510,
+    "is_pub": false,
+    "is_async": true
+  },
+  {
+    "kind": "Function",
+    "name": "test_handle_audit_post_valid_repo_returns_202",
+    "file": "src/audit/endpoint.rs",
+    "line": 536,
     "is_pub": false,
     "is_async": true
   },
@@ -25523,7 +24875,7 @@
     "kind": "Function",
     "name": "test_audit_list_response_serialises",
     "file": "src/audit/endpoint.rs",
-    "line": 250,
+    "line": 563,
     "is_pub": false,
     "is_async": false
   },
@@ -25531,7 +24883,7 @@
     "kind": "Function",
     "name": "test_audit_job_accepted_serialises",
     "file": "src/audit/endpoint.rs",
-    "line": 270,
+    "line": 583,
     "is_pub": false,
     "is_async": false
   },
@@ -25539,7 +24891,7 @@
     "kind": "Function",
     "name": "test_audit_report_summary_deserialises",
     "file": "src/audit/endpoint.rs",
-    "line": 282,
+    "line": 595,
     "is_pub": false,
     "is_async": false
   },
@@ -27395,7 +26747,7 @@
     "kind": "Function",
     "name": "create_document",
     "file": "src/db/documents.rs",
-    "line": 18,
+    "line": 19,
     "is_pub": true,
     "is_async": true
   },
@@ -27403,15 +26755,7 @@
     "kind": "Function",
     "name": "get_document",
     "file": "src/db/documents.rs",
-    "line": 80,
-    "is_pub": true,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "list_documents",
-    "file": "src/db/documents.rs",
-    "line": 115,
+    "line": 82,
     "is_pub": true,
     "is_async": true
   },
@@ -27419,7 +26763,7 @@
     "kind": "Function",
     "name": "update_document",
     "file": "src/db/documents.rs",
-    "line": 185,
+    "line": 122,
     "is_pub": true,
     "is_async": true
   },
@@ -27427,63 +26771,7 @@
     "kind": "Function",
     "name": "delete_document",
     "file": "src/db/documents.rs",
-    "line": 256,
-    "is_pub": true,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "search_documents_by_title",
-    "file": "src/db/documents.rs",
-    "line": 272,
-    "is_pub": true,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "search_documents_by_tags",
-    "file": "src/db/documents.rs",
-    "line": 319,
-    "is_pub": true,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "get_document_tags",
-    "file": "src/db/documents.rs",
-    "line": 371,
-    "is_pub": true,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "count_documents",
-    "file": "src/db/documents.rs",
-    "line": 384,
-    "is_pub": true,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "count_documents_by_type",
-    "file": "src/db/documents.rs",
-    "line": 394,
-    "is_pub": true,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "create_chunks",
-    "file": "src/db/documents.rs",
-    "line": 409,
-    "is_pub": true,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "get_document_chunks",
-    "file": "src/db/documents.rs",
-    "line": 456,
+    "line": 165,
     "is_pub": true,
     "is_async": true
   },
@@ -27491,31 +26779,7 @@
     "kind": "Function",
     "name": "delete_document_chunks",
     "file": "src/db/documents.rs",
-    "line": 489,
-    "is_pub": true,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "store_embedding",
-    "file": "src/db/documents.rs",
-    "line": 504,
-    "is_pub": true,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "get_document_embeddings",
-    "file": "src/db/documents.rs",
-    "line": 542,
-    "is_pub": true,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "get_all_embeddings",
-    "file": "src/db/documents.rs",
-    "line": 591,
+    "line": 175,
     "is_pub": true,
     "is_async": true
   },
@@ -27523,15 +26787,31 @@
     "kind": "Function",
     "name": "delete_document_embeddings",
     "file": "src/db/documents.rs",
-    "line": 619,
+    "line": 185,
     "is_pub": true,
     "is_async": true
   },
   {
     "kind": "Function",
-    "name": "mark_document_indexed",
+    "name": "list_documents",
     "file": "src/db/documents.rs",
-    "line": 633,
+    "line": 200,
+    "is_pub": true,
+    "is_async": true
+  },
+  {
+    "kind": "Function",
+    "name": "count_documents",
+    "file": "src/db/documents.rs",
+    "line": 283,
+    "is_pub": true,
+    "is_async": true
+  },
+  {
+    "kind": "Function",
+    "name": "count_documents_by_type",
+    "file": "src/db/documents.rs",
+    "line": 292,
     "is_pub": true,
     "is_async": true
   },
@@ -27539,7 +26819,79 @@
     "kind": "Function",
     "name": "get_unindexed_documents",
     "file": "src/db/documents.rs",
-    "line": 647,
+    "line": 302,
+    "is_pub": true,
+    "is_async": true
+  },
+  {
+    "kind": "Function",
+    "name": "mark_document_indexed",
+    "file": "src/db/documents.rs",
+    "line": 345,
+    "is_pub": true,
+    "is_async": true
+  },
+  {
+    "kind": "Function",
+    "name": "get_document_tags",
+    "file": "src/db/documents.rs",
+    "line": 357,
+    "is_pub": true,
+    "is_async": true
+  },
+  {
+    "kind": "Function",
+    "name": "search_documents_by_title",
+    "file": "src/db/documents.rs",
+    "line": 371,
+    "is_pub": true,
+    "is_async": true
+  },
+  {
+    "kind": "Function",
+    "name": "search_documents_by_tags",
+    "file": "src/db/documents.rs",
+    "line": 422,
+    "is_pub": true,
+    "is_async": true
+  },
+  {
+    "kind": "Function",
+    "name": "create_chunks",
+    "file": "src/db/documents.rs",
+    "line": 478,
+    "is_pub": true,
+    "is_async": true
+  },
+  {
+    "kind": "Function",
+    "name": "get_document_chunks",
+    "file": "src/db/documents.rs",
+    "line": 525,
+    "is_pub": true,
+    "is_async": true
+  },
+  {
+    "kind": "Function",
+    "name": "store_embedding",
+    "file": "src/db/documents.rs",
+    "line": 558,
+    "is_pub": true,
+    "is_async": true
+  },
+  {
+    "kind": "Function",
+    "name": "get_document_embeddings",
+    "file": "src/db/documents.rs",
+    "line": 598,
+    "is_pub": true,
+    "is_async": true
+  },
+  {
+    "kind": "Function",
+    "name": "get_all_embeddings",
+    "file": "src/db/documents.rs",
+    "line": 628,
     "is_pub": true,
     "is_async": true
   },
@@ -27547,15 +26899,7 @@
     "kind": "Struct",
     "name": "Idea",
     "file": "src/db/documents.rs",
-    "line": 690,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Struct",
-    "name": "Tag",
-    "file": "src/db/documents.rs",
-    "line": 707,
+    "line": 657,
     "is_pub": true,
     "is_async": false
   },
@@ -27563,7 +26907,7 @@
     "kind": "Function",
     "name": "create_idea",
     "file": "src/db/documents.rs",
-    "line": 718,
+    "line": 674,
     "is_pub": true,
     "is_async": true
   },
@@ -27571,7 +26915,7 @@
     "kind": "Function",
     "name": "list_ideas",
     "file": "src/db/documents.rs",
-    "line": 754,
+    "line": 709,
     "is_pub": true,
     "is_async": true
   },
@@ -27579,7 +26923,7 @@
     "kind": "Function",
     "name": "update_idea_status",
     "file": "src/db/documents.rs",
-    "line": 810,
+    "line": 772,
     "is_pub": true,
     "is_async": true
   },
@@ -27587,7 +26931,7 @@
     "kind": "Function",
     "name": "delete_idea",
     "file": "src/db/documents.rs",
-    "line": 830,
+    "line": 787,
     "is_pub": true,
     "is_async": true
   },
@@ -27595,15 +26939,23 @@
     "kind": "Function",
     "name": "count_ideas",
     "file": "src/db/documents.rs",
-    "line": 840,
+    "line": 797,
     "is_pub": true,
     "is_async": true
+  },
+  {
+    "kind": "Struct",
+    "name": "Tag",
+    "file": "src/db/documents.rs",
+    "line": 811,
+    "is_pub": true,
+    "is_async": false
   },
   {
     "kind": "Function",
     "name": "list_tags",
     "file": "src/db/documents.rs",
-    "line": 853,
+    "line": 821,
     "is_pub": true,
     "is_async": true
   },
@@ -27611,7 +26963,7 @@
     "kind": "Function",
     "name": "search_tags",
     "file": "src/db/documents.rs",
-    "line": 868,
+    "line": 835,
     "is_pub": true,
     "is_async": true
   },
@@ -27619,23 +26971,15 @@
     "kind": "Function",
     "name": "search_documents",
     "file": "src/db/documents.rs",
-    "line": 888,
+    "line": 856,
     "is_pub": true,
     "is_async": true
-  },
-  {
-    "kind": "Struct",
-    "name": "DocumentRow",
-    "file": "src/db/documents.rs",
-    "line": 890,
-    "is_pub": false,
-    "is_async": false
   },
   {
     "kind": "Enum",
     "name": "DbError",
     "file": "src/db/core.rs",
-    "line": 17,
+    "line": 15,
     "is_pub": true,
     "is_async": false
   },
@@ -27643,7 +26987,15 @@
     "kind": "TypeAlias",
     "name": "DbResult",
     "file": "src/db/core.rs",
-    "line": 28,
+    "line": 26,
+    "is_pub": true,
+    "is_async": false
+  },
+  {
+    "kind": "TypeAlias",
+    "name": "DbPool",
+    "file": "src/db/core.rs",
+    "line": 29,
     "is_pub": true,
     "is_async": false
   },
@@ -27651,7 +27003,7 @@
     "kind": "Struct",
     "name": "Note",
     "file": "src/db/core.rs",
-    "line": 36,
+    "line": 37,
     "is_pub": true,
     "is_async": false
   },
@@ -27659,7 +27011,7 @@
     "kind": "Impl",
     "name": "Note",
     "file": "src/db/core.rs",
-    "line": 48,
+    "line": 49,
     "is_pub": false,
     "is_async": false
   },
@@ -27667,7 +27019,7 @@
     "kind": "Function",
     "name": "status_str",
     "file": "src/db/core.rs",
-    "line": 50,
+    "line": 51,
     "is_pub": true,
     "is_async": false
   },
@@ -27675,7 +27027,7 @@
     "kind": "Function",
     "name": "created_at_formatted",
     "file": "src/db/core.rs",
-    "line": 55,
+    "line": 56,
     "is_pub": true,
     "is_async": false
   },
@@ -27683,7 +27035,7 @@
     "kind": "Function",
     "name": "updated_at_formatted",
     "file": "src/db/core.rs",
-    "line": 62,
+    "line": 63,
     "is_pub": true,
     "is_async": false
   },
@@ -27691,7 +27043,7 @@
     "kind": "Struct",
     "name": "Tag",
     "file": "src/db/core.rs",
-    "line": 71,
+    "line": 72,
     "is_pub": true,
     "is_async": false
   },
@@ -27699,7 +27051,7 @@
     "kind": "Impl",
     "name": "Tag",
     "file": "src/db/core.rs",
-    "line": 80,
+    "line": 81,
     "is_pub": false,
     "is_async": false
   },
@@ -27707,7 +27059,7 @@
     "kind": "Function",
     "name": "created_at_formatted",
     "file": "src/db/core.rs",
-    "line": 82,
+    "line": 83,
     "is_pub": true,
     "is_async": false
   },
@@ -27715,7 +27067,7 @@
     "kind": "Struct",
     "name": "NoteTag",
     "file": "src/db/core.rs",
-    "line": 91,
+    "line": 92,
     "is_pub": true,
     "is_async": false
   },
@@ -27723,7 +27075,7 @@
     "kind": "Struct",
     "name": "Repository",
     "file": "src/db/core.rs",
-    "line": 99,
+    "line": 100,
     "is_pub": true,
     "is_async": false
   },
@@ -27731,7 +27083,7 @@
     "kind": "Impl",
     "name": "Repository",
     "file": "src/db/core.rs",
-    "line": 145,
+    "line": 146,
     "is_pub": false,
     "is_async": false
   },
@@ -27739,7 +27091,7 @@
     "kind": "Function",
     "name": "created_at_formatted",
     "file": "src/db/core.rs",
-    "line": 147,
+    "line": 148,
     "is_pub": true,
     "is_async": false
   },
@@ -27747,7 +27099,7 @@
     "kind": "Function",
     "name": "scan_status_display",
     "file": "src/db/core.rs",
-    "line": 154,
+    "line": 155,
     "is_pub": true,
     "is_async": false
   },
@@ -27755,7 +27107,7 @@
     "kind": "Function",
     "name": "progress_percentage",
     "file": "src/db/core.rs",
-    "line": 163,
+    "line": 164,
     "is_pub": true,
     "is_async": false
   },
@@ -27763,7 +27115,7 @@
     "kind": "Function",
     "name": "is_auto_scan_enabled",
     "file": "src/db/core.rs",
-    "line": 171,
+    "line": 172,
     "is_pub": true,
     "is_async": false
   },
@@ -27771,7 +27123,7 @@
     "kind": "Struct",
     "name": "Task",
     "file": "src/db/core.rs",
-    "line": 178,
+    "line": 179,
     "is_pub": true,
     "is_async": false
   },
@@ -27779,7 +27131,7 @@
     "kind": "Struct",
     "name": "Document",
     "file": "src/db/core.rs",
-    "line": 204,
+    "line": 205,
     "is_pub": true,
     "is_async": false
   },
@@ -27787,7 +27139,7 @@
     "kind": "Impl",
     "name": "Document",
     "file": "src/db/core.rs",
-    "line": 222,
+    "line": 223,
     "is_pub": false,
     "is_async": false
   },
@@ -27795,7 +27147,7 @@
     "kind": "Function",
     "name": "created_at_formatted",
     "file": "src/db/core.rs",
-    "line": 224,
+    "line": 225,
     "is_pub": true,
     "is_async": false
   },
@@ -27803,7 +27155,7 @@
     "kind": "Function",
     "name": "updated_at_formatted",
     "file": "src/db/core.rs",
-    "line": 231,
+    "line": 232,
     "is_pub": true,
     "is_async": false
   },
@@ -27811,7 +27163,7 @@
     "kind": "Function",
     "name": "index_status",
     "file": "src/db/core.rs",
-    "line": 238,
+    "line": 239,
     "is_pub": true,
     "is_async": false
   },
@@ -27819,7 +27171,7 @@
     "kind": "Function",
     "name": "tag_list",
     "file": "src/db/core.rs",
-    "line": 247,
+    "line": 248,
     "is_pub": true,
     "is_async": false
   },
@@ -27827,7 +27179,7 @@
     "kind": "Struct",
     "name": "DocumentChunk",
     "file": "src/db/core.rs",
-    "line": 257,
+    "line": 258,
     "is_pub": true,
     "is_async": false
   },
@@ -27835,7 +27187,7 @@
     "kind": "Struct",
     "name": "DocumentEmbedding",
     "file": "src/db/core.rs",
-    "line": 271,
+    "line": 272,
     "is_pub": true,
     "is_async": false
   },
@@ -27843,7 +27195,7 @@
     "kind": "Impl",
     "name": "DocumentEmbedding",
     "file": "src/db/core.rs",
-    "line": 280,
+    "line": 281,
     "is_pub": false,
     "is_async": false
   },
@@ -27851,7 +27203,7 @@
     "kind": "Function",
     "name": "parse_embedding",
     "file": "src/db/core.rs",
-    "line": 282,
+    "line": 283,
     "is_pub": true,
     "is_async": false
   },
@@ -27859,7 +27211,7 @@
     "kind": "Function",
     "name": "from_vector",
     "file": "src/db/core.rs",
-    "line": 287,
+    "line": 288,
     "is_pub": true,
     "is_async": false
   },
@@ -27867,7 +27219,7 @@
     "kind": "Struct",
     "name": "DocumentTag",
     "file": "src/db/core.rs",
-    "line": 301,
+    "line": 302,
     "is_pub": true,
     "is_async": false
   },
@@ -27875,23 +27227,15 @@
     "kind": "Function",
     "name": "init_db",
     "file": "src/db/core.rs",
-    "line": 311,
+    "line": 312,
     "is_pub": true,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "create_tables",
-    "file": "src/db/core.rs",
-    "line": 349,
-    "is_pub": false,
     "is_async": true
   },
   {
     "kind": "Function",
     "name": "create_note_with_tags",
     "file": "src/db/core.rs",
-    "line": 542,
+    "line": 333,
     "is_pub": true,
     "is_async": true
   },
@@ -27899,7 +27243,7 @@
     "kind": "Function",
     "name": "create_note",
     "file": "src/db/core.rs",
-    "line": 595,
+    "line": 386,
     "is_pub": true,
     "is_async": true
   },
@@ -27907,7 +27251,7 @@
     "kind": "Function",
     "name": "get_note",
     "file": "src/db/core.rs",
-    "line": 609,
+    "line": 400,
     "is_pub": true,
     "is_async": true
   },
@@ -27915,7 +27259,7 @@
     "kind": "Function",
     "name": "list_notes",
     "file": "src/db/core.rs",
-    "line": 618,
+    "line": 409,
     "is_pub": true,
     "is_async": true
   },
@@ -27923,7 +27267,7 @@
     "kind": "Function",
     "name": "search_notes",
     "file": "src/db/core.rs",
-    "line": 656,
+    "line": 452,
     "is_pub": true,
     "is_async": true
   },
@@ -27931,7 +27275,7 @@
     "kind": "Function",
     "name": "update_note_status",
     "file": "src/db/core.rs",
-    "line": 675,
+    "line": 471,
     "is_pub": true,
     "is_async": true
   },
@@ -27939,7 +27283,7 @@
     "kind": "Function",
     "name": "delete_note",
     "file": "src/db/core.rs",
-    "line": 693,
+    "line": 489,
     "is_pub": true,
     "is_async": true
   },
@@ -27947,7 +27291,7 @@
     "kind": "Function",
     "name": "list_tags",
     "file": "src/db/core.rs",
-    "line": 711,
+    "line": 507,
     "is_pub": true,
     "is_async": true
   },
@@ -27955,7 +27299,7 @@
     "kind": "Function",
     "name": "get_tag",
     "file": "src/db/core.rs",
-    "line": 720,
+    "line": 516,
     "is_pub": true,
     "is_async": true
   },
@@ -27963,7 +27307,7 @@
     "kind": "Function",
     "name": "upsert_tag",
     "file": "src/db/core.rs",
-    "line": 730,
+    "line": 526,
     "is_pub": true,
     "is_async": true
   },
@@ -27971,7 +27315,7 @@
     "kind": "Function",
     "name": "delete_tag",
     "file": "src/db/core.rs",
-    "line": 765,
+    "line": 561,
     "is_pub": true,
     "is_async": true
   },
@@ -27979,7 +27323,7 @@
     "kind": "Function",
     "name": "add_tag_to_note",
     "file": "src/db/core.rs",
-    "line": 779,
+    "line": 575,
     "is_pub": true,
     "is_async": true
   },
@@ -27987,7 +27331,7 @@
     "kind": "Function",
     "name": "remove_tag_from_note",
     "file": "src/db/core.rs",
-    "line": 798,
+    "line": 594,
     "is_pub": true,
     "is_async": true
   },
@@ -27995,7 +27339,7 @@
     "kind": "Function",
     "name": "get_note_tags",
     "file": "src/db/core.rs",
-    "line": 809,
+    "line": 605,
     "is_pub": true,
     "is_async": true
   },
@@ -28003,7 +27347,7 @@
     "kind": "Function",
     "name": "set_note_tags",
     "file": "src/db/core.rs",
-    "line": 819,
+    "line": 615,
     "is_pub": true,
     "is_async": true
   },
@@ -28011,7 +27355,7 @@
     "kind": "Function",
     "name": "search_notes_by_tags",
     "file": "src/db/core.rs",
-    "line": 850,
+    "line": 646,
     "is_pub": true,
     "is_async": true
   },
@@ -28019,7 +27363,7 @@
     "kind": "Function",
     "name": "update_note_repo",
     "file": "src/db/core.rs",
-    "line": 885,
+    "line": 692,
     "is_pub": true,
     "is_async": true
   },
@@ -28027,7 +27371,7 @@
     "kind": "Function",
     "name": "get_repo_notes",
     "file": "src/db/core.rs",
-    "line": 907,
+    "line": 710,
     "is_pub": true,
     "is_async": true
   },
@@ -28035,7 +27379,7 @@
     "kind": "Function",
     "name": "count_repo_notes",
     "file": "src/db/core.rs",
-    "line": 923,
+    "line": 726,
     "is_pub": true,
     "is_async": true
   },
@@ -28043,7 +27387,7 @@
     "kind": "Function",
     "name": "add_repository",
     "file": "src/db/core.rs",
-    "line": 937,
+    "line": 740,
     "is_pub": true,
     "is_async": true
   },
@@ -28051,7 +27395,7 @@
     "kind": "Function",
     "name": "get_repository",
     "file": "src/db/core.rs",
-    "line": 990,
+    "line": 793,
     "is_pub": true,
     "is_async": true
   },
@@ -28059,7 +27403,7 @@
     "kind": "Function",
     "name": "get_repository_by_path",
     "file": "src/db/core.rs",
-    "line": 999,
+    "line": 802,
     "is_pub": true,
     "is_async": true
   },
@@ -28067,7 +27411,7 @@
     "kind": "Function",
     "name": "list_repositories",
     "file": "src/db/core.rs",
-    "line": 1009,
+    "line": 812,
     "is_pub": true,
     "is_async": true
   },
@@ -28075,7 +27419,7 @@
     "kind": "Function",
     "name": "update_repository_analysis",
     "file": "src/db/core.rs",
-    "line": 1018,
+    "line": 821,
     "is_pub": true,
     "is_async": true
   },
@@ -28083,7 +27427,7 @@
     "kind": "Function",
     "name": "remove_repository",
     "file": "src/db/core.rs",
-    "line": 1041,
+    "line": 844,
     "is_pub": true,
     "is_async": true
   },
@@ -28091,7 +27435,7 @@
     "kind": "Function",
     "name": "start_scan",
     "file": "src/db/core.rs",
-    "line": 1059,
+    "line": 862,
     "is_pub": true,
     "is_async": true
   },
@@ -28099,7 +27443,7 @@
     "kind": "Function",
     "name": "update_scan_progress",
     "file": "src/db/core.rs",
-    "line": 1104,
+    "line": 907,
     "is_pub": true,
     "is_async": true
   },
@@ -28107,7 +27451,7 @@
     "kind": "Function",
     "name": "complete_scan",
     "file": "src/db/core.rs",
-    "line": 1146,
+    "line": 949,
     "is_pub": true,
     "is_async": true
   },
@@ -28115,7 +27459,7 @@
     "kind": "Function",
     "name": "fail_scan",
     "file": "src/db/core.rs",
-    "line": 1209,
+    "line": 1012,
     "is_pub": true,
     "is_async": true
   },
@@ -28123,7 +27467,7 @@
     "kind": "Function",
     "name": "log_scan_event",
     "file": "src/db/core.rs",
-    "line": 1247,
+    "line": 1050,
     "is_pub": true,
     "is_async": true
   },
@@ -28131,7 +27475,7 @@
     "kind": "Function",
     "name": "get_scan_events",
     "file": "src/db/core.rs",
-    "line": 1274,
+    "line": 1077,
     "is_pub": true,
     "is_async": true
   },
@@ -28139,7 +27483,7 @@
     "kind": "Struct",
     "name": "ScanEvent",
     "file": "src/db/core.rs",
-    "line": 1310,
+    "line": 1113,
     "is_pub": true,
     "is_async": false
   },
@@ -28147,7 +27491,7 @@
     "kind": "Impl",
     "name": "ScanEvent",
     "file": "src/db/core.rs",
-    "line": 1319,
+    "line": 1122,
     "is_pub": false,
     "is_async": false
   },
@@ -28155,7 +27499,7 @@
     "kind": "Function",
     "name": "created_at_formatted",
     "file": "src/db/core.rs",
-    "line": 1321,
+    "line": 1124,
     "is_pub": true,
     "is_async": false
   },
@@ -28163,7 +27507,7 @@
     "kind": "Function",
     "name": "created_at_relative",
     "file": "src/db/core.rs",
-    "line": 1328,
+    "line": 1131,
     "is_pub": true,
     "is_async": false
   },
@@ -28171,7 +27515,7 @@
     "kind": "Function",
     "name": "create_task",
     "file": "src/db/core.rs",
-    "line": 1350,
+    "line": 1153,
     "is_pub": true,
     "is_async": true
   },
@@ -28179,7 +27523,7 @@
     "kind": "Function",
     "name": "list_tasks",
     "file": "src/db/core.rs",
-    "line": 1405,
+    "line": 1208,
     "is_pub": true,
     "is_async": true
   },
@@ -28187,7 +27531,7 @@
     "kind": "Function",
     "name": "update_task_status",
     "file": "src/db/core.rs",
-    "line": 1457,
+    "line": 1268,
     "is_pub": true,
     "is_async": true
   },
@@ -28195,7 +27539,7 @@
     "kind": "Function",
     "name": "get_next_task",
     "file": "src/db/core.rs",
-    "line": 1475,
+    "line": 1286,
     "is_pub": true,
     "is_async": true
   },
@@ -28203,7 +27547,7 @@
     "kind": "Struct",
     "name": "DbStats",
     "file": "src/db/core.rs",
-    "line": 1506,
+    "line": 1317,
     "is_pub": true,
     "is_async": false
   },
@@ -28211,7 +27555,7 @@
     "kind": "Function",
     "name": "get_stats",
     "file": "src/db/core.rs",
-    "line": 1514,
+    "line": 1325,
     "is_pub": true,
     "is_async": true
   },
@@ -28219,7 +27563,7 @@
     "kind": "Mod",
     "name": "tests",
     "file": "src/db/core.rs",
-    "line": 1550,
+    "line": 1361,
     "is_pub": false,
     "is_async": false
   },
@@ -28227,7 +27571,7 @@
     "kind": "Function",
     "name": "setup_test_db",
     "file": "src/db/core.rs",
-    "line": 1553,
+    "line": 1364,
     "is_pub": false,
     "is_async": true
   },
@@ -28235,7 +27579,7 @@
     "kind": "Function",
     "name": "test_create_and_get_note",
     "file": "src/db/core.rs",
-    "line": 1558,
+    "line": 1372,
     "is_pub": false,
     "is_async": true
   },
@@ -28243,7 +27587,7 @@
     "kind": "Function",
     "name": "test_list_notes",
     "file": "src/db/core.rs",
-    "line": 1581,
+    "line": 1395,
     "is_pub": false,
     "is_async": true
   },
@@ -28251,7 +27595,7 @@
     "kind": "Function",
     "name": "test_search_notes",
     "file": "src/db/core.rs",
-    "line": 1602,
+    "line": 1416,
     "is_pub": false,
     "is_async": true
   },
@@ -28259,7 +27603,7 @@
     "kind": "Function",
     "name": "test_repository_crud",
     "file": "src/db/core.rs",
-    "line": 1618,
+    "line": 1432,
     "is_pub": false,
     "is_async": true
   },
@@ -28267,7 +27611,7 @@
     "kind": "Function",
     "name": "test_task_creation_and_next",
     "file": "src/db/core.rs",
-    "line": 1637,
+    "line": 1451,
     "is_pub": false,
     "is_async": true
   },
@@ -28275,7 +27619,7 @@
     "kind": "Function",
     "name": "test_stats",
     "file": "src/db/core.rs",
-    "line": 1688,
+    "line": 1502,
     "is_pub": false,
     "is_async": true
   },
@@ -28283,7 +27627,7 @@
     "kind": "Struct",
     "name": "Database",
     "file": "src/db/core.rs",
-    "line": 1715,
+    "line": 1529,
     "is_pub": true,
     "is_async": false
   },
@@ -28291,7 +27635,7 @@
     "kind": "Impl",
     "name": "Database",
     "file": "src/db/core.rs",
-    "line": 1719,
+    "line": 1533,
     "is_pub": false,
     "is_async": false
   },
@@ -28299,7 +27643,7 @@
     "kind": "Function",
     "name": "new",
     "file": "src/db/core.rs",
-    "line": 1721,
+    "line": 1535,
     "is_pub": true,
     "is_async": true
   },
@@ -28307,7 +27651,7 @@
     "kind": "Function",
     "name": "from_pool",
     "file": "src/db/core.rs",
-    "line": 1727,
+    "line": 1541,
     "is_pub": true,
     "is_async": false
   },
@@ -28315,7 +27659,7 @@
     "kind": "Function",
     "name": "pool",
     "file": "src/db/core.rs",
-    "line": 1732,
+    "line": 1546,
     "is_pub": true,
     "is_async": false
   },
@@ -28323,7 +27667,7 @@
     "kind": "Function",
     "name": "create_note",
     "file": "src/db/core.rs",
-    "line": 1737,
+    "line": 1551,
     "is_pub": true,
     "is_async": true
   },
@@ -28331,7 +27675,7 @@
     "kind": "Function",
     "name": "get_note",
     "file": "src/db/core.rs",
-    "line": 1746,
+    "line": 1560,
     "is_pub": true,
     "is_async": true
   },
@@ -28339,7 +27683,7 @@
     "kind": "Function",
     "name": "list_notes",
     "file": "src/db/core.rs",
-    "line": 1751,
+    "line": 1565,
     "is_pub": true,
     "is_async": true
   },
@@ -28347,7 +27691,7 @@
     "kind": "Function",
     "name": "add_repository",
     "file": "src/db/core.rs",
-    "line": 1763,
+    "line": 1577,
     "is_pub": true,
     "is_async": true
   },
@@ -28355,7 +27699,7 @@
     "kind": "Function",
     "name": "get_repository",
     "file": "src/db/core.rs",
-    "line": 1775,
+    "line": 1589,
     "is_pub": true,
     "is_async": true
   },
@@ -28363,7 +27707,7 @@
     "kind": "Function",
     "name": "list_repositories",
     "file": "src/db/core.rs",
-    "line": 1780,
+    "line": 1594,
     "is_pub": true,
     "is_async": true
   },
@@ -28371,7 +27715,7 @@
     "kind": "Function",
     "name": "record_llm_cost",
     "file": "src/db/core.rs",
-    "line": 1785,
+    "line": 1599,
     "is_pub": true,
     "is_async": true
   },
@@ -28379,7 +27723,7 @@
     "kind": "Function",
     "name": "get_total_llm_cost",
     "file": "src/db/core.rs",
-    "line": 1800,
+    "line": 1614,
     "is_pub": true,
     "is_async": true
   },
@@ -28387,7 +27731,7 @@
     "kind": "Function",
     "name": "get_llm_cost_by_period",
     "file": "src/db/core.rs",
-    "line": 1805,
+    "line": 1619,
     "is_pub": true,
     "is_async": true
   },
@@ -28395,7 +27739,7 @@
     "kind": "Function",
     "name": "get_cache_hit_rate",
     "file": "src/db/core.rs",
-    "line": 1813,
+    "line": 1627,
     "is_pub": true,
     "is_async": true
   },
@@ -28403,7 +27747,7 @@
     "kind": "Function",
     "name": "get_cost_by_model",
     "file": "src/db/core.rs",
-    "line": 1836,
+    "line": 1650,
     "is_pub": true,
     "is_async": true
   },
@@ -28411,7 +27755,7 @@
     "kind": "Function",
     "name": "count_notes",
     "file": "src/db/core.rs",
-    "line": 1841,
+    "line": 1655,
     "is_pub": true,
     "is_async": true
   },
@@ -28419,7 +27763,7 @@
     "kind": "Function",
     "name": "count_repositories",
     "file": "src/db/core.rs",
-    "line": 1847,
+    "line": 1661,
     "is_pub": true,
     "is_async": true
   },
@@ -28427,7 +27771,7 @@
     "kind": "Function",
     "name": "get_recent_llm_operations",
     "file": "src/db/core.rs",
-    "line": 1853,
+    "line": 1667,
     "is_pub": true,
     "is_async": true
   },
@@ -28435,7 +27779,7 @@
     "kind": "Function",
     "name": "get_stats",
     "file": "src/db/core.rs",
-    "line": 1858,
+    "line": 1672,
     "is_pub": true,
     "is_async": true
   },
@@ -28443,7 +27787,7 @@
     "kind": "Enum",
     "name": "NoteStatus",
     "file": "src/db/core.rs",
-    "line": 1871,
+    "line": 1685,
     "is_pub": true,
     "is_async": false
   },
@@ -28451,7 +27795,7 @@
     "kind": "Impl",
     "name": "NoteStatus",
     "file": "src/db/core.rs",
-    "line": 1878,
+    "line": 1692,
     "is_pub": false,
     "is_async": false
   },
@@ -28459,7 +27803,7 @@
     "kind": "Function",
     "name": "as_str",
     "file": "src/db/core.rs",
-    "line": 1879,
+    "line": 1693,
     "is_pub": true,
     "is_async": false
   },
@@ -28467,7 +27811,7 @@
     "kind": "Struct",
     "name": "DatabaseStats",
     "file": "src/db/core.rs",
-    "line": 1891,
+    "line": 1705,
     "is_pub": true,
     "is_async": false
   },
@@ -28475,7 +27819,7 @@
     "kind": "Struct",
     "name": "LlmCost",
     "file": "src/db/core.rs",
-    "line": 1900,
+    "line": 1714,
     "is_pub": true,
     "is_async": false
   },
@@ -28483,7 +27827,7 @@
     "kind": "Impl",
     "name": "LlmCost",
     "file": "src/db/core.rs",
-    "line": 1912,
+    "line": 1726,
     "is_pub": false,
     "is_async": false
   },
@@ -28491,7 +27835,7 @@
     "kind": "Function",
     "name": "created_at_formatted",
     "file": "src/db/core.rs",
-    "line": 1914,
+    "line": 1728,
     "is_pub": true,
     "is_async": false
   },
@@ -28499,7 +27843,7 @@
     "kind": "Struct",
     "name": "LlmCostStats",
     "file": "src/db/core.rs",
-    "line": 1923,
+    "line": 1737,
     "is_pub": true,
     "is_async": false
   },
@@ -28675,7 +28019,7 @@
     "kind": "Function",
     "name": "log_info",
     "file": "src/db/scan_events.rs",
-    "line": 89,
+    "line": 90,
     "is_pub": true,
     "is_async": true
   },
@@ -28683,7 +28027,7 @@
     "kind": "Function",
     "name": "log_error",
     "file": "src/db/scan_events.rs",
-    "line": 99,
+    "line": 100,
     "is_pub": true,
     "is_async": true
   },
@@ -28691,7 +28035,7 @@
     "kind": "Function",
     "name": "get_recent_events",
     "file": "src/db/scan_events.rs",
-    "line": 118,
+    "line": 119,
     "is_pub": true,
     "is_async": true
   },
@@ -28699,7 +28043,7 @@
     "kind": "Function",
     "name": "get_repo_events",
     "file": "src/db/scan_events.rs",
-    "line": 153,
+    "line": 154,
     "is_pub": true,
     "is_async": true
   },
@@ -28707,7 +28051,7 @@
     "kind": "Function",
     "name": "prune_events",
     "file": "src/db/scan_events.rs",
-    "line": 174,
+    "line": 175,
     "is_pub": true,
     "is_async": true
   },
@@ -28715,7 +28059,7 @@
     "kind": "Function",
     "name": "update_scan_status",
     "file": "src/db/scan_events.rs",
-    "line": 188,
+    "line": 189,
     "is_pub": true,
     "is_async": true
   },
@@ -28723,7 +28067,7 @@
     "kind": "Function",
     "name": "mark_scan_started",
     "file": "src/db/scan_events.rs",
-    "line": 217,
+    "line": 218,
     "is_pub": true,
     "is_async": true
   },
@@ -28731,7 +28075,7 @@
     "kind": "Function",
     "name": "update_scan_file_progress",
     "file": "src/db/scan_events.rs",
-    "line": 235,
+    "line": 236,
     "is_pub": true,
     "is_async": true
   },
@@ -28739,7 +28083,7 @@
     "kind": "Function",
     "name": "mark_scan_complete",
     "file": "src/db/scan_events.rs",
-    "line": 279,
+    "line": 280,
     "is_pub": true,
     "is_async": true
   },
@@ -28747,7 +28091,7 @@
     "kind": "Function",
     "name": "mark_scan_error",
     "file": "src/db/scan_events.rs",
-    "line": 328,
+    "line": 329,
     "is_pub": true,
     "is_async": true
   },
@@ -28955,7 +28299,7 @@
     "kind": "Function",
     "name": "clear_repo_locations",
     "file": "src/db/chunks.rs",
-    "line": 802,
+    "line": 803,
     "is_pub": true,
     "is_async": true
   },
@@ -28963,7 +28307,7 @@
     "kind": "Function",
     "name": "find_cross_repo_duplicates",
     "file": "src/db/chunks.rs",
-    "line": 817,
+    "line": 818,
     "is_pub": true,
     "is_async": true
   },
@@ -28971,7 +28315,7 @@
     "kind": "Function",
     "name": "is_already_analyzed",
     "file": "src/db/chunks.rs",
-    "line": 870,
+    "line": 871,
     "is_pub": true,
     "is_async": true
   },
@@ -28979,7 +28323,7 @@
     "kind": "Function",
     "name": "record_savings",
     "file": "src/db/chunks.rs",
-    "line": 890,
+    "line": 891,
     "is_pub": true,
     "is_async": true
   },
@@ -28987,7 +28331,7 @@
     "kind": "Function",
     "name": "record_savings_batch",
     "file": "src/db/chunks.rs",
-    "line": 921,
+    "line": 923,
     "is_pub": true,
     "is_async": true
   },
@@ -28995,7 +28339,7 @@
     "kind": "Function",
     "name": "get_session_savings",
     "file": "src/db/chunks.rs",
-    "line": 971,
+    "line": 973,
     "is_pub": true,
     "is_async": true
   },
@@ -29003,7 +28347,7 @@
     "kind": "Function",
     "name": "get_repo_savings",
     "file": "src/db/chunks.rs",
-    "line": 977,
+    "line": 979,
     "is_pub": true,
     "is_async": true
   },
@@ -29011,7 +28355,7 @@
     "kind": "Function",
     "name": "get_daily_savings",
     "file": "src/db/chunks.rs",
-    "line": 982,
+    "line": 984,
     "is_pub": true,
     "is_async": true
   },
@@ -29019,7 +28363,7 @@
     "kind": "Function",
     "name": "get_savings_summary_where",
     "file": "src/db/chunks.rs",
-    "line": 988,
+    "line": 990,
     "is_pub": false,
     "is_async": true
   },
@@ -29027,7 +28371,7 @@
     "kind": "Function",
     "name": "get_dedup_stats",
     "file": "src/db/chunks.rs",
-    "line": 1050,
+    "line": 1052,
     "is_pub": true,
     "is_async": true
   },
@@ -29035,7 +28379,7 @@
     "kind": "Function",
     "name": "chunk_count",
     "file": "src/db/chunks.rs",
-    "line": 1142,
+    "line": 1144,
     "is_pub": true,
     "is_async": true
   },
@@ -29043,7 +28387,7 @@
     "kind": "Function",
     "name": "location_count",
     "file": "src/db/chunks.rs",
-    "line": 1152,
+    "line": 1154,
     "is_pub": true,
     "is_async": true
   },
@@ -29051,7 +28395,7 @@
     "kind": "Function",
     "name": "cleanup_orphaned_chunks",
     "file": "src/db/chunks.rs",
-    "line": 1166,
+    "line": 1168,
     "is_pub": true,
     "is_async": true
   },
@@ -29059,7 +28403,7 @@
     "kind": "Function",
     "name": "clear_old_savings",
     "file": "src/db/chunks.rs",
-    "line": 1188,
+    "line": 1190,
     "is_pub": true,
     "is_async": true
   },
@@ -29067,7 +28411,7 @@
     "kind": "Function",
     "name": "pool",
     "file": "src/db/chunks.rs",
-    "line": 1212,
+    "line": 1214,
     "is_pub": true,
     "is_async": false
   },
@@ -29075,7 +28419,7 @@
     "kind": "Function",
     "name": "chunk_to_record",
     "file": "src/db/chunks.rs",
-    "line": 1222,
+    "line": 1224,
     "is_pub": true,
     "is_async": false
   },
@@ -29083,7 +28427,7 @@
     "kind": "Function",
     "name": "chunk_to_location",
     "file": "src/db/chunks.rs",
-    "line": 1243,
+    "line": 1245,
     "is_pub": true,
     "is_async": false
   },
@@ -29091,7 +28435,7 @@
     "kind": "Function",
     "name": "chunks_to_records",
     "file": "src/db/chunks.rs",
-    "line": 1255,
+    "line": 1257,
     "is_pub": true,
     "is_async": false
   },
@@ -29099,7 +28443,7 @@
     "kind": "Function",
     "name": "estimate_llm_cost_for_file",
     "file": "src/db/chunks.rs",
-    "line": 1273,
+    "line": 1275,
     "is_pub": true,
     "is_async": false
   },
@@ -29107,7 +28451,7 @@
     "kind": "Mod",
     "name": "tests",
     "file": "src/db/chunks.rs",
-    "line": 1286,
+    "line": 1288,
     "is_pub": false,
     "is_async": false
   },
@@ -29115,7 +28459,7 @@
     "kind": "Function",
     "name": "create_test_pool",
     "file": "src/db/chunks.rs",
-    "line": 1289,
+    "line": 1291,
     "is_pub": false,
     "is_async": true
   },
@@ -29123,7 +28467,7 @@
     "kind": "Function",
     "name": "test_schema_initialization",
     "file": "src/db/chunks.rs",
-    "line": 1296,
+    "line": 1300,
     "is_pub": false,
     "is_async": true
   },
@@ -29131,7 +28475,7 @@
     "kind": "Function",
     "name": "test_upsert_and_get_chunk",
     "file": "src/db/chunks.rs",
-    "line": 1303,
+    "line": 1307,
     "is_pub": false,
     "is_async": true
   },
@@ -29139,7 +28483,7 @@
     "kind": "Function",
     "name": "test_upsert_preserves_embedding",
     "file": "src/db/chunks.rs",
-    "line": 1333,
+    "line": 1337,
     "is_pub": false,
     "is_async": true
   },
@@ -29147,7 +28491,7 @@
     "kind": "Function",
     "name": "test_contains",
     "file": "src/db/chunks.rs",
-    "line": 1378,
+    "line": 1382,
     "is_pub": false,
     "is_async": true
   },
@@ -29155,7 +28499,7 @@
     "kind": "Function",
     "name": "test_locations",
     "file": "src/db/chunks.rs",
-    "line": 1403,
+    "line": 1407,
     "is_pub": false,
     "is_async": true
   },
@@ -29163,7 +28507,7 @@
     "kind": "Function",
     "name": "test_cross_repo_duplicates",
     "file": "src/db/chunks.rs",
-    "line": 1456,
+    "line": 1460,
     "is_pub": false,
     "is_async": true
   },
@@ -29171,7 +28515,7 @@
     "kind": "Function",
     "name": "test_savings_recording",
     "file": "src/db/chunks.rs",
-    "line": 1509,
+    "line": 1513,
     "is_pub": false,
     "is_async": true
   },
@@ -29179,7 +28523,7 @@
     "kind": "Function",
     "name": "test_batch_operations",
     "file": "src/db/chunks.rs",
-    "line": 1551,
+    "line": 1555,
     "is_pub": false,
     "is_async": true
   },
@@ -29187,7 +28531,7 @@
     "kind": "Function",
     "name": "test_dedup_stats",
     "file": "src/db/chunks.rs",
-    "line": 1596,
+    "line": 1600,
     "is_pub": false,
     "is_async": true
   },
@@ -29195,7 +28539,7 @@
     "kind": "Function",
     "name": "test_cleanup_orphaned_chunks",
     "file": "src/db/chunks.rs",
-    "line": 1629,
+    "line": 1633,
     "is_pub": false,
     "is_async": true
   },
@@ -29203,7 +28547,7 @@
     "kind": "Function",
     "name": "test_delete_chunk_cascades",
     "file": "src/db/chunks.rs",
-    "line": 1689,
+    "line": 1693,
     "is_pub": false,
     "is_async": true
   },
@@ -29211,7 +28555,7 @@
     "kind": "Function",
     "name": "test_clear_file_locations",
     "file": "src/db/chunks.rs",
-    "line": 1731,
+    "line": 1735,
     "is_pub": false,
     "is_async": true
   },
@@ -29219,7 +28563,7 @@
     "kind": "Function",
     "name": "test_update_embedding",
     "file": "src/db/chunks.rs",
-    "line": 1788,
+    "line": 1792,
     "is_pub": false,
     "is_async": true
   },
@@ -29227,7 +28571,7 @@
     "kind": "Function",
     "name": "test_chunks_without_embeddings",
     "file": "src/db/chunks.rs",
-    "line": 1820,
+    "line": 1824,
     "is_pub": false,
     "is_async": true
   },
@@ -29235,7 +28579,7 @@
     "kind": "Function",
     "name": "test_is_already_analyzed",
     "file": "src/db/chunks.rs",
-    "line": 1865,
+    "line": 1869,
     "is_pub": false,
     "is_async": true
   },
@@ -29243,7 +28587,7 @@
     "kind": "Function",
     "name": "test_estimate_llm_cost",
     "file": "src/db/chunks.rs",
-    "line": 1894,
+    "line": 1898,
     "is_pub": false,
     "is_async": true
   },
@@ -29251,7 +28595,7 @@
     "kind": "Function",
     "name": "test_savings_batch",
     "file": "src/db/chunks.rs",
-    "line": 1906,
+    "line": 1910,
     "is_pub": false,
     "is_async": true
   },
@@ -29259,7 +28603,7 @@
     "kind": "Struct",
     "name": "DatabaseConfig",
     "file": "src/db/config.rs",
-    "line": 19,
+    "line": 17,
     "is_pub": true,
     "is_async": false
   },
@@ -29267,7 +28611,7 @@
     "kind": "Impl",
     "name": "DatabaseConfig",
     "file": "src/db/config.rs",
-    "line": 30,
+    "line": 29,
     "is_pub": false,
     "is_async": false
   },
@@ -29275,7 +28619,7 @@
     "kind": "Function",
     "name": "default",
     "file": "src/db/config.rs",
-    "line": 31,
+    "line": 30,
     "is_pub": false,
     "is_async": false
   },
@@ -29283,7 +28627,7 @@
     "kind": "Impl",
     "name": "DatabaseConfig",
     "file": "src/db/config.rs",
-    "line": 41,
+    "line": 40,
     "is_pub": false,
     "is_async": false
   },
@@ -29291,39 +28635,23 @@
     "kind": "Function",
     "name": "from_env",
     "file": "src/db/config.rs",
-    "line": 43,
+    "line": 42,
     "is_pub": true,
     "is_async": false
   },
   {
     "kind": "Function",
-    "name": "get_default_db_path",
+    "name": "get_default_db_url",
     "file": "src/db/config.rs",
-    "line": 75,
+    "line": 76,
     "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "get_data_dir",
-    "file": "src/db/config.rs",
-    "line": 101,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "ensure_data_dir",
-    "file": "src/db/config.rs",
-    "line": 114,
-    "is_pub": true,
     "is_async": false
   },
   {
     "kind": "Function",
     "name": "init_pool",
     "file": "src/db/config.rs",
-    "line": 147,
+    "line": 103,
     "is_pub": true,
     "is_async": true
   },
@@ -29331,55 +28659,23 @@
     "kind": "Function",
     "name": "run_migrations",
     "file": "src/db/config.rs",
-    "line": 179,
+    "line": 130,
     "is_pub": false,
     "is_async": true
   },
   {
     "kind": "Function",
-    "name": "fix_db_permissions",
+    "name": "redact_url",
     "file": "src/db/config.rs",
-    "line": 194,
+    "line": 147,
     "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "fix_db_permissions",
-    "file": "src/db/config.rs",
-    "line": 228,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "print_env_help",
-    "file": "src/db/config.rs",
-    "line": 237,
-    "is_pub": true,
-    "is_async": false
-  },
-  {
-    "kind": "Function",
-    "name": "backup_database",
-    "file": "src/db/config.rs",
-    "line": 289,
-    "is_pub": true,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "get_backup_path",
-    "file": "src/db/config.rs",
-    "line": 307,
-    "is_pub": true,
     "is_async": false
   },
   {
     "kind": "Function",
     "name": "health_check",
     "file": "src/db/config.rs",
-    "line": 320,
+    "line": 165,
     "is_pub": true,
     "is_async": true
   },
@@ -29387,7 +28683,47 @@
     "kind": "Struct",
     "name": "DatabaseHealth",
     "file": "src/db/config.rs",
-    "line": 345,
+    "line": 190,
+    "is_pub": true,
+    "is_async": false
+  },
+  {
+    "kind": "Function",
+    "name": "backup_database",
+    "file": "src/db/config.rs",
+    "line": 204,
+    "is_pub": true,
+    "is_async": true
+  },
+  {
+    "kind": "Function",
+    "name": "get_backup_path",
+    "file": "src/db/config.rs",
+    "line": 230,
+    "is_pub": true,
+    "is_async": false
+  },
+  {
+    "kind": "Function",
+    "name": "print_env_help",
+    "file": "src/db/config.rs",
+    "line": 240,
+    "is_pub": true,
+    "is_async": false
+  },
+  {
+    "kind": "Function",
+    "name": "ensure_data_dir",
+    "file": "src/db/config.rs",
+    "line": 284,
+    "is_pub": true,
+    "is_async": false
+  },
+  {
+    "kind": "Function",
+    "name": "get_data_dir",
+    "file": "src/db/config.rs",
+    "line": 290,
     "is_pub": true,
     "is_async": false
   },
@@ -29395,7 +28731,7 @@
     "kind": "Mod",
     "name": "tests",
     "file": "src/db/config.rs",
-    "line": 356,
+    "line": 299,
     "is_pub": false,
     "is_async": false
   },
@@ -29403,7 +28739,7 @@
     "kind": "Function",
     "name": "test_default_config",
     "file": "src/db/config.rs",
-    "line": 360,
+    "line": 303,
     "is_pub": false,
     "is_async": false
   },
@@ -29411,7 +28747,15 @@
     "kind": "Function",
     "name": "test_config_from_env",
     "file": "src/db/config.rs",
-    "line": 367,
+    "line": 311,
+    "is_pub": false,
+    "is_async": false
+  },
+  {
+    "kind": "Function",
+    "name": "test_redact_url",
+    "file": "src/db/config.rs",
+    "line": 327,
     "is_pub": false,
     "is_async": false
   },
@@ -31379,15 +30723,87 @@
     "kind": "Function",
     "name": "classify_prompt",
     "file": "src/model_router.rs",
-    "line": 122,
+    "line": 131,
     "is_pub": true,
+    "is_async": false
+  },
+  {
+    "kind": "Function",
+    "name": "classify_prompt_async",
+    "file": "src/model_router.rs",
+    "line": 139,
+    "is_pub": true,
+    "is_async": true
+  },
+  {
+    "kind": "Function",
+    "name": "llm_classify",
+    "file": "src/model_router.rs",
+    "line": 154,
+    "is_pub": false,
+    "is_async": true
+  },
+  {
+    "kind": "Const",
+    "name": "CLASSIFY_SYSTEM",
+    "file": "src/model_router.rs",
+    "line": 155,
+    "is_pub": false,
+    "is_async": false
+  },
+  {
+    "kind": "Struct",
+    "name": "Req",
+    "file": "src/model_router.rs",
+    "line": 169,
+    "is_pub": false,
+    "is_async": false
+  },
+  {
+    "kind": "Struct",
+    "name": "Msg",
+    "file": "src/model_router.rs",
+    "line": 176,
+    "is_pub": false,
+    "is_async": false
+  },
+  {
+    "kind": "Struct",
+    "name": "Opts",
+    "file": "src/model_router.rs",
+    "line": 181,
+    "is_pub": false,
+    "is_async": false
+  },
+  {
+    "kind": "Struct",
+    "name": "Resp",
+    "file": "src/model_router.rs",
+    "line": 186,
+    "is_pub": false,
+    "is_async": false
+  },
+  {
+    "kind": "Struct",
+    "name": "RespMsg",
+    "file": "src/model_router.rs",
+    "line": 190,
+    "is_pub": false,
+    "is_async": false
+  },
+  {
+    "kind": "Function",
+    "name": "keyword_classify",
+    "file": "src/model_router.rs",
+    "line": 262,
+    "is_pub": false,
     "is_async": false
   },
   {
     "kind": "Function",
     "name": "route",
     "file": "src/model_router.rs",
-    "line": 165,
+    "line": 309,
     "is_pub": true,
     "is_async": false
   },
@@ -31395,15 +30811,23 @@
     "kind": "Function",
     "name": "route_prompt",
     "file": "src/model_router.rs",
-    "line": 182,
+    "line": 327,
     "is_pub": true,
     "is_async": false
   },
   {
     "kind": "Function",
+    "name": "route_prompt_async",
+    "file": "src/model_router.rs",
+    "line": 335,
+    "is_pub": true,
+    "is_async": true
+  },
+  {
+    "kind": "Function",
     "name": "on_local_failure",
     "file": "src/model_router.rs",
-    "line": 189,
+    "line": 342,
     "is_pub": true,
     "is_async": false
   },
@@ -31411,7 +30835,7 @@
     "kind": "Struct",
     "name": "CompletionRequest",
     "file": "src/model_router.rs",
-    "line": 207,
+    "line": 360,
     "is_pub": true,
     "is_async": false
   },
@@ -31419,7 +30843,7 @@
     "kind": "Impl",
     "name": "CompletionRequest",
     "file": "src/model_router.rs",
-    "line": 216,
+    "line": 369,
     "is_pub": false,
     "is_async": false
   },
@@ -31427,7 +30851,7 @@
     "kind": "Function",
     "name": "for_stub",
     "file": "src/model_router.rs",
-    "line": 217,
+    "line": 370,
     "is_pub": true,
     "is_async": false
   },
@@ -31435,7 +30859,7 @@
     "kind": "Function",
     "name": "build_prompt",
     "file": "src/model_router.rs",
-    "line": 228,
+    "line": 381,
     "is_pub": true,
     "is_async": false
   },
@@ -31443,7 +30867,7 @@
     "kind": "Struct",
     "name": "CompletionResponse",
     "file": "src/model_router.rs",
-    "line": 240,
+    "line": 393,
     "is_pub": true,
     "is_async": false
   },
@@ -31451,7 +30875,7 @@
     "kind": "Const",
     "name": "RUST_STUB_SYSTEM_PROMPT",
     "file": "src/model_router.rs",
-    "line": 252,
+    "line": 405,
     "is_pub": true,
     "is_async": false
   },
@@ -31459,7 +30883,7 @@
     "kind": "Mod",
     "name": "tests",
     "file": "src/model_router.rs",
-    "line": 272,
+    "line": 425,
     "is_pub": false,
     "is_async": false
   },
@@ -31467,7 +30891,7 @@
     "kind": "Function",
     "name": "router",
     "file": "src/model_router.rs",
-    "line": 275,
+    "line": 428,
     "is_pub": false,
     "is_async": false
   },
@@ -31475,7 +30899,7 @@
     "kind": "Function",
     "name": "classifies_stub_prompts",
     "file": "src/model_router.rs",
-    "line": 280,
+    "line": 433,
     "is_pub": false,
     "is_async": false
   },
@@ -31483,7 +30907,7 @@
     "kind": "Function",
     "name": "classifies_review_as_remote",
     "file": "src/model_router.rs",
-    "line": 287,
+    "line": 446,
     "is_pub": false,
     "is_async": false
   },
@@ -31491,7 +30915,7 @@
     "kind": "Function",
     "name": "stub_routes_local",
     "file": "src/model_router.rs",
-    "line": 295,
+    "line": 454,
     "is_pub": false,
     "is_async": false
   },
@@ -31499,7 +30923,15 @@
     "kind": "Function",
     "name": "force_remote_overrides",
     "file": "src/model_router.rs",
-    "line": 303,
+    "line": 462,
+    "is_pub": false,
+    "is_async": false
+  },
+  {
+    "kind": "Function",
+    "name": "keyword_classify_all_kinds",
+    "file": "src/model_router.rs",
+    "line": 471,
     "is_pub": false,
     "is_async": false
   },
@@ -31507,7 +30939,7 @@
     "kind": "Struct",
     "name": "AppState",
     "file": "src/server.rs",
-    "line": 44,
+    "line": 45,
     "is_pub": true,
     "is_async": false
   },
@@ -31515,7 +30947,7 @@
     "kind": "Impl",
     "name": "AppState",
     "file": "src/server.rs",
-    "line": 51,
+    "line": 52,
     "is_pub": false,
     "is_async": false
   },
@@ -31523,15 +30955,23 @@
     "kind": "Function",
     "name": "new",
     "file": "src/server.rs",
-    "line": 53,
+    "line": 54,
     "is_pub": true,
     "is_async": true
+  },
+  {
+    "kind": "Struct",
+    "name": "WebhookState",
+    "file": "src/server.rs",
+    "line": 98,
+    "is_pub": false,
+    "is_async": false
   },
   {
     "kind": "Function",
     "name": "run_server",
     "file": "src/server.rs",
-    "line": 93,
+    "line": 103,
     "is_pub": true,
     "is_async": true
   },
@@ -31539,39 +30979,23 @@
     "kind": "Function",
     "name": "build_cors_layer",
     "file": "src/server.rs",
-    "line": 280,
+    "line": 314,
     "is_pub": false,
     "is_async": false
   },
   {
     "kind": "Function",
+    "name": "handle_github_webhook",
+    "file": "src/server.rs",
+    "line": 360,
+    "is_pub": false,
+    "is_async": true
+  },
+  {
+    "kind": "Function",
     "name": "health_check",
     "file": "src/server.rs",
-    "line": 315,
-    "is_pub": false,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "create_audit",
-    "file": "src/server.rs",
-    "line": 323,
-    "is_pub": false,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "get_audit",
-    "file": "src/server.rs",
-    "line": 423,
-    "is_pub": false,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "get_audit_tasks",
-    "file": "src/server.rs",
-    "line": 443,
+    "line": 499,
     "is_pub": false,
     "is_async": true
   },
@@ -31579,7 +31003,7 @@
     "kind": "Function",
     "name": "clone_repository",
     "file": "src/server.rs",
-    "line": 459,
+    "line": 507,
     "is_pub": false,
     "is_async": true
   },
@@ -31587,7 +31011,7 @@
     "kind": "Function",
     "name": "scan_tags",
     "file": "src/server.rs",
-    "line": 491,
+    "line": 539,
     "is_pub": false,
     "is_async": true
   },
@@ -31595,23 +31019,7 @@
     "kind": "Function",
     "name": "scan_static",
     "file": "src/server.rs",
-    "line": 515,
-    "is_pub": false,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "save_report",
-    "file": "src/server.rs",
-    "line": 546,
-    "is_pub": false,
-    "is_async": true
-  },
-  {
-    "kind": "Function",
-    "name": "save_tasks",
-    "file": "src/server.rs",
-    "line": 555,
+    "line": 563,
     "is_pub": false,
     "is_async": true
   },
@@ -31619,15 +31027,7 @@
     "kind": "Struct",
     "name": "HealthResponse",
     "file": "src/server.rs",
-    "line": 574,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Struct",
-    "name": "AuditResponse",
-    "file": "src/server.rs",
-    "line": 580,
+    "line": 596,
     "is_pub": false,
     "is_async": false
   },
@@ -31635,7 +31035,7 @@
     "kind": "Struct",
     "name": "CloneRequest",
     "file": "src/server.rs",
-    "line": 587,
+    "line": 602,
     "is_pub": false,
     "is_async": false
   },
@@ -31643,7 +31043,7 @@
     "kind": "Struct",
     "name": "CloneResponse",
     "file": "src/server.rs",
-    "line": 593,
+    "line": 608,
     "is_pub": false,
     "is_async": false
   },
@@ -31651,7 +31051,7 @@
     "kind": "Struct",
     "name": "ScanRequest",
     "file": "src/server.rs",
-    "line": 600,
+    "line": 615,
     "is_pub": false,
     "is_async": false
   },
@@ -31659,15 +31059,7 @@
     "kind": "Struct",
     "name": "TagsResponse",
     "file": "src/server.rs",
-    "line": 605,
-    "is_pub": false,
-    "is_async": false
-  },
-  {
-    "kind": "Struct",
-    "name": "TasksResponse",
-    "file": "src/server.rs",
-    "line": 612,
+    "line": 620,
     "is_pub": false,
     "is_async": false
   },
@@ -31675,7 +31067,7 @@
     "kind": "Struct",
     "name": "StaticAnalysisResponse",
     "file": "src/server.rs",
-    "line": 617,
+    "line": 627,
     "is_pub": false,
     "is_async": false
   },
@@ -31683,7 +31075,7 @@
     "kind": "Impl",
     "name": "AuditError",
     "file": "src/server.rs",
-    "line": 630,
+    "line": 640,
     "is_pub": false,
     "is_async": false
   },
@@ -31691,7 +31083,7 @@
     "kind": "Function",
     "name": "into_response",
     "file": "src/server.rs",
-    "line": 631,
+    "line": 641,
     "is_pub": false,
     "is_async": false
   },
@@ -31699,7 +31091,7 @@
     "kind": "Struct",
     "name": "ErrorResponse",
     "file": "src/server.rs",
-    "line": 650,
+    "line": 660,
     "is_pub": false,
     "is_async": false
   },
@@ -31707,7 +31099,7 @@
     "kind": "Function",
     "name": "list_repos",
     "file": "src/server.rs",
-    "line": 660,
+    "line": 670,
     "is_pub": false,
     "is_async": true
   },
@@ -31715,7 +31107,7 @@
     "kind": "Struct",
     "name": "ScanReposRequest",
     "file": "src/server.rs",
-    "line": 669,
+    "line": 679,
     "is_pub": false,
     "is_async": false
   },
@@ -31723,7 +31115,7 @@
     "kind": "Struct",
     "name": "ScanReposResponse",
     "file": "src/server.rs",
-    "line": 674,
+    "line": 684,
     "is_pub": false,
     "is_async": false
   },
@@ -31731,7 +31123,7 @@
     "kind": "Function",
     "name": "scan_repos",
     "file": "src/server.rs",
-    "line": 680,
+    "line": 690,
     "is_pub": false,
     "is_async": true
   },
@@ -31739,7 +31131,7 @@
     "kind": "Function",
     "name": "queue_status",
     "file": "src/server.rs",
-    "line": 705,
+    "line": 715,
     "is_pub": false,
     "is_async": true
   },
@@ -31747,7 +31139,7 @@
     "kind": "Struct",
     "name": "GitHubStatsResponse",
     "file": "src/server.rs",
-    "line": 718,
+    "line": 728,
     "is_pub": false,
     "is_async": false
   },
@@ -31755,7 +31147,7 @@
     "kind": "Struct",
     "name": "TopRepo",
     "file": "src/server.rs",
-    "line": 729,
+    "line": 739,
     "is_pub": false,
     "is_async": false
   },
@@ -31763,7 +31155,7 @@
     "kind": "Struct",
     "name": "GitHubSearchQuery",
     "file": "src/server.rs",
-    "line": 735,
+    "line": 745,
     "is_pub": false,
     "is_async": false
   },
@@ -31771,7 +31163,7 @@
     "kind": "Function",
     "name": "default_limit",
     "file": "src/server.rs",
-    "line": 741,
+    "line": 751,
     "is_pub": false,
     "is_async": false
   },
@@ -31779,7 +31171,7 @@
     "kind": "Struct",
     "name": "GitHubIssuesQuery",
     "file": "src/server.rs",
-    "line": 746,
+    "line": 756,
     "is_pub": false,
     "is_async": false
   },
@@ -31787,7 +31179,7 @@
     "kind": "Struct",
     "name": "GitHubPrsQuery",
     "file": "src/server.rs",
-    "line": 754,
+    "line": 764,
     "is_pub": false,
     "is_async": false
   },
@@ -31795,7 +31187,7 @@
     "kind": "Struct",
     "name": "GitHubReposQuery",
     "file": "src/server.rs",
-    "line": 762,
+    "line": 772,
     "is_pub": false,
     "is_async": false
   },
@@ -31803,7 +31195,7 @@
     "kind": "Struct",
     "name": "GitHubSyncRequest",
     "file": "src/server.rs",
-    "line": 769,
+    "line": 779,
     "is_pub": false,
     "is_async": false
   },
@@ -31811,7 +31203,7 @@
     "kind": "Function",
     "name": "github_stats",
     "file": "src/server.rs",
-    "line": 775,
+    "line": 785,
     "is_pub": false,
     "is_async": true
   },
@@ -31819,7 +31211,7 @@
     "kind": "Function",
     "name": "github_repos",
     "file": "src/server.rs",
-    "line": 820,
+    "line": 830,
     "is_pub": false,
     "is_async": true
   },
@@ -31827,7 +31219,7 @@
     "kind": "Function",
     "name": "github_issues",
     "file": "src/server.rs",
-    "line": 844,
+    "line": 854,
     "is_pub": false,
     "is_async": true
   },
@@ -31835,7 +31227,7 @@
     "kind": "Function",
     "name": "github_prs",
     "file": "src/server.rs",
-    "line": 875,
+    "line": 885,
     "is_pub": false,
     "is_async": true
   },
@@ -31843,7 +31235,7 @@
     "kind": "Function",
     "name": "github_search",
     "file": "src/server.rs",
-    "line": 906,
+    "line": 916,
     "is_pub": false,
     "is_async": true
   },
@@ -31851,7 +31243,7 @@
     "kind": "Function",
     "name": "github_sync",
     "file": "src/server.rs",
-    "line": 947,
+    "line": 957,
     "is_pub": false,
     "is_async": true
   },

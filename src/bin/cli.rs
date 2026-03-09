@@ -207,6 +207,7 @@ enum TodoCommands {
     /// Examples:
     ///   rustassistant todo work .rustassistant/gameplan.json --batch batch-001 --dry-run
     ///   rustassistant todo work .rustassistant/gameplan.json --batch batch-001
+    ///   rustassistant todo work .rustassistant/gameplan.json --batch batch-001 --auto-sync
     Work {
         /// Path to a GamePlan JSON file (or a single-batch JSON)
         gameplan: String,
@@ -229,6 +230,16 @@ enum TodoCommands {
         /// when you want to review changes manually before checking).
         #[arg(long)]
         no_check: bool,
+
+        /// Automatically run `todo sync` after a successful work + compile-check
+        /// pass, eliminating the manual step 4 invocation.
+        /// The todo.md path defaults to `<repo>/todo.md`.
+        #[arg(long)]
+        auto_sync: bool,
+
+        /// Path to todo.md used by --auto-sync (default: <repo>/todo.md)
+        #[arg(long)]
+        todo_md: Option<String>,
     },
 
     /// STEP 4 — Apply a WorkResult back to todo.md (update status markers)
@@ -485,8 +496,9 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     // Get database URL
-    let database_url =
-        std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:data/rustassistant.db".into());
+    let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+        "postgresql://rustassistant:changeme@localhost:5432/rustassistant.db".into()
+    });
 
     // Initialize database
     let pool = db::init_db(&database_url).await?;
@@ -500,7 +512,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Report { action } => handle_report_command(&pool, action).await?,
         Commands::Next => handle_next(&pool).await?,
         Commands::Stats => handle_stats(&pool).await?,
-        Commands::TestApi => handle_test_api().await?,
+        Commands::TestApi => handle_test_api(&pool).await?,
         Commands::Docs { action } => handle_docs_action(&pool, action).await?,
         Commands::Refactor { action } => handle_refactor_action(&pool, action).await?,
         Commands::Cache { action } => handle_cache_action(action).await?,
@@ -515,7 +527,7 @@ async fn main() -> anyhow::Result<()> {
 // Todo Pipeline Handlers
 // ============================================================================
 
-async fn handle_todo_command(action: TodoCommands, pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
+async fn handle_todo_command(action: TodoCommands, pool: &sqlx::PgPool) -> anyhow::Result<()> {
     match action {
         TodoCommands::Scan {
             repo,
@@ -543,7 +555,14 @@ async fn handle_todo_command(action: TodoCommands, pool: &sqlx::SqlitePool) -> a
             dry_run,
             repo,
             no_check,
-        } => handle_todo_work(gameplan, batch, dry_run, no_check, repo, pool).await,
+            auto_sync,
+            todo_md,
+        } => {
+            handle_todo_work(
+                gameplan, batch, dry_run, no_check, auto_sync, todo_md, repo, pool,
+            )
+            .await
+        }
 
         TodoCommands::Sync {
             todo_md,
@@ -699,7 +718,7 @@ async fn handle_todo_scaffold(
     dry_run: bool,
     overwrite: bool,
     output: Option<String>,
-    pool: &sqlx::SqlitePool,
+    pool: &sqlx::PgPool,
 ) -> anyhow::Result<()> {
     let repo_path = std::path::Path::new(&repo)
         .canonicalize()
@@ -754,7 +773,7 @@ async fn handle_todo_plan(
     todo_md: String,
     context: Option<String>,
     output: Option<String>,
-    pool: &sqlx::SqlitePool,
+    pool: &sqlx::PgPool,
 ) -> anyhow::Result<()> {
     let todo_path = std::path::PathBuf::from(&todo_md);
     let source_root = context.as_deref().map(std::path::Path::new);
@@ -816,8 +835,10 @@ async fn handle_todo_work(
     batch: Option<String>,
     dry_run: bool,
     no_check: bool,
+    auto_sync: bool,
+    auto_sync_todo_md: Option<String>,
     repo: String,
-    pool: &sqlx::SqlitePool,
+    pool: &sqlx::PgPool,
 ) -> anyhow::Result<()> {
     let repo_path = std::path::Path::new(&repo)
         .canonicalize()
@@ -1029,6 +1050,54 @@ async fn handle_todo_work(
             );
         }
 
+        // ------------------------------------------------------------------
+        // Auto-sync: automatically run `todo sync` after a successful work
+        // + compile-check pass so the caller doesn't need to invoke step 4
+        // manually.  Only runs when --auto-sync is set and not in dry-run.
+        // ------------------------------------------------------------------
+        if auto_sync && !dry_run && result.items_succeeded > 0 {
+            let todo_md_path = auto_sync_todo_md
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| repo_path.join("todo.md"));
+
+            if todo_md_path.exists() {
+                eprintln!(
+                    "\n{}  --auto-sync: running `todo sync {} {}`…",
+                    "🔄".bold(),
+                    todo_md_path.display().to_string().cyan(),
+                    result_path_str.green(),
+                );
+
+                match handle_todo_sync(
+                    todo_md_path.to_string_lossy().to_string(),
+                    result_path_str.clone(),
+                    false, // not dry-run
+                    false, // no append-summary (keep it clean)
+                )
+                .await
+                {
+                    Ok(_) => eprintln!("{}  auto-sync complete ✅", "🔄".bold()),
+                    Err(e) => eprintln!(
+                        "{}  auto-sync failed ({}). Run manually: rustassistant todo sync {} {}",
+                        "⚠️ ".bold(),
+                        e,
+                        todo_md_path.display().to_string().cyan(),
+                        result_path_str.green(),
+                    ),
+                }
+            } else {
+                eprintln!(
+                    "{}  --auto-sync: todo.md not found at {} — skipping sync step",
+                    "⚠️ ".bold(),
+                    todo_md_path.display().to_string().yellow(),
+                );
+                eprintln!(
+                    "{}  Pass --todo-md <path> to specify the todo.md location.",
+                    "💡".bold()
+                );
+            }
+        }
+
         // Human-readable summary
         let status_icon = if result.is_fully_successful() {
             "✅".to_string()
@@ -1074,7 +1143,8 @@ async fn handle_todo_work(
                 "ℹ️ ".bold()
             );
             println!("{}", result_json);
-        } else {
+        } else if !auto_sync {
+            // Only show the manual hint when --auto-sync was NOT used.
             eprintln!(
                 "\n{}  Run `rustassistant todo sync {} {}` to update todo.md",
                 "💡".bold(),
@@ -1141,7 +1211,7 @@ async fn handle_todo_sync(
 // Note Handlers
 // ============================================================================
 
-async fn handle_note_action(pool: &sqlx::SqlitePool, action: NoteAction) -> anyhow::Result<()> {
+async fn handle_note_action(pool: &sqlx::PgPool, action: NoteAction) -> anyhow::Result<()> {
     match action {
         NoteAction::Add {
             content,
@@ -1234,7 +1304,7 @@ fn print_note(note: &db::Note) {
 // Repo Handlers
 // ============================================================================
 
-async fn handle_repo_action(pool: &sqlx::SqlitePool, action: RepoAction) -> anyhow::Result<()> {
+async fn handle_repo_action(pool: &sqlx::PgPool, action: RepoAction) -> anyhow::Result<()> {
     match action {
         RepoAction::Add { path, name } => {
             // Expand and canonicalize path
@@ -1369,7 +1439,7 @@ async fn handle_repo_action(pool: &sqlx::SqlitePool, action: RepoAction) -> anyh
 // Task Handlers
 // ============================================================================
 
-async fn handle_task_action(pool: &sqlx::SqlitePool, action: TaskAction) -> anyhow::Result<()> {
+async fn handle_task_action(pool: &sqlx::PgPool, action: TaskAction) -> anyhow::Result<()> {
     match action {
         TaskAction::List {
             limit,
@@ -1456,7 +1526,7 @@ fn print_task(task: &db::Task) {
 // Other Handlers
 // ============================================================================
 
-async fn handle_next(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
+async fn handle_next(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     match get_next_task(pool).await? {
         Some(task) => {
             println!("🎯 Next recommended task:\n");
@@ -1475,7 +1545,7 @@ async fn handle_next(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn handle_stats(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
+async fn handle_stats(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     let stats = get_stats(pool).await?;
 
     println!("📊 Rustassistant Statistics\n");
@@ -1488,46 +1558,114 @@ async fn handle_stats(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn handle_test_api() -> anyhow::Result<()> {
+async fn handle_test_api(pool: &sqlx::PgPool) -> anyhow::Result<()> {
+    use rustassistant::db::Database;
+    use rustassistant::grok_client::GrokClient;
+    use std::time::Instant;
+
     println!("🔌 Testing XAI API connection...\n");
 
-    let api_key = std::env::var("XAI_API_KEY");
+    // ── 1. Key presence check ──────────────────────────────────────────────
+    let api_key = std::env::var("XAI_API_KEY").or_else(|_| std::env::var("GROK_API_KEY"));
 
-    match api_key {
-        Ok(key) if !key.is_empty() => {
-            println!("  {} XAI API key found", "✓".green());
+    let key = match api_key {
+        Ok(k) if !k.is_empty() => {
+            println!("  {} XAI_API_KEY found", "✓".green());
             println!(
                 "  {} Key prefix: {}...",
                 "🔑".dimmed(),
-                &key[..12.min(key.len())]
+                &k[..12.min(k.len())]
             );
-
-            // TODO: Actually test the API connection
-            // For now, just check if the key exists
-            println!(
-                "\n  {} API connection test not yet implemented",
-                "⚠".yellow()
-            );
-            println!(
-                "  {} Add XAI client code to test actual connectivity",
-                "ℹ".blue()
-            );
+            k
         }
         _ => {
             println!("  {} XAI_API_KEY not set", "✗".red());
             println!(
                 "\n  Set it in your .env file or environment:\n  export XAI_API_KEY=xai-your-key-here"
             );
+            return Ok(());
+        }
+    };
+
+    // ── 2. Model in use ────────────────────────────────────────────────────
+    let model = std::env::var("XAI_MODEL").unwrap_or_else(|_| "grok-2-latest".to_string());
+    println!("  {} Model: {}", "🤖".dimmed(), model.cyan());
+
+    // ── 3. Build client ────────────────────────────────────────────────────
+    println!("\n  Building GrokClient...");
+    let db = Database::from_pool(pool.clone());
+    let client = GrokClient::new(key, db);
+
+    // ── 4. Ping round-trip ─────────────────────────────────────────────────
+    println!("  Sending ping (\"reply with: ok\")...\n");
+    let start = Instant::now();
+
+    match client
+        .ask_tracked("reply with: ok", None, "test-api-ping")
+        .await
+    {
+        Ok(resp) => {
+            let elapsed_ms = start.elapsed().as_millis();
+
+            println!("  {} API responded successfully", "✓".green());
+            println!(
+                "  {} Reply:      {}",
+                "💬".dimmed(),
+                resp.content.trim().cyan()
+            );
+            println!(
+                "  {} Latency:    {} ms",
+                "⏱".dimmed(),
+                elapsed_ms.to_string().yellow()
+            );
+            println!(
+                "  {} Tokens:     {} prompt + {} completion = {} total",
+                "📊".dimmed(),
+                resp.prompt_tokens,
+                resp.completion_tokens,
+                resp.total_tokens
+            );
+            println!("  {} Est. cost:  ${:.6} USD", "💰".dimmed(), resp.cost_usd);
+            println!(
+                "\n  {} XAI API is reachable and accepting requests.",
+                "🎉".green()
+            );
+        }
+        Err(e) => {
+            let elapsed_ms = start.elapsed().as_millis();
+            println!("  {} API call failed after {} ms", "✗".red(), elapsed_ms);
+            println!("  {} Error: {}", "⚠".yellow(), e);
+
+            // Give a hint for the most common failure modes.
+            let err_str = e.to_string().to_lowercase();
+            if err_str.contains("401")
+                || err_str.contains("unauthorized")
+                || err_str.contains("invalid")
+            {
+                println!(
+                    "\n  {} Your API key was rejected — check that XAI_API_KEY is correct.",
+                    "ℹ".blue()
+                );
+            } else if err_str.contains("429") || err_str.contains("rate") {
+                println!(
+                    "\n  {} Rate limit hit — wait a moment and try again.",
+                    "ℹ".blue()
+                );
+            } else if err_str.contains("timeout") || err_str.contains("connect") {
+                println!(
+                    "\n  {} Network error — check connectivity to api.x.ai.",
+                    "ℹ".blue()
+                );
+            }
+
+            return Err(e);
         }
     }
 
     Ok(())
 }
 
-async fn handle_refactor_action(
-    pool: &sqlx::SqlitePool,
-    action: RefactorAction,
-) -> anyhow::Result<()> {
+async fn handle_refactor_action(pool: &sqlx::PgPool, action: RefactorAction) -> anyhow::Result<()> {
     use rustassistant::db::Database;
     use rustassistant::refactor_assistant::{RefactorAssistant, SmellSeverity};
 
@@ -1699,7 +1837,7 @@ async fn handle_refactor_action(
     Ok(())
 }
 
-async fn handle_docs_action(pool: &sqlx::SqlitePool, action: DocsAction) -> anyhow::Result<()> {
+async fn handle_docs_action(pool: &sqlx::PgPool, action: DocsAction) -> anyhow::Result<()> {
     use rustassistant::db::Database;
     use rustassistant::doc_generator::DocGenerator;
 

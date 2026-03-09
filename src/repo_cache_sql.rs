@@ -64,7 +64,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info};
 
@@ -83,7 +83,7 @@ pub struct CacheSetParams<'a> {
     pub result: serde_json::Value,
     pub tokens_used: Option<usize>,
     pub prompt_hash: Option<&'a str>,
-    pub schema_version: Option<u32>,
+    pub schema_version: Option<i32>,
 }
 
 /// Cache entry stored in database
@@ -98,7 +98,7 @@ pub struct CacheEntry {
     pub provider: String,
     pub model: String,
     pub prompt_hash: String,
-    pub schema_version: u32,
+    pub schema_version: i32,
     pub result_json: String, // Compressed
     pub tokens_used: Option<i64>,
     pub file_size: i64,
@@ -155,7 +155,7 @@ pub enum EvictionPolicy {
 
 /// SQLite-based repository cache
 pub struct RepoCacheSql {
-    pub pool: SqlitePool,
+    pub pool: PgPool,
 }
 
 impl RepoCacheSql {
@@ -236,7 +236,7 @@ impl RepoCacheSql {
         }
 
         let database_url = format!("sqlite:{}?mode=rwc", path.display());
-        let pool = SqlitePool::connect(&database_url)
+        let pool = PgPool::connect(&database_url)
             .await
             .context("Failed to connect to cache database")?;
 
@@ -328,7 +328,7 @@ impl RepoCacheSql {
         file_hash: &str,
         model: &str,
         prompt_hash: &str,
-        schema_version: u32,
+        schema_version: i32,
     ) -> String {
         let combined = format!("{}:{}:{}:{}", file_hash, model, prompt_hash, schema_version);
         let mut hasher = Sha256::new();
@@ -361,7 +361,7 @@ impl RepoCacheSql {
         _provider: &str,
         model: &str,
         prompt_hash: Option<&str>,
-        schema_version: Option<u32>,
+        schema_version: Option<i32>,
     ) -> Result<Option<serde_json::Value>> {
         let file_hash = Self::hash_content(content);
         let prompt_hash = prompt_hash
@@ -372,7 +372,7 @@ impl RepoCacheSql {
 
         let result = sqlx::query_as::<_, (Vec<u8>,)>(
             r#"
-            SELECT result_blob FROM cache_entries WHERE cache_key = ?
+            SELECT result_blob FROM cache_entries WHERE cache_key = $1
             "#,
         )
         .bind(&cache_key)
@@ -385,7 +385,7 @@ impl RepoCacheSql {
                 r#"
                 UPDATE cache_entries
                 SET last_accessed = datetime('now'), access_count = access_count + 1
-                WHERE cache_key = ?
+                WHERE cache_key = $1
                 "#,
             )
             .bind(&cache_key)
@@ -439,7 +439,7 @@ impl RepoCacheSql {
             INSERT OR REPLACE INTO cache_entries
             (cache_type, repo_path, file_path, file_hash, cache_key, provider, model,
              prompt_hash, schema_version, result_blob, tokens_used, file_size)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             "#,
         )
         .bind(params.cache_type.subdirectory())
@@ -477,7 +477,7 @@ impl RepoCacheSql {
         provider: &str,
         model: &str,
         prompt_hash: &str,
-        schema_version: u32,
+        schema_version: i32,
         result: serde_json::Value,
         tokens_used: Option<usize>,
         file_size: usize,
@@ -489,7 +489,7 @@ impl RepoCacheSql {
             INSERT OR REPLACE INTO cache_entries
             (cache_type, repo_path, file_path, file_hash, cache_key, provider, model,
              prompt_hash, schema_version, result_blob, tokens_used, file_size)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             "#,
         )
         .bind(cache_type.subdirectory())
@@ -519,7 +519,7 @@ impl RepoCacheSql {
     pub async fn clear_type(&self, cache_type: crate::repo_cache::CacheType) -> Result<u64> {
         let result = sqlx::query(
             r#"
-            DELETE FROM cache_entries WHERE cache_type = ?
+            DELETE FROM cache_entries WHERE cache_type = $1
             "#,
         )
         .bind(cache_type.subdirectory())
@@ -693,14 +693,14 @@ impl RepoCacheSql {
         for (id,) in ids {
             let size: (i64,) = sqlx::query_as(
                 r#"
-                SELECT LENGTH(result_blob) FROM cache_entries WHERE id = ?
+                SELECT LENGTH(result_blob) FROM cache_entries WHERE id = $1
                 "#,
             )
             .bind(id)
             .fetch_one(&self.pool)
             .await?;
 
-            sqlx::query("DELETE FROM cache_entries WHERE id = ?")
+            sqlx::query("DELETE FROM cache_entries WHERE id = $1")
                 .bind(id)
                 .execute(&self.pool)
                 .await?;
@@ -731,7 +731,7 @@ impl RepoCacheSql {
                 String,
                 String,
                 String,
-                u32,
+                i32,
                 Vec<u8>,
                 Option<i64>,
                 i64,
@@ -746,7 +746,7 @@ impl RepoCacheSql {
                 provider, model, prompt_hash, schema_version, result_blob,
                 tokens_used, file_size, created_at, last_accessed, access_count
             FROM cache_entries
-            WHERE repo_path = ?
+            WHERE repo_path = $1
             ORDER BY created_at DESC
             "#,
         )
@@ -800,7 +800,7 @@ impl RepoCacheSql {
                 String,
                 String,
                 String,
-                u32,
+                i32,
                 Vec<u8>,
                 Option<i64>,
                 i64,

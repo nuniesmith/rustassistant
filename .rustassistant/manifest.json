@@ -3,9 +3,9 @@
   "name": "rustassistant",
   "remote_url": null,
   "branch": "main",
-  "synced_at": 1772940807,
-  "file_count": 293,
-  "rust_file_count": 139,
+  "synced_at": 1773069673,
+  "file_count": 286,
+  "rust_file_count": 135,
   "cargo_crate_name": "rustassistant",
   "rustassistant_version": "0.1.0"
 }

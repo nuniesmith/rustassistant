@@ -16,12 +16,12 @@
 //!
 //! ```rust,no_run
 //! use rustassistant::github::{GitHubClient, SyncEngine};
-//! use sqlx::SqlitePool;
+//! use sqlx::PgPool;
 //!
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
 //!     let client = GitHubClient::new("ghp_token")?;
-//!     let pool = SqlitePool::connect("sqlite:data.db").await?;
+//!     let pool = PgPool::connect(&std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgresql://rustassistant:changeme@localhost:5432/rustassistant".to_string())).await?;
 //!
 //!     let sync = SyncEngine::new(client, pool);
 //!
@@ -40,7 +40,7 @@
 use crate::github::{client::GitHubClient, models::*, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{Row, SqlitePool};
+use sqlx::{PgPool, Row};
 use tracing::{debug, error, info, warn};
 
 // ============================================================================
@@ -190,12 +190,12 @@ impl SyncResult {
 /// GitHub synchronization engine
 pub struct SyncEngine {
     client: GitHubClient,
-    pool: SqlitePool,
+    pool: PgPool,
 }
 
 impl SyncEngine {
     /// Create new sync engine
-    pub fn new(client: GitHubClient, pool: SqlitePool) -> Self {
+    pub fn new(client: GitHubClient, pool: PgPool) -> Self {
         Self { client, pool }
     }
 
@@ -593,7 +593,7 @@ impl SyncEngine {
         let topics_json = serde_json::to_string(&repo.topics)?;
         let now = Utc::now().timestamp();
 
-        let existing = sqlx::query("SELECT id FROM github_repositories WHERE id = ?")
+        let existing = sqlx::query("SELECT id FROM github_repositories WHERE id = $1")
             .bind(repo.id)
             .fetch_optional(&self.pool)
             .await?;
@@ -607,7 +607,7 @@ impl SyncEngine {
                 html_url, clone_url, ssh_url, language, private, fork, archived,
                 stargazers_count, watchers_count, forks_count, open_issues_count,
                 topics, default_branch, created_at, updated_at, pushed_at, last_synced_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
             ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 description = excluded.description,
@@ -730,7 +730,7 @@ impl SyncEngine {
                 id, node_id, repo_id, number, title, body, state, user_login,
                 labels, assignees, milestone_id, comments, locked, html_url,
                 created_at, updated_at, closed_at, is_pull_request, last_synced_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
             ON CONFLICT(repo_id, number) DO UPDATE SET
                 title = excluded.title,
                 body = excluded.body,
@@ -808,7 +808,7 @@ impl SyncEngine {
                 user_login, head_ref, head_sha, base_ref, base_sha, labels,
                 commits, additions, deletions, changed_files, html_url,
                 created_at, updated_at, closed_at, merged_at, last_synced_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
             ON CONFLICT(repo_id, number) DO UPDATE SET
                 title = excluded.title,
                 body = excluded.body,
@@ -892,7 +892,7 @@ impl SyncEngine {
                 sha, node_id, repo_id, author_name, author_email, author_date,
                 committer_name, committer_email, committer_date, message, additions, deletions,
                 total_changes, html_url, created_at, last_synced_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
             ON CONFLICT(sha) DO UPDATE SET
                 last_synced_at = excluded.last_synced_at
             "#,

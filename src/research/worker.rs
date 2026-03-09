@@ -4,13 +4,17 @@
 //! a subtopic and reports findings back for aggregation.
 
 use super::{save_worker_result, ResearchRequest, WorkerResult};
+use crate::db::get_all_embeddings;
+use crate::embeddings::{EmbeddingConfig, EmbeddingGenerator};
 use crate::llm::GrokClient;
+use crate::vector_index::{IndexConfig, VectorIndex};
 use anyhow::Result;
 use futures::future::join_all;
-use sqlx::SqlitePool;
+use once_cell::sync::OnceCell;
+use sqlx::PgPool;
 use std::sync::Arc;
-use tokio::sync::Semaphore;
-use tracing::{error, info};
+use tokio::sync::{Mutex, Semaphore};
+use tracing::{error, info, warn};
 
 // ============================================================================
 // Worker Configuration
@@ -44,14 +48,14 @@ impl Default for WorkerConfig {
 // ============================================================================
 
 pub struct ResearchOrchestrator {
-    pool: SqlitePool,
+    pool: PgPool,
     llm: Arc<GrokClient>,
     config: WorkerConfig,
     semaphore: Arc<Semaphore>,
 }
 
 impl ResearchOrchestrator {
-    pub fn new(pool: SqlitePool, llm: GrokClient, config: WorkerConfig) -> Self {
+    pub fn new(pool: PgPool, llm: GrokClient, config: WorkerConfig) -> Self {
         let semaphore = Arc::new(Semaphore::new(config.max_concurrent));
         Self {
             pool,
@@ -253,7 +257,7 @@ Be thorough but focused on this specific subtopic."#,
 }
 
 // ============================================================================
-// RAG Integration (for future enhancement)
+// RAG Integration — VectorIndex + fastembed
 // ============================================================================
 
 pub struct RagContext {
@@ -267,19 +271,196 @@ pub struct RagResult {
     pub score: f32,
 }
 
-/// Search RAG for relevant context before LLM call
-pub async fn search_rag_context(
-    _pool: &SqlitePool,
-    query: &str,
-    _limit: usize,
-) -> Result<Vec<RagResult>> {
-    // TODO: Integrate with LanceDB vector search
-    // For now, return empty - this is where you'd query your embeddings
-    info!("RAG search for: {}", query);
-    Ok(vec![])
+// ---------------------------------------------------------------------------
+// Global in-process vector index.
+// Built lazily on first RAG query; refreshed via `refresh_rag_index`.
+// Wrapped in a Mutex so we can rebuild it without restarting the server.
+// ---------------------------------------------------------------------------
+
+struct RagIndex {
+    index: VectorIndex,
+    /// chunk_id → (content snippet, source label)
+    metadata: std::collections::HashMap<String, (String, String)>,
 }
 
-/// Enhance prompt with RAG context
+static RAG_INDEX: OnceCell<Arc<Mutex<Option<RagIndex>>>> = OnceCell::new();
+
+fn rag_index_cell() -> &'static Arc<Mutex<Option<RagIndex>>> {
+    RAG_INDEX.get_or_init(|| Arc::new(Mutex::new(None)))
+}
+
+/// (Re-)build the in-process HNSW index from all embeddings stored in Postgres.
+///
+/// Call this:
+/// - Once at server startup (after `init_db`)
+/// - After every `DocumentIndexer::index_document` completes
+/// - After every `RepoSyncService::sync` that upserts new chunk embeddings
+pub async fn refresh_rag_index(pool: &PgPool) -> Result<usize> {
+    let embeddings = get_all_embeddings(pool).await?;
+    if embeddings.is_empty() {
+        info!("RAG index: no embeddings in DB yet — index will be empty");
+        let mut guard = rag_index_cell().lock().await;
+        *guard = Some(RagIndex {
+            index: VectorIndex::new(IndexConfig::default()),
+            metadata: std::collections::HashMap::new(),
+        });
+        return Ok(0);
+    }
+
+    // Infer dimension from first entry (all rows should agree).
+    let dimension = embeddings[0].dimension as usize;
+    let config = IndexConfig {
+        dimension,
+        ..IndexConfig::default()
+    };
+    let mut index = VectorIndex::new(config);
+    let mut metadata = std::collections::HashMap::new();
+
+    let mut loaded = 0usize;
+    for emb in &embeddings {
+        // Parse the JSON-serialised float array stored in the DB.
+        let vector: Vec<f32> = match serde_json::from_str(&emb.embedding) {
+            Ok(v) => v,
+            Err(e) => {
+                warn!(chunk_id = %emb.chunk_id, error = %e, "Skipping malformed embedding");
+                continue;
+            }
+        };
+        if vector.is_empty() || vector.len() != dimension {
+            warn!(
+                chunk_id = %emb.chunk_id,
+                got = vector.len(),
+                expected = dimension,
+                "Skipping embedding with wrong dimension"
+            );
+            continue;
+        }
+
+        if let Err(e) = index.add_vector(emb.chunk_id.clone(), vector) {
+            warn!(chunk_id = %emb.chunk_id, error = %e, "Failed to insert into HNSW index");
+            continue;
+        }
+
+        // Store a short source label for display; content is fetched separately if needed.
+        metadata.insert(
+            emb.chunk_id.clone(),
+            (String::new(), format!("chunk:{}", emb.chunk_id)),
+        );
+        loaded += 1;
+    }
+
+    info!(loaded, total = embeddings.len(), "RAG index rebuilt");
+
+    let mut guard = rag_index_cell().lock().await;
+    *guard = Some(RagIndex { index, metadata });
+
+    Ok(loaded)
+}
+
+/// Search the RAG index for chunks semantically close to `query`.
+///
+/// Falls back gracefully when the index is empty or the embedding model
+/// has not initialised yet (returns an empty vec rather than an error).
+pub async fn search_rag_context(
+    pool: &PgPool,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<RagResult>> {
+    // Build the index on first call if it hasn't been populated yet.
+    {
+        let guard = rag_index_cell().lock().await;
+        if guard.is_none() {
+            drop(guard);
+            if let Err(e) = refresh_rag_index(pool).await {
+                warn!(error = %e, "RAG index build failed — returning empty results");
+                return Ok(vec![]);
+            }
+        }
+    }
+
+    // Embed the query with the same model used at index time.
+    let generator = match EmbeddingGenerator::new(EmbeddingConfig::default()) {
+        Ok(g) => g,
+        Err(e) => {
+            warn!(error = %e, "Could not initialise embedding model for RAG query");
+            return Ok(vec![]);
+        }
+    };
+
+    let query_embedding = match generator.embed(query).await {
+        Ok(e) => e,
+        Err(e) => {
+            warn!(error = %e, "Failed to embed RAG query");
+            return Ok(vec![]);
+        }
+    };
+
+    // Search the HNSW index.
+    let search_results = {
+        let guard = rag_index_cell().lock().await;
+        match guard.as_ref() {
+            Some(rag) => {
+                if rag.index.is_empty() {
+                    return Ok(vec![]);
+                }
+                rag.index.search(&query_embedding.vector, limit)?
+            }
+            None => return Ok(vec![]),
+        }
+    };
+
+    // Fetch actual chunk content from DB for the top hits.
+    let mut results = Vec::with_capacity(search_results.len());
+    for hit in search_results {
+        // Pull chunk content from DB.
+        let row = sqlx::query(
+            "SELECT dc.content, d.title, d.source_url
+             FROM document_chunks dc
+             JOIN documents d ON d.id = dc.document_id
+             WHERE dc.id = $1",
+        )
+        .bind(&hit.id)
+        .fetch_optional(pool)
+        .await;
+
+        let (content, source) = match row {
+            Ok(Some(r)) => {
+                use sqlx::Row;
+                let content: String = r.get("content");
+                let title: String = r.get("title");
+                let url: Option<String> = r.get("source_url");
+                let source = url.unwrap_or(title);
+                (content, source)
+            }
+            _ => {
+                // Fall back to the stub metadata we stored at index time.
+                let guard = rag_index_cell().lock().await;
+                let (_, src) = guard
+                    .as_ref()
+                    .and_then(|rag| rag.metadata.get(&hit.id))
+                    .cloned()
+                    .unwrap_or_default();
+                (format!("[chunk {}]", hit.id), src)
+            }
+        };
+
+        results.push(RagResult {
+            content,
+            source,
+            score: hit.score,
+        });
+    }
+
+    info!(
+        query_len = query.len(),
+        returned = results.len(),
+        "RAG search complete"
+    );
+
+    Ok(results)
+}
+
+/// Enhance a prompt with RAG context snippets prepended.
 pub fn enhance_prompt_with_rag(prompt: &str, rag_results: &[RagResult]) -> String {
     if rag_results.is_empty() {
         return prompt.to_string();
@@ -288,7 +469,15 @@ pub fn enhance_prompt_with_rag(prompt: &str, rag_results: &[RagResult]) -> Strin
     let context: String = rag_results
         .iter()
         .enumerate()
-        .map(|(i, r)| format!("[{}] {}\nSource: {}", i + 1, r.content, r.source))
+        .map(|(i, r)| {
+            format!(
+                "[{}] (score {:.2}) {}\nSource: {}",
+                i + 1,
+                r.score,
+                r.content,
+                r.source
+            )
+        })
         .collect::<Vec<_>>()
         .join("\n\n");
 

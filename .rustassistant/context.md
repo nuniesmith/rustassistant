@@ -2,15 +2,15 @@
 
 **Crate:** rustassistant
 **Branch:** main
-**Synced:** 1772940807
-**Files:** 293 total, 139 Rust
+**Synced:** 1773069673
+**Files:** 286 total, 135 Rust
 
 ## Annotations
-- 72 total TODOs (7 STUBs, 8 FIXMEs)
+- 41 total TODOs (0 STUBs, 8 FIXMEs)
 
 ## Symbols
-- 1244 public functions
-- 664 structs
+- 1225 public functions
+- 653 structs
 
 ## Remote
 not set

@@ -9,7 +9,7 @@
 
 use axum::{routing::get, Router};
 use rustassistant::{api::ApiConfig, init_db};
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use std::net::SocketAddr;
 use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -30,11 +30,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("🚀 Starting RAG API Server");
 
     // Database setup
-    let database_url =
-        std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:rustassistant.db".to_string());
+    let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+        "postgresql://rustassistant:changeme@localhost:5432/rustassistant".to_string()
+    });
 
     tracing::info!("📦 Connecting to database: {}", database_url);
-    let db_pool = SqlitePool::connect(&database_url).await?;
+    let db_pool = PgPool::connect(&database_url).await?;
 
     // Run migrations
     tracing::info!("🔧 Running database migrations");
@@ -233,7 +234,7 @@ fn print_usage_examples(host: &str, port: u16) {
     );
 
     println!("\n🔧 Environment Variables:");
-    println!("  DATABASE_URL      - Database connection string (default: sqlite:rustassistant.db)");
+    println!("  DATABASE_URL      - Postgres connection string (default: postgresql://rustassistant:changeme@localhost:5432/rustassistant)");
     println!("  HOST              - Server host (default: 0.0.0.0)");
     println!("  PORT              - Server port (default: 3000)");
     println!("  API_KEY           - API key for authentication (optional)");

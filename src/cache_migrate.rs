@@ -321,7 +321,7 @@ impl CacheMigrator {
                 &entry.provider,
                 &entry.model,
                 &prompt_hash,
-                entry.schema_version,
+                entry.schema_version as i32,
                 entry.result.clone(),
                 entry.tokens_used,
                 entry.file_size,

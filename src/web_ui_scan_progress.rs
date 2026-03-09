@@ -126,7 +126,7 @@ struct ScanRepoInfo {
     api_calls: i64,
 }
 
-async fn get_scan_repos(pool: &sqlx::SqlitePool) -> Vec<ScanRepoInfo> {
+async fn get_scan_repos(pool: &sqlx::PgPool) -> Vec<ScanRepoInfo> {
     // Try with new columns first, fall back to without them
     #[allow(clippy::type_complexity)]
     let rows: Vec<(
@@ -585,7 +585,7 @@ pub async fn scan_repo_status_handler(
             COALESCE(scan_cost_accumulated, 0.0),
             COALESCE(scan_cache_hits, 0),
             COALESCE(scan_api_calls, 0)
-        FROM repositories WHERE id = ?"#,
+        FROM repositories WHERE id = $1"#,
     )
     .bind(&repo_id)
     .fetch_optional(pool)
@@ -712,7 +712,7 @@ pub async fn scan_inline_status_handler(
             COALESCE(scan_files_processed, 0),
             COALESCE(scan_files_total, 0),
             scan_current_file
-        FROM repositories WHERE id = ?"#,
+        FROM repositories WHERE id = $1"#,
     )
     .bind(&repo_id)
     .fetch_optional(pool)

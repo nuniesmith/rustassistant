@@ -11,7 +11,7 @@ use anyhow::Result;
 use chrono::Utc;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use std::path::{Path, PathBuf};
 use tracing::{debug, error, info};
 use walkdir::WalkDir;
@@ -88,7 +88,7 @@ pub async fn fetch_user_repos(token: Option<&str>) -> Result<Vec<GitHubRepo>> {
 
     loop {
         let url = format!(
-            "https://api.github.com/users/{}/repos?per_page=100&page={}&sort=updated",
+            "https://api.github.com/users/{}/repos$1per_page=100&page={}&sort=updated",
             GITHUB_USERNAME, page
         );
 
@@ -130,7 +130,7 @@ pub async fn fetch_user_repos(token: Option<&str>) -> Result<Vec<GitHubRepo>> {
 }
 
 /// Sync GitHub repos to local database
-pub async fn sync_repos_to_db(pool: &SqlitePool, token: Option<&str>) -> Result<Vec<String>> {
+pub async fn sync_repos_to_db(pool: &PgPool, token: Option<&str>) -> Result<Vec<String>> {
     let github_repos = fetch_user_repos(token).await?;
     let now = Utc::now().timestamp();
     let mut repo_ids = Vec::new();
@@ -146,7 +146,7 @@ pub async fn sync_repos_to_db(pool: &SqlitePool, token: Option<&str>) -> Result<
         sqlx::query(
             r#"
             INSERT INTO repositories (id, url, name, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?)
+            VALUES ($1, $2, $3, $4, $5)
             ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 url = excluded.url,
@@ -165,7 +165,7 @@ pub async fn sync_repos_to_db(pool: &SqlitePool, token: Option<&str>) -> Result<
         sqlx::query(
             r#"
             INSERT OR IGNORE INTO repo_cache (id, repo_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?)
+            VALUES ($1, $2, $3, $4)
         "#,
         )
         .bind(format!("cache-{}", id))
@@ -275,7 +275,7 @@ fn should_skip_entry(entry: &walkdir::DirEntry) -> bool {
 
 /// Scan a repo and save TODOs to database + queue
 pub async fn scan_repo_for_todos(
-    pool: &SqlitePool,
+    pool: &PgPool,
     repo_id: &str,
     repo_path: &Path,
 ) -> Result<ScanResult> {
@@ -283,7 +283,7 @@ pub async fn scan_repo_for_todos(
     let now = Utc::now().timestamp();
 
     // Mark all existing TODOs for this repo as potentially inactive
-    sqlx::query("UPDATE todo_items SET is_active = 0 WHERE repo_id = ?")
+    sqlx::query("UPDATE todo_items SET is_active = 0 WHERE repo_id = $1")
         .bind(repo_id)
         .execute(pool)
         .await?;
@@ -302,7 +302,7 @@ pub async fn scan_repo_for_todos(
 
         // Check if this TODO already exists
         let existing: Option<(String,)> =
-            sqlx::query_as("SELECT id FROM todo_items WHERE repo_id = ? AND content_hash = ?")
+            sqlx::query_as("SELECT id FROM todo_items WHERE repo_id = $1 AND content_hash = $2")
                 .bind(repo_id)
                 .bind(&content_hash)
                 .fetch_optional(pool)
@@ -310,7 +310,7 @@ pub async fn scan_repo_for_todos(
 
         if let Some((id,)) = existing {
             // Mark as still active
-            sqlx::query("UPDATE todo_items SET is_active = 1, updated_at = ? WHERE id = ?")
+            sqlx::query("UPDATE todo_items SET is_active = 1, updated_at = $1 WHERE id = $2")
                 .bind(now)
                 .bind(&id)
                 .execute(pool)
@@ -323,7 +323,7 @@ pub async fn scan_repo_for_todos(
             sqlx::query(r#"
                 INSERT INTO todo_items
                 (id, repo_id, file_path, line_number, content, todo_type, content_hash, is_active, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8, $9)
             "#)
             .bind(&id)
             .bind(repo_id)
@@ -353,20 +353,20 @@ pub async fn scan_repo_for_todos(
 
     // Count removed TODOs (still inactive after scan)
     let removed: (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM todo_items WHERE repo_id = ? AND is_active = 0")
+        sqlx::query_as("SELECT COUNT(*) FROM todo_items WHERE repo_id = $1 AND is_active = 0")
             .bind(repo_id)
             .fetch_one(pool)
             .await?;
 
     // Update repo cache
     let active_count: (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM todo_items WHERE repo_id = ? AND is_active = 1")
+        sqlx::query_as("SELECT COUNT(*) FROM todo_items WHERE repo_id = $1 AND is_active = 1")
             .bind(repo_id)
             .fetch_one(pool)
             .await?;
 
     sqlx::query(
-        "UPDATE repo_cache SET total_todos = ?, active_todos = ?, last_scan_at = ?, updated_at = ? WHERE repo_id = ?"
+        "UPDATE repo_cache SET total_todos = $1, active_todos = $2, last_scan_at = $3, updated_at = $4 WHERE repo_id = $5"
     )
     .bind(detected.len() as i32)
     .bind(active_count.0 as i32)
@@ -398,14 +398,14 @@ pub struct ScanResult {
 
 /// Get files that haven't been analyzed yet
 pub async fn get_unanalyzed_files(
-    pool: &SqlitePool,
+    pool: &PgPool,
     repo_id: &str,
     repo_path: &Path,
     limit: i32,
 ) -> Result<Vec<PathBuf>> {
     // Get all analyzed file hashes for this repo
     let analyzed: Vec<(String,)> =
-        sqlx::query_as("SELECT content_hash FROM file_analysis WHERE repo_id = ?")
+        sqlx::query_as("SELECT content_hash FROM file_analysis WHERE repo_id = $1")
             .bind(repo_id)
             .fetch_all(pool)
             .await?;
@@ -460,7 +460,7 @@ pub async fn get_unanalyzed_files(
 
 /// Record file analysis result
 pub async fn save_file_analysis(
-    pool: &SqlitePool,
+    pool: &PgPool,
     repo_id: &str,
     file_path: &str,
     content: &[u8],
@@ -482,7 +482,7 @@ pub async fn save_file_analysis(
         (id, repo_id, file_path, extension, content_hash, size_bytes, line_count,
          summary, purpose, language, complexity_score, quality_score, security_notes,
          improvements, dependencies, exports, tags, needs_attention, analyzed_at, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
         ON CONFLICT(repo_id, file_path) DO UPDATE SET
             content_hash = excluded.content_hash,
             size_bytes = excluded.size_bytes,
@@ -527,7 +527,7 @@ pub async fn save_file_analysis(
 
     // Update repo cache analyzed count
     sqlx::query(
-        "UPDATE repo_cache SET analyzed_files = analyzed_files + 1, updated_at = ? WHERE repo_id = ?"
+        "UPDATE repo_cache SET analyzed_files = analyzed_files + 1, updated_at = $1 WHERE repo_id = $2"
     )
     .bind(now)
     .bind(repo_id)
@@ -643,7 +643,7 @@ pub fn build_dir_tree(root: &Path, max_depth: usize) -> Result<TreeNode> {
 }
 
 /// Save directory tree to repo cache
-pub async fn save_dir_tree(pool: &SqlitePool, repo_id: &str, tree: &TreeNode) -> Result<()> {
+pub async fn save_dir_tree(pool: &PgPool, repo_id: &str, tree: &TreeNode) -> Result<()> {
     let now = Utc::now().timestamp();
     let tree_json = serde_json::to_string(tree)?;
 
@@ -659,7 +659,7 @@ pub async fn save_dir_tree(pool: &SqlitePool, repo_id: &str, tree: &TreeNode) ->
     let total_files = count_files(tree);
 
     sqlx::query(
-        "UPDATE repo_cache SET dir_tree = ?, total_files = ?, tree_updated_at = ?, updated_at = ? WHERE repo_id = ?"
+        "UPDATE repo_cache SET dir_tree = $1, total_files = $2, tree_updated_at = $3, updated_at = $4 WHERE repo_id = $5"
     )
     .bind(&tree_json)
     .bind(total_files)
@@ -677,9 +677,9 @@ pub async fn save_dir_tree(pool: &SqlitePool, repo_id: &str, tree: &TreeNode) ->
 }
 
 /// Get cached directory tree
-pub async fn get_dir_tree(pool: &SqlitePool, repo_id: &str) -> Result<Option<TreeNode>> {
+pub async fn get_dir_tree(pool: &PgPool, repo_id: &str) -> Result<Option<TreeNode>> {
     let cache: Option<(Option<String>,)> =
-        sqlx::query_as("SELECT dir_tree FROM repo_cache WHERE repo_id = ?")
+        sqlx::query_as("SELECT dir_tree FROM repo_cache WHERE repo_id = $1")
             .bind(repo_id)
             .fetch_optional(pool)
             .await?;

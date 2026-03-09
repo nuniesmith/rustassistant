@@ -35,7 +35,7 @@ use axum::{
 use chrono::{DateTime, TimeZone, Utc};
 use futures::stream::once as stream_once;
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use std::{collections::HashMap, convert::Infallible, path::PathBuf, sync::Arc, time::Duration};
 use tokio::sync::RwLock;
 use tokio_stream::StreamExt as TokioStreamExt;
@@ -49,7 +49,7 @@ use uuid::Uuid;
 /// All mutable runtime state shared across handlers
 #[derive(Clone)]
 pub struct WebState {
-    pub pool: SqlitePool,
+    pub pool: PgPool,
     pub git: Arc<GitManager>,
     pub workspace: PathBuf,
     /// In-memory job store (keyed by job UUID)
@@ -57,7 +57,7 @@ pub struct WebState {
 }
 
 impl WebState {
-    pub fn new(pool: SqlitePool, git: Arc<GitManager>, workspace: PathBuf) -> Self {
+    pub fn new(pool: PgPool, git: Arc<GitManager>, workspace: PathBuf) -> Self {
         Self {
             pool,
             git,

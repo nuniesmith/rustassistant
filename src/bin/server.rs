@@ -15,7 +15,7 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -45,7 +45,7 @@ use rustassistant::web_ui_scan_progress::create_scan_progress_router;
 
 #[derive(Clone)]
 struct AppState {
-    db: SqlitePool,
+    db: PgPool,
 }
 
 // ============================================================================
@@ -192,7 +192,7 @@ async fn root_handler() -> impl IntoResponse {
             <strong>GET</strong> <code>/api/notes</code> - List notes
         </div>
         <div class="endpoint">
-            <strong>GET</strong> <code>/api/notes/search?q=query</code> - Search notes
+            <strong>GET</strong> <code>/api/notes/search$1q=query</code> - Search notes
         </div>
         <div class="endpoint">
             <strong>GET</strong> <code>/api/notes/:id</code> - Get note
@@ -394,7 +394,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Get configuration
     let database_url =
-        std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:data/rustassistant.db".into());
+        std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgresql://rustassistant:changeme@localhost:5432/rustassistant.db".into());
     let host = std::env::var("HOST").unwrap_or_else(|_| "127.0.0.1".into());
     let port = std::env::var("PORT").unwrap_or_else(|_| "3000".into());
     let repos_dir = std::env::var("REPOS_DIR").unwrap_or_else(|_| "/app/repos".into());
@@ -443,7 +443,7 @@ async fn main() -> anyhow::Result<()> {
         match std::env::var("XAI_API_KEY") {
             Ok(api_key) if !api_key.is_empty() => {
                 let db_path = database_url
-                    .trim_start_matches("sqlite://")
+                    .trim_start_matches("postgresql://")
                     .trim_start_matches("sqlite:");
                 match db::Database::new(db_path).await {
                     Ok(grok_db) => {

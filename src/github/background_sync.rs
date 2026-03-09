@@ -4,7 +4,7 @@
 //! GitHub data to keep the local database up-to-date.
 
 use super::{GitHubClient, SyncEngine, SyncOptions};
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::interval;
@@ -39,14 +39,14 @@ impl Default for BackgroundSyncConfig {
 
 /// Background sync job manager
 pub struct BackgroundSyncManager {
-    pool: SqlitePool,
+    pool: PgPool,
     client: GitHubClient,
     config: BackgroundSyncConfig,
 }
 
 impl BackgroundSyncManager {
     /// Create a new background sync manager
-    pub fn new(pool: SqlitePool, client: GitHubClient, config: BackgroundSyncConfig) -> Self {
+    pub fn new(pool: PgPool, client: GitHubClient, config: BackgroundSyncConfig) -> Self {
         Self {
             pool,
             client,
@@ -226,7 +226,7 @@ impl BackgroundSyncManager {
 
 /// Start background sync with default configuration
 pub async fn start_background_sync(
-    pool: SqlitePool,
+    pool: PgPool,
     client: GitHubClient,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let config = BackgroundSyncConfig::default();
@@ -236,7 +236,7 @@ pub async fn start_background_sync(
 
 /// Start background sync with custom configuration
 pub async fn start_background_sync_with_config(
-    pool: SqlitePool,
+    pool: PgPool,
     client: GitHubClient,
     config: BackgroundSyncConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {

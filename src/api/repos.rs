@@ -1,6 +1,15 @@
 // src/api/repos.rs
 // Repo management + chat endpoints for RustAssistant
 // TODO: add auth middleware (reuse existing API key layer)
+//
+// RAG pipeline (per-request):
+//   1. classify prompt → task_kind, model target
+//   2. build repo context (tree/todos/symbols) if repo_id provided
+//   3. search RAG index for semantically similar chunks
+//   4. enhance prompt with RAG snippets prepended
+//   5. check Redis/LRU cache (cache key covers rag-enriched prompt)
+//   6. dispatch to Ollama (local) or Grok (remote)
+//   7. cache response fire-and-forget
 
 use axum::{
     extract::{Path, State},
@@ -19,6 +28,7 @@ use crate::cache_layer::{CacheConfig, CacheLayer};
 use crate::model_router::{CompletionRequest, ModelRouter, ModelTarget};
 use crate::ollama_client::OllamaClient;
 use crate::repo_sync::{RegisteredRepo, RepoSyncService, SyncResult};
+use crate::research::worker::{enhance_prompt_with_rag, search_rag_context};
 
 // ---------------------------------------------------------------------------
 // AppState
@@ -328,8 +338,9 @@ async fn handle_chat(
     let effective_repo_id = repo_id_override.or(req.repo_id.clone());
     let bypass_cache = req.no_cache.unwrap_or(false);
 
-    // 1. Classify and route
-    let (task_kind, mut target) = state.model_router.route_prompt(&req.message);
+    // 1. Classify and route — use async LLM classification (Ollama one-shot) with
+    //    keyword fallback so the router gets smarter as the local model warms up.
+    let (task_kind, mut target) = state.model_router.route_prompt_async(&req.message).await;
 
     // Let the caller force remote
     if req.force_remote.unwrap_or(false) {
@@ -352,14 +363,49 @@ async fn handle_chat(
         (None, false)
     };
 
-    // 3. Build completion request
-    let completion_req = CompletionRequest::for_stub(&req.message, repo_context);
+    // 3. RAG search — find semantically similar chunks from the knowledge base
+    //    and prepend them to the user message before building the full prompt.
+    //    We only do this when the index is likely to have relevant content
+    //    (skip for trivial/greeting-style tasks to save latency).
+    let rag_enriched_message = {
+        // Get a pool reference from the sync service's embedded DB if available,
+        // otherwise skip RAG gracefully.
+        let maybe_pool = {
+            let svc = state.sync_service.read().await;
+            svc.db_pool()
+        };
+
+        if let Some(pool) = maybe_pool {
+            match search_rag_context(&pool, &req.message, 4).await {
+                Ok(rag_results) if !rag_results.is_empty() => {
+                    debug!(
+                        hits = rag_results.len(),
+                        "RAG: enriching prompt with {} chunk(s)",
+                        rag_results.len()
+                    );
+                    enhance_prompt_with_rag(&req.message, &rag_results)
+                }
+                Ok(_) => req.message.clone(),
+                Err(e) => {
+                    warn!(error = %e, "RAG search failed — using plain prompt");
+                    req.message.clone()
+                }
+            }
+        } else {
+            req.message.clone()
+        }
+    };
+
+    // 4. Build completion request (uses RAG-enriched message as the user prompt)
+    let completion_req = CompletionRequest::for_stub(&rag_enriched_message, repo_context);
     let final_prompt = completion_req.build_prompt();
 
-    // 4. Build cache key  (SHA-256 of  model_target | prompt | repo_id)
+    // 5. Build cache key  (SHA-256 of  model_target | prompt | repo_id)
+    //    Note: we key on `final_prompt` which already includes RAG context,
+    //    so identical queries with identical RAG results share the same cache slot.
     let cache_key = build_cache_key(&target, &final_prompt, effective_repo_id.as_deref());
 
-    // 5. Check cache
+    // 6. Check cache
     if !bypass_cache {
         match state.cache.get::<CachedChatResponse>(&cache_key).await {
             Ok(Some(cached)) => {
@@ -382,11 +428,11 @@ async fn handle_chat(
         }
     }
 
-    // 6. Dispatch to the appropriate model
+    // 7. Dispatch to the appropriate model
     let (reply, model_used, used_fallback, tokens_used) =
         dispatch_completion(&state, &completion_req, &target).await;
 
-    // 7. Store in cache (fire-and-forget — don't fail the request on cache write error)
+    // 8. Store in cache (fire-and-forget — don't fail the request on cache write error)
     let cache_value = CachedChatResponse {
         reply: reply.clone(),
         model_used: model_used.clone(),

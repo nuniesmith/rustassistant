@@ -41,7 +41,7 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -57,7 +57,7 @@ pub struct AnalyticsConfig {
     pub enabled: bool,
 
     /// Database pool
-    pub db_pool: Option<SqlitePool>,
+    pub db_pool: Option<PgPool>,
 
     /// Retention period in days
     pub retention_days: i64,
@@ -149,7 +149,7 @@ pub struct AnalyticsStats {
 
 pub struct QueryAnalytics {
     config: AnalyticsConfig,
-    db_pool: SqlitePool,
+    db_pool: PgPool,
     memory_cache: Arc<RwLock<MemoryCache>>,
 }
 
@@ -188,7 +188,7 @@ impl QueryAnalytics {
     }
 
     /// Initialize analytics tables
-    async fn init_tables(pool: &SqlitePool) -> Result<()> {
+    async fn init_tables(pool: &PgPool) -> Result<()> {
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS search_analytics (
@@ -255,7 +255,7 @@ impl QueryAnalytics {
         let id = sqlx::query_scalar::<_, i64>(
             r#"
             INSERT INTO search_analytics (query, search_type, result_count, execution_time_ms, user_id, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES ($1, $2, $3, $4, $5, $6)
             RETURNING id
             "#,
         )
@@ -301,7 +301,7 @@ impl QueryAnalytics {
         let id = sqlx::query_scalar::<_, i64>(
             r#"
             INSERT INTO search_analytics (query, search_type, result_count, execution_time_ms, user_id, filters, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING id
             "#,
         )
@@ -334,7 +334,7 @@ impl QueryAnalytics {
             WHERE timestamp > unixepoch('now', '-30 days')
             GROUP BY query
             ORDER BY count DESC
-            LIMIT ?
+            LIMIT $1
             "#,
         )
         .bind(limit)
@@ -349,7 +349,7 @@ impl QueryAnalytics {
                 r#"
                 SELECT DISTINCT search_type
                 FROM search_analytics
-                WHERE query = ?
+                WHERE query = $1
                 "#,
             )
             .bind(&query)
@@ -401,7 +401,7 @@ impl QueryAnalytics {
             GROUP BY sa.query
             HAVING trend > 0
             ORDER BY trend DESC
-            LIMIT ?
+            LIMIT $1
             "#,
         )
         .bind(limit)
@@ -415,7 +415,7 @@ impl QueryAnalytics {
                 r#"
                 SELECT DISTINCT search_type
                 FROM search_analytics
-                WHERE query = ?
+                WHERE query = $1
                 "#,
             )
             .bind(&query)
@@ -445,7 +445,7 @@ impl QueryAnalytics {
                 COUNT(DISTINCT query) as unique_queries,
                 AVG(result_count) as avg_results
             FROM search_analytics
-            WHERE user_id = ?
+            WHERE user_id = $1
             "#,
         )
         .bind(user_id)
@@ -463,7 +463,7 @@ impl QueryAnalytics {
             r#"
             SELECT search_type
             FROM search_analytics
-            WHERE user_id = ?
+            WHERE user_id = $1
             GROUP BY search_type
             ORDER BY COUNT(*) DESC
             LIMIT 1
@@ -478,7 +478,7 @@ impl QueryAnalytics {
             r#"
             SELECT query, COUNT(*) as count
             FROM search_analytics
-            WHERE user_id = ?
+            WHERE user_id = $1
             GROUP BY query
             ORDER BY count DESC
             LIMIT 10
@@ -509,12 +509,12 @@ impl QueryAnalytics {
             r#"
             SELECT
                 datetime(timestamp, 'start of day', printf('+%d hours',
-                    (strftime('%H', timestamp) / ?) * ?)) as bucket,
+                    (strftime('%H', timestamp) / $1) * $2)) as bucket,
                 COUNT(*) as query_count,
                 AVG(execution_time_ms) as avg_time,
                 COUNT(DISTINCT query) as unique_queries
             FROM search_analytics
-            WHERE timestamp BETWEEN ? AND ?
+            WHERE timestamp BETWEEN $3 AND $4
             GROUP BY bucket
             ORDER BY bucket
             "#,
@@ -554,7 +554,7 @@ impl QueryAnalytics {
                 AVG(execution_time_ms) as avg_time,
                 AVG(result_count) as avg_results
             FROM search_analytics
-            WHERE timestamp BETWEEN ? AND ?
+            WHERE timestamp BETWEEN $1 AND $2
             "#,
         )
         .bind(start)
@@ -569,7 +569,7 @@ impl QueryAnalytics {
             r#"
             SELECT search_type, COUNT(*) as count
             FROM search_analytics
-            WHERE timestamp BETWEEN ? AND ?
+            WHERE timestamp BETWEEN $1 AND $2
             GROUP BY search_type
             "#,
         )
@@ -602,7 +602,7 @@ impl QueryAnalytics {
         let result = sqlx::query(
             r#"
             DELETE FROM search_analytics
-            WHERE timestamp < ?
+            WHERE timestamp < $1
             "#,
         )
         .bind(cutoff)
@@ -626,7 +626,7 @@ impl QueryAnalytics {
                 let _ = sqlx::query(
                     r#"
                     DELETE FROM search_analytics
-                    WHERE timestamp < ?
+                    WHERE timestamp < $1
                     "#,
                 )
                 .bind(cutoff)
@@ -646,7 +646,7 @@ impl QueryAnalytics {
             r#"
             SELECT id, query, search_type, result_count, execution_time_ms, user_id, filters, timestamp
             FROM search_analytics
-            WHERE timestamp BETWEEN ? AND ?
+            WHERE timestamp BETWEEN $1 AND $2
             ORDER BY timestamp
             "#,
         )
@@ -691,8 +691,8 @@ impl QueryAnalytics {
 mod tests {
     use super::*;
 
-    async fn setup_test_db() -> SqlitePool {
-        let pool = SqlitePool::connect(":memory:").await.unwrap();
+    async fn setup_test_db() -> PgPool {
+        let pool = PgPool::connect(&std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgresql://rustassistant:changeme@localhost:5432/rustassistant_test".to_string())).await.unwrap();
         QueryAnalytics::init_tables(&pool).await.unwrap();
         pool
     }

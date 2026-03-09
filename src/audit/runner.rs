@@ -129,6 +129,19 @@ impl AuditRunner {
     // Public API
     // -----------------------------------------------------------------------
 
+    /// Run a full audit — requires a `GrokClient`. Use `AuditRunner::with_grok` to get
+    /// `AuditRunnerWithGrok` which has the real implementation.
+    ///
+    /// This stub exists so that callers that only have an `AuditRunner` (no LLM key)
+    /// get a clear error rather than a compile failure.
+    pub async fn run(&self, _request: AuditRequest) -> Result<AuditResponse> {
+        Err(crate::error::AuditError::other(
+            "AuditRunner::run is not yet implemented — use AuditRunner::with_grok(...).run() \
+             to get the full LLM-assisted pipeline, or call run_static_only() for free static analysis."
+                .to_string(),
+        ))
+    }
+
     /// Run only the static analysis stage (no LLM calls, free).
     ///
     /// Useful for the `/api/audit?mode=static` fast path.

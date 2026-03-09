@@ -14,11 +14,11 @@
 //!
 //! ```rust,no_run
 //! use rustassistant::github::{GitHubClient, SyncEngine, search::*};
-//! use sqlx::SqlitePool;
+//! use sqlx::PgPool;
 //!
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
-//!     let pool = SqlitePool::connect("sqlite:data.db").await?;
+//!     let pool = PgPool::connect(&std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgresql://rustassistant:changeme@localhost:5432/rustassistant".to_string())).await?;
 //!     let searcher = GitHubSearcher::new(pool);
 //!
 //!     // Search across all GitHub data
@@ -36,7 +36,7 @@
 use crate::github::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{Row, SqlitePool};
+use sqlx::{PgPool, Row};
 use tracing::{debug, info};
 
 // ============================================================================
@@ -300,12 +300,12 @@ pub struct CommitResult {
 
 /// GitHub search engine
 pub struct GitHubSearcher {
-    pool: SqlitePool,
+    pool: PgPool,
 }
 
 impl GitHubSearcher {
     /// Create new searcher
-    pub fn new(pool: SqlitePool) -> Self {
+    pub fn new(pool: PgPool) -> Self {
         Self { pool }
     }
 
@@ -333,28 +333,30 @@ impl GitHubSearcher {
             "#,
         );
 
-        let mut conditions = Vec::new();
-        let mut bindings: Vec<Box<dyn sqlx::Encode<'_, sqlx::Sqlite> + Send>> = Vec::new();
+        // Build Postgres $N-style bindings using String params
+        let mut string_params: Vec<String> = Vec::new();
+        let mut param_idx: u32 = 1;
 
-        // Text search
+        // Text search — uses iLIKE for case-insensitive matching in Postgres
         if !query.text.is_empty() {
-            conditions.push("(name LIKE ? OR description LIKE ? OR full_name LIKE ?)");
             let pattern = format!("%{}%", query.text);
-            bindings.push(Box::new(pattern.clone()));
-            bindings.push(Box::new(pattern.clone()));
-            bindings.push(Box::new(pattern));
+            sql.push_str(&format!(
+                " AND (name ILIKE ${} OR description ILIKE ${} OR full_name ILIKE ${})",
+                param_idx,
+                param_idx + 1,
+                param_idx + 2
+            ));
+            string_params.push(pattern.clone());
+            string_params.push(pattern.clone());
+            string_params.push(pattern);
+            param_idx += 3;
         }
 
         // Language filter
         if let Some(ref lang) = query.language {
-            conditions.push("language = ?");
-            bindings.push(Box::new(lang.clone()));
-        }
-
-        // Apply conditions
-        for condition in conditions {
-            sql.push_str(" AND ");
-            sql.push_str(condition);
+            sql.push_str(&format!(" AND language = ${}", param_idx));
+            string_params.push(lang.clone());
+            param_idx += 1;
         }
 
         // Sorting
@@ -375,9 +377,14 @@ impl GitHubSearcher {
             sql.push_str(&format!(" LIMIT {}", limit));
         }
 
+        let _ = param_idx; // suppress unused warning
         debug!("Repository search SQL: {}", sql);
 
-        let rows = sqlx::query(&sql).fetch_all(&self.pool).await?;
+        let mut q = sqlx::query(&sql);
+        for p in &string_params {
+            q = q.bind(p.as_str());
+        }
+        let rows = q.fetch_all(&self.pool).await?;
 
         let results = rows
             .into_iter()
@@ -414,9 +421,20 @@ impl GitHubSearcher {
             "#,
         );
 
+        let mut string_params: Vec<String> = Vec::new();
+        let mut param_idx: u32 = 1;
+
         // Text search
         if !query.text.is_empty() {
-            sql.push_str(" AND (i.title LIKE ? OR i.body LIKE ?)");
+            let pattern = format!("%{}%", query.text);
+            sql.push_str(&format!(
+                " AND (i.title ILIKE ${} OR i.body ILIKE ${})",
+                param_idx,
+                param_idx + 1
+            ));
+            string_params.push(pattern.clone());
+            string_params.push(pattern);
+            param_idx += 2;
         }
 
         // State filter
@@ -444,16 +462,14 @@ impl GitHubSearcher {
 
         debug!("Issue search SQL: {}", sql);
 
-        let rows = if !query.text.is_empty() {
-            let pattern = format!("%{}%", query.text);
-            sqlx::query(&sql)
-                .bind(&pattern)
-                .bind(&pattern)
-                .fetch_all(&self.pool)
-                .await?
-        } else {
-            sqlx::query(&sql).fetch_all(&self.pool).await?
-        };
+        let _ = param_idx; // suppress unused warning
+        debug!("Issue search SQL: {}", sql);
+
+        let mut q = sqlx::query(&sql);
+        for p in &string_params {
+            q = q.bind(p.as_str());
+        }
+        let rows = q.fetch_all(&self.pool).await?;
 
         let results = rows
             .into_iter()
@@ -524,8 +540,6 @@ impl GitHubSearcher {
         if let Some(limit) = query.limit {
             sql.push_str(&format!(" LIMIT {}", limit));
         }
-
-        debug!("PR search SQL: {}", sql);
 
         let rows = if !query.text.is_empty() {
             let pattern = format!("%{}%", query.text);

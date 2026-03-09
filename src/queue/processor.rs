@@ -17,7 +17,7 @@ use crate::db::queue::{QueueItem, QueuePriority, QueueSource, QueueStage};
 use anyhow::Result;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{error, info, warn};
@@ -28,7 +28,7 @@ use tracing::{error, info, warn};
 
 /// Add raw content to the queue for processing
 pub async fn enqueue(
-    pool: &SqlitePool,
+    pool: &PgPool,
     content: &str,
     source: QueueSource,
     priority: QueuePriority,
@@ -42,7 +42,7 @@ pub async fn enqueue(
 
     // Check for duplicate
     let existing: Option<(String,)> =
-        sqlx::query_as("SELECT id FROM queue_items WHERE content_hash = ? AND stage != 'archived'")
+        sqlx::query_as("SELECT id FROM queue_items WHERE content_hash = $1 AND stage != 'archived'")
             .bind(&content_hash)
             .fetch_optional(pool)
             .await?;
@@ -60,7 +60,7 @@ pub async fn enqueue(
         INSERT INTO queue_items
         (id, content, stage, source, priority, repo_id, file_path, line_number,
          content_hash, retry_count, created_at, updated_at)
-        VALUES (?, ?, 'inbox', ?, ?, ?, ?, ?, ?, 0, ?, ?)
+        VALUES ($1, $2, 'inbox', $3, $4, $5, $6, $7, $8, 0, $9, $10)
     "#,
     )
     .bind(&id)
@@ -81,8 +81,8 @@ pub async fn enqueue(
 }
 
 /// Get a queue item by ID
-pub async fn get_queue_item(pool: &SqlitePool, id: &str) -> Result<QueueItem> {
-    sqlx::query_as::<_, QueueItem>("SELECT * FROM queue_items WHERE id = ?")
+pub async fn get_queue_item(pool: &PgPool, id: &str) -> Result<QueueItem> {
+    sqlx::query_as::<_, QueueItem>("SELECT * FROM queue_items WHERE id = $1")
         .bind(id)
         .fetch_one(pool)
         .await
@@ -90,7 +90,7 @@ pub async fn get_queue_item(pool: &SqlitePool, id: &str) -> Result<QueueItem> {
 }
 
 /// Move item to next stage
-pub async fn advance_stage(pool: &SqlitePool, id: &str) -> Result<QueueStage> {
+pub async fn advance_stage(pool: &PgPool, id: &str) -> Result<QueueStage> {
     let item = get_queue_item(pool, id).await?;
     let current = parse_stage(&item.stage);
 
@@ -111,7 +111,7 @@ pub async fn advance_stage(pool: &SqlitePool, id: &str) -> Result<QueueStage> {
         None
     };
 
-    sqlx::query("UPDATE queue_items SET stage = ?, updated_at = ?, processed_at = COALESCE(?, processed_at) WHERE id = ?")
+    sqlx::query("UPDATE queue_items SET stage = $1, updated_at = $2, processed_at = COALESCE($3, processed_at) WHERE id = $4")
         .bind(format!("{:?}", next).to_lowercase())
         .bind(now)
         .bind(processed_at)
@@ -124,11 +124,11 @@ pub async fn advance_stage(pool: &SqlitePool, id: &str) -> Result<QueueStage> {
 }
 
 /// Mark item as failed
-pub async fn mark_failed(pool: &SqlitePool, id: &str, error: &str) -> Result<()> {
+pub async fn mark_failed(pool: &PgPool, id: &str, error: &str) -> Result<()> {
     let now = Utc::now().timestamp();
 
     sqlx::query(
-        "UPDATE queue_items SET stage = 'failed', last_error = ?, retry_count = retry_count + 1, updated_at = ? WHERE id = ?"
+        "UPDATE queue_items SET stage = 'failed', last_error = $1, retry_count = retry_count + 1, updated_at = $2 WHERE id = $3"
     )
     .bind(error)
     .bind(now)
@@ -141,15 +141,15 @@ pub async fn mark_failed(pool: &SqlitePool, id: &str, error: &str) -> Result<()>
 }
 
 /// Update item with analysis results
-pub async fn update_analysis(pool: &SqlitePool, id: &str, analysis: &AnalysisResult) -> Result<()> {
+pub async fn update_analysis(pool: &PgPool, id: &str, analysis: &AnalysisResult) -> Result<()> {
     let now = Utc::now().timestamp();
     let analysis_json = serde_json::to_string(analysis)?;
     let tags = analysis.tags.join(",");
 
     sqlx::query(r#"
         UPDATE queue_items
-        SET analysis = ?, tags = ?, category = ?, score = ?, stage = 'pending_tagging', updated_at = ?
-        WHERE id = ?
+        SET analysis = $1, tags = $2, category = $3, score = $4, stage = 'pending_tagging', updated_at = $5
+        WHERE id = $6
     "#)
     .bind(&analysis_json)
     .bind(&tags)
@@ -165,14 +165,14 @@ pub async fn update_analysis(pool: &SqlitePool, id: &str, analysis: &AnalysisRes
 
 /// Get next items to process for a given stage
 pub async fn get_pending_items(
-    pool: &SqlitePool,
+    pool: &PgPool,
     stage: QueueStage,
     limit: i32,
 ) -> Result<Vec<QueueItem>> {
     let stage_str = format!("{:?}", stage).to_lowercase();
 
     sqlx::query_as::<_, QueueItem>(
-        "SELECT * FROM queue_items WHERE stage = ? ORDER BY priority ASC, created_at ASC LIMIT ?",
+        "SELECT * FROM queue_items WHERE stage = $1 ORDER BY priority ASC, created_at ASC LIMIT $2",
     )
     .bind(&stage_str)
     .bind(limit)
@@ -182,9 +182,9 @@ pub async fn get_pending_items(
 }
 
 /// Get items that failed but can be retried
-pub async fn get_retriable_items(pool: &SqlitePool, max_retries: i32) -> Result<Vec<QueueItem>> {
+pub async fn get_retriable_items(pool: &PgPool, max_retries: i32) -> Result<Vec<QueueItem>> {
     sqlx::query_as::<_, QueueItem>(
-        "SELECT * FROM queue_items WHERE stage = 'failed' AND retry_count < ? ORDER BY priority ASC"
+        "SELECT * FROM queue_items WHERE stage = 'failed' AND retry_count < $1 ORDER BY priority ASC"
     )
     .bind(max_retries)
     .fetch_all(pool)
@@ -193,7 +193,7 @@ pub async fn get_retriable_items(pool: &SqlitePool, max_retries: i32) -> Result<
 }
 
 /// Get queue statistics
-pub async fn get_queue_stats(pool: &SqlitePool) -> Result<QueueStats> {
+pub async fn get_queue_stats(pool: &PgPool) -> Result<QueueStats> {
     let counts: Vec<(String, i64)> =
         sqlx::query_as("SELECT stage, COUNT(*) as count FROM queue_items GROUP BY stage")
             .fetch_all(pool)
@@ -295,7 +295,7 @@ impl Default for ProcessorConfig {
 
 /// The background queue processor
 pub struct QueueProcessor {
-    pool: SqlitePool,
+    pool: PgPool,
     config: ProcessorConfig,
     llm_client: Box<dyn LlmAnalyzer + Send + Sync>,
 }
@@ -331,7 +331,7 @@ pub struct FileAnalysisResult {
 
 impl QueueProcessor {
     pub fn new(
-        pool: SqlitePool,
+        pool: PgPool,
         config: ProcessorConfig,
         llm_client: Box<dyn LlmAnalyzer + Send + Sync>,
     ) -> Self {
@@ -475,7 +475,7 @@ fn parse_stage(s: &str) -> QueueStage {
 // ============================================================================
 
 /// Quick capture for random thoughts
-pub async fn capture_thought(pool: &SqlitePool, text: &str) -> Result<QueueItem> {
+pub async fn capture_thought(pool: &PgPool, text: &str) -> Result<QueueItem> {
     enqueue(
         pool,
         text,
@@ -490,13 +490,13 @@ pub async fn capture_thought(pool: &SqlitePool, text: &str) -> Result<QueueItem>
 
 /// Quick capture for notes
 pub async fn capture_note(
-    pool: &SqlitePool,
+    pool: &PgPool,
     text: &str,
     project: Option<&str>,
 ) -> Result<QueueItem> {
     // If project specified, try to find matching repo
     let repo_id = if let Some(p) = project {
-        sqlx::query_as::<_, (String,)>("SELECT id FROM repositories WHERE name = ?")
+        sqlx::query_as::<_, (String,)>("SELECT id FROM repositories WHERE name = $1")
             .bind(p)
             .fetch_optional(pool)
             .await?
@@ -519,7 +519,7 @@ pub async fn capture_note(
 
 /// Capture a TODO found in code
 pub async fn capture_todo(
-    pool: &SqlitePool,
+    pool: &PgPool,
     content: &str,
     repo_id: &str,
     file_path: &str,

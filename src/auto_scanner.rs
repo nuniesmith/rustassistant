@@ -129,7 +129,7 @@ pub struct RepoScanState {
 /// Background repository scanner
 pub struct AutoScanner {
     config: AutoScannerConfig,
-    pool: sqlx::SqlitePool,
+    pool: sqlx::PgPool,
     repos_dir: PathBuf,
     scan_states: Arc<RwLock<HashMap<String, RepoScanState>>>,
     repo_manager: Arc<RepoManager>,
@@ -145,7 +145,7 @@ pub struct AutoScanner {
 
 impl AutoScanner {
     /// Create a new auto-scanner
-    pub fn new(config: AutoScannerConfig, pool: sqlx::SqlitePool, repos_dir: PathBuf) -> Self {
+    pub fn new(config: AutoScannerConfig, pool: sqlx::PgPool, repos_dir: PathBuf) -> Self {
         // Get GitHub token from environment for private repos
         let github_token = std::env::var("GITHUB_TOKEN").ok();
 
@@ -272,7 +272,7 @@ impl AutoScanner {
             );
 
             // Clear the flag immediately so we don't re-fire
-            sqlx::query("UPDATE repositories SET review_requested = 0 WHERE id = ?")
+            sqlx::query("UPDATE repositories SET review_requested = 0 WHERE id = $1")
                 .bind(&repo.id)
                 .execute(&self.pool)
                 .await
@@ -486,7 +486,7 @@ impl AutoScanner {
 
         // Mark scan start with timestamp for ETA calculation and reset enhanced columns
         sqlx::query(
-            "UPDATE repositories SET scan_started_at = ?, scan_cost_accumulated = 0.0, scan_cache_hits = 0, scan_api_calls = 0 WHERE id = ?"
+            "UPDATE repositories SET scan_started_at = $1, scan_cost_accumulated = 0.0, scan_cache_hits = 0, scan_api_calls = 0 WHERE id = $2"
         )
         .bind(chrono::Utc::now().timestamp())
         .bind(&repo.id)
@@ -648,8 +648,8 @@ impl AutoScanner {
         sqlx::query(
             r#"
             UPDATE repositories
-            SET local_path = ?, updated_at = ?
-            WHERE id = ?
+            SET local_path = $1, updated_at = $2
+            WHERE id = $3
             "#,
         )
         .bind(new_path)
@@ -725,7 +725,7 @@ impl AutoScanner {
                                     changed_set.insert(full_path);
                                 } else {
                                     debug!(
-                                        "Skipping {} - file does not exist on disk (deleted in later commit?)",
+                                        "Skipping {} - file does not exist on disk (deleted in later commit$1)",
                                         file_path
                                     );
                                 }
@@ -895,7 +895,7 @@ impl AutoScanner {
     ) -> Result<(i64, i64, bool)> {
         // Compute and store cache hash in DB if not already set
         let cache_hash = RepoCacheSql::compute_repo_hash(repo_path);
-        sqlx::query("UPDATE repositories SET cache_hash = ? WHERE id = ? AND cache_hash IS NULL")
+        sqlx::query("UPDATE repositories SET cache_hash = $1 WHERE id = $2 AND cache_hash IS NULL")
             .bind(&cache_hash)
             .bind(repo_id)
             .execute(&self.pool)
@@ -1543,8 +1543,8 @@ impl AutoScanner {
         sqlx::query(
             r#"
             UPDATE repositories
-            SET last_scanned_at = ?
-            WHERE id = ?
+            SET last_scanned_at = $1
+            WHERE id = $2
             "#,
         )
         .bind(timestamp)
@@ -1560,8 +1560,8 @@ impl AutoScanner {
         sqlx::query(
             r#"
             UPDATE repositories
-            SET last_scanned_at = ?
-            WHERE id = ?
+            SET last_scanned_at = $1
+            WHERE id = $2
             "#,
         )
         .bind(timestamp)
@@ -1577,8 +1577,8 @@ impl AutoScanner {
         sqlx::query(
             r#"
             UPDATE repositories
-            SET last_commit_hash = ?
-            WHERE id = ?
+            SET last_commit_hash = $1
+            WHERE id = $2
             "#,
         )
         .bind(hash)
@@ -2244,7 +2244,7 @@ The response must be a single JSON object with this exact structure:
             SELECT last_completed_index, last_completed_file, files_analyzed,
                    files_cached, cumulative_cost, total_files, updated_at
             FROM scan_checkpoints
-            WHERE repo_id = ?
+            WHERE repo_id = $1
             "#,
         )
         .bind(repo_id)
@@ -2295,7 +2295,7 @@ The response must be a single JSON object with this exact structure:
             INSERT OR REPLACE INTO scan_checkpoints
                 (repo_id, last_completed_index, last_completed_file,
                  files_analyzed, files_cached, cumulative_cost, total_files, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             "#,
         )
         .bind(repo_id)
@@ -2314,7 +2314,7 @@ The response must be a single JSON object with this exact structure:
 
     /// Clear the scan checkpoint for a repo (called on successful completion).
     async fn clear_scan_checkpoint(&self, repo_id: &str) -> Result<()> {
-        sqlx::query("DELETE FROM scan_checkpoints WHERE repo_id = ?")
+        sqlx::query("DELETE FROM scan_checkpoints WHERE repo_id = $1")
             .bind(repo_id)
             .execute(&self.pool)
             .await?;
@@ -2337,7 +2337,7 @@ struct ScanCheckpoint {
 
 /// Enable auto-scan for a repository
 pub async fn enable_auto_scan(
-    pool: &sqlx::SqlitePool,
+    pool: &sqlx::PgPool,
     repo_id: &str,
     interval_minutes: Option<i64>,
 ) -> Result<()> {
@@ -2346,8 +2346,8 @@ pub async fn enable_auto_scan(
     sqlx::query(
         r#"
         UPDATE repositories
-        SET auto_scan = 1, scan_interval_mins = ?
-        WHERE id = ?
+        SET auto_scan = 1, scan_interval_mins = $1
+        WHERE id = $2
         "#,
     )
     .bind(interval)
@@ -2364,12 +2364,12 @@ pub async fn enable_auto_scan(
 }
 
 /// Disable auto-scan for a repository
-pub async fn disable_auto_scan(pool: &sqlx::SqlitePool, repo_id: &str) -> Result<()> {
+pub async fn disable_auto_scan(pool: &sqlx::PgPool, repo_id: &str) -> Result<()> {
     sqlx::query(
         r#"
         UPDATE repositories
         SET auto_scan = 0
-        WHERE id = ?
+        WHERE id = $1
         "#,
     )
     .bind(repo_id)
@@ -2382,13 +2382,13 @@ pub async fn disable_auto_scan(pool: &sqlx::SqlitePool, repo_id: &str) -> Result
 }
 
 /// Force a full rescan for a repository (reset both timing AND commit hash)
-pub async fn force_scan(pool: &sqlx::SqlitePool, repo_id: &str) -> Result<()> {
+pub async fn force_scan(pool: &sqlx::PgPool, repo_id: &str) -> Result<()> {
     sqlx::query(
         r#"
         UPDATE repositories
         SET last_scanned_at = NULL,
             last_commit_hash = NULL
-        WHERE id = ?
+        WHERE id = $1
         "#,
     )
     .bind(repo_id)

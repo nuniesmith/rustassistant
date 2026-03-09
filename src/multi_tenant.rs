@@ -15,10 +15,10 @@
 //!
 //! ```rust,no_run
 //! use rustassistant::multi_tenant::{TenantManager, TenantQuota, QuotaType, UsageMetric};
-//! use sqlx::SqlitePool;
+//! use sqlx::PgPool;
 //!
 //! # async fn example() -> anyhow::Result<()> {
-//! let db_pool = SqlitePool::connect("sqlite::memory:").await?;
+//! let db_pool = PgPool::connect(&std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgresql://rustassistant:changeme@localhost:5432/rustassistant_test".to_string())).await?;
 //! let tenant_mgr = TenantManager::new(db_pool).await?;
 //!
 //! // Create new tenant
@@ -40,7 +40,7 @@
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use std::collections::HashMap;
 
 // ============================================================================
@@ -158,12 +158,12 @@ pub enum QuotaType {
 // ============================================================================
 
 pub struct TenantManager {
-    db_pool: SqlitePool,
+    db_pool: PgPool,
 }
 
 impl TenantManager {
     /// Create new tenant manager
-    pub async fn new(db_pool: SqlitePool) -> Result<Self> {
+    pub async fn new(db_pool: PgPool) -> Result<Self> {
         let manager = Self { db_pool };
         manager.init_tables().await?;
         Ok(manager)
@@ -250,7 +250,7 @@ impl TenantManager {
             INSERT INTO organizations (
                 id, name, slug, max_documents, max_storage_mb, max_searches_per_day,
                 max_api_keys, max_webhooks, created_at, enabled
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1)
             "#,
         )
         .bind(&id)
@@ -270,7 +270,7 @@ impl TenantManager {
         sqlx::query(
             r#"
             INSERT INTO tenant_usage (tenant_id, last_updated)
-            VALUES (?, ?)
+            VALUES ($1, $2)
             "#,
         )
         .bind(&id)
@@ -311,7 +311,7 @@ impl TenantManager {
             SELECT id, name, slug, max_documents, max_storage_mb, max_searches_per_day,
                    max_api_keys, max_webhooks, enabled, created_at, custom_domain
             FROM organizations
-            WHERE id = ?
+            WHERE id = $1
             "#,
         )
         .bind(tenant_id)
@@ -354,7 +354,7 @@ impl TenantManager {
 
     /// Get tenant by slug
     pub async fn get_tenant_by_slug(&self, slug: &str) -> Result<Option<Tenant>> {
-        let row = sqlx::query_scalar::<_, String>("SELECT id FROM organizations WHERE slug = ?")
+        let row = sqlx::query_scalar::<_, String>("SELECT id FROM organizations WHERE slug = $1")
             .bind(slug)
             .fetch_optional(&self.db_pool)
             .await?;
@@ -369,7 +369,7 @@ impl TenantManager {
     /// Get tenant by API key
     pub async fn get_tenant_by_key(&self, api_key_hash: &str) -> Result<Option<Tenant>> {
         let tenant_id =
-            sqlx::query_scalar::<_, String>("SELECT tenant_id FROM api_keys WHERE key_hash = ?")
+            sqlx::query_scalar::<_, String>("SELECT tenant_id FROM api_keys WHERE key_hash = $1")
                 .bind(api_key_hash)
                 .fetch_optional(&self.db_pool)
                 .await?;
@@ -387,7 +387,7 @@ impl TenantManager {
             r#"
             SELECT document_count, storage_mb, searches_today, api_key_count, webhook_count, last_updated
             FROM tenant_usage
-            WHERE tenant_id = ?
+            WHERE tenant_id = $1
             "#,
         )
         .bind(tenant_id)
@@ -481,7 +481,7 @@ impl TenantManager {
         };
 
         let query = format!(
-            "UPDATE tenant_usage SET {} = {} + ?, last_updated = ? WHERE tenant_id = ?",
+            "UPDATE tenant_usage SET {} = {} + $1, last_updated = $2 WHERE tenant_id = $3",
             field, field
         );
 
@@ -506,7 +506,7 @@ impl TenantManager {
         };
 
         let query = format!(
-            "UPDATE tenant_usage SET {} = MAX(0, {} - ?), last_updated = ? WHERE tenant_id = ?",
+            "UPDATE tenant_usage SET {} = MAX(0, {} - $1), last_updated = $2 WHERE tenant_id = $3",
             field, field
         );
 
@@ -522,7 +522,7 @@ impl TenantManager {
 
     /// Reset daily search counter (call this daily)
     pub async fn reset_daily_searches(&self) -> Result<u64> {
-        let result = sqlx::query("UPDATE tenant_usage SET searches_today = 0, last_updated = ?")
+        let result = sqlx::query("UPDATE tenant_usage SET searches_today = 0, last_updated = $1")
             .bind(Utc::now().timestamp())
             .execute(&self.db_pool)
             .await?;
@@ -535,9 +535,9 @@ impl TenantManager {
         sqlx::query(
             r#"
             UPDATE organizations
-            SET max_documents = ?, max_storage_mb = ?, max_searches_per_day = ?,
-                max_api_keys = ?, max_webhooks = ?
-            WHERE id = ?
+            SET max_documents = $1, max_storage_mb = $2, max_searches_per_day = $3,
+                max_api_keys = $4, max_webhooks = $5
+            WHERE id = $6
             "#,
         )
         .bind(quota.max_documents)
@@ -554,7 +554,7 @@ impl TenantManager {
 
     /// Enable/disable tenant
     pub async fn set_tenant_enabled(&self, tenant_id: &str, enabled: bool) -> Result<()> {
-        sqlx::query("UPDATE organizations SET enabled = ? WHERE id = ?")
+        sqlx::query("UPDATE organizations SET enabled = $1 WHERE id = $2")
             .bind(enabled)
             .bind(tenant_id)
             .execute(&self.db_pool)
@@ -640,7 +640,7 @@ impl TenantManager {
                 SUM(searches_performed) as total_searches,
                 AVG(storage_mb) as avg_storage
             FROM tenant_usage_history
-            WHERE tenant_id = ? AND date BETWEEN ? AND ?
+            WHERE tenant_id = $1 AND date BETWEEN $2 AND $3
             "#,
         )
         .bind(tenant_id)
@@ -666,8 +666,8 @@ impl TenantManager {
 mod tests {
     use super::*;
 
-    async fn setup_test_db() -> SqlitePool {
-        SqlitePool::connect(":memory:").await.unwrap()
+    async fn setup_test_db() -> PgPool {
+        PgPool::connect(&std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgresql://rustassistant:changeme@localhost:5432/rustassistant_test".to_string())).await.unwrap()
     }
 
     #[tokio::test]

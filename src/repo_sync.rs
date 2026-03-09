@@ -1,10 +1,12 @@
 // src/repo_sync.rs
 // RustAssistant RepoSyncService
 // Handles repo registration, tree snapshots, TODO extraction, and .rustassistant/ cache management
-// TODO: integrate with existing document indexing pipeline in src/search.rs
 
+use crate::db::store_embedding;
+use crate::embeddings::{EmbeddingConfig, EmbeddingGenerator};
+use crate::research::worker::refresh_rag_index;
 use serde::{Deserialize, Serialize};
-use sqlx::Row;
+use sqlx::{PgPool, Row};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -167,8 +169,8 @@ pub struct SyncResult {
 pub struct RepoSyncService {
     /// In-memory registry (always authoritative; SQLite is the persistence backing store).
     repos: HashMap<String, RegisteredRepo>,
-    /// Optional SQLite pool for persistent repo registration.
-    db: Option<sqlx::SqlitePool>,
+    /// Optional PostgreSQL pool for persistent repo registration.
+    db: Option<PgPool>,
     /// File extensions to index (skip target/, .git/, node_modules/ etc.)
     include_extensions: Vec<String>,
     /// Directories to always skip
@@ -207,15 +209,23 @@ impl RepoSyncService {
         Self::default()
     }
 
-    /// Create a service backed by an existing `SqlitePool`.
+    /// Create a service backed by an existing `PgPool`.
     ///
     /// Call [`load_from_db`] afterwards to populate the in-memory map from
     /// any rows already in the `registered_repos` table.
-    pub fn with_db(pool: sqlx::SqlitePool) -> Self {
+    pub fn with_db(pool: PgPool) -> Self {
         Self {
             db: Some(pool),
             ..Self::default()
         }
+    }
+
+    /// Return a clone of the underlying `PgPool` if one is configured.
+    ///
+    /// Used by the RAG pipeline to query embeddings without holding a lock
+    /// on the sync service itself.
+    pub fn db_pool(&self) -> Option<PgPool> {
+        self.db.clone()
     }
 
     /// Load all active repos from `registered_repos` into the in-memory map.
@@ -232,7 +242,7 @@ impl RepoSyncService {
             r#"
             SELECT id, name, local_path, remote_url, branch, last_synced, active
             FROM registered_repos
-            WHERE active = 1
+            WHERE active = TRUE
             "#,
         )
         .fetch_all(pool)
@@ -246,7 +256,7 @@ impl RepoSyncService {
             let remote_url: Option<String> = row.try_get("remote_url")?;
             let branch: String = row.try_get("branch")?;
             let last_synced: Option<i64> = row.try_get("last_synced")?;
-            let active: i64 = row.try_get("active")?;
+            let active: bool = row.try_get("active")?;
 
             let repo = RegisteredRepo {
                 id: id.clone(),
@@ -255,12 +265,12 @@ impl RepoSyncService {
                 remote_url,
                 branch,
                 last_synced: last_synced.map(|v| v as u64),
-                active: active != 0,
+                active,
             };
             self.repos.insert(repo.id.clone(), repo);
         }
 
-        info!(count, "Loaded registered repos from SQLite");
+        info!(count, "Loaded registered repos from PostgreSQL");
         Ok(count)
     }
 
@@ -289,21 +299,20 @@ impl RepoSyncService {
             fs::write(&gitignore, "embeddings.bin\n").await?;
         }
 
-        // Persist to SQLite (upsert — safe to call repeatedly)
+        // Persist to PostgreSQL (upsert — safe to call repeatedly)
         if let Some(ref pool) = self.db {
             let local_path = repo.local_path.to_string_lossy().to_string();
             let last_synced: Option<i64> = repo.last_synced.map(|v| v as i64);
-            let active: i64 = repo.active as i64;
             if let Err(e) = sqlx::query(
                 r#"
                 INSERT INTO registered_repos (id, name, local_path, remote_url, branch, last_synced, active)
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-                ON CONFLICT(id) DO UPDATE SET
-                    name       = excluded.name,
-                    local_path = excluded.local_path,
-                    remote_url = excluded.remote_url,
-                    branch     = excluded.branch,
-                    active     = excluded.active
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                ON CONFLICT (id) DO UPDATE SET
+                    name       = EXCLUDED.name,
+                    local_path = EXCLUDED.local_path,
+                    remote_url = EXCLUDED.remote_url,
+                    branch     = EXCLUDED.branch,
+                    active     = EXCLUDED.active
                 "#,
             )
             .bind(&repo.id)
@@ -312,11 +321,11 @@ impl RepoSyncService {
             .bind(&repo.remote_url)
             .bind(&repo.branch)
             .bind(last_synced)
-            .bind(active)
+            .bind(repo.active)
             .execute(pool)
             .await
             {
-                error!(repo = %id, error = %e, "Failed to persist repo registration to SQLite");
+                error!(repo = %id, error = %e, "Failed to persist repo registration to PostgreSQL");
                 // Continue — the in-memory map is the source of truth; DB failure is non-fatal.
             }
         }
@@ -338,17 +347,18 @@ impl RepoSyncService {
         self.repos.remove(id).is_some()
     }
 
-    /// Async version of `remove_repo` that also soft-deletes in SQLite.
+    /// Async version of `remove_repo` that also soft-deletes in PostgreSQL.
     pub async fn remove_repo_async(&mut self, id: &str) -> bool {
         let existed = self.repos.remove(id).is_some();
         if existed {
             if let Some(ref pool) = self.db {
-                if let Err(e) = sqlx::query("UPDATE registered_repos SET active = 0 WHERE id = ?1")
-                    .bind(id)
-                    .execute(pool)
-                    .await
+                if let Err(e) =
+                    sqlx::query("UPDATE registered_repos SET active = FALSE WHERE id = $1")
+                        .bind(id)
+                        .execute(pool)
+                        .await
                 {
-                    error!(repo = %id, error = %e, "Failed to soft-delete repo in SQLite");
+                    error!(repo = %id, error = %e, "Failed to soft-delete repo in PostgreSQL");
                 }
             }
         }
@@ -433,14 +443,36 @@ impl RepoSyncService {
         if let Some(ref pool) = self.db {
             let ts = now as i64;
             if let Err(e) =
-                sqlx::query("UPDATE registered_repos SET last_synced = ?1 WHERE id = ?2")
+                sqlx::query("UPDATE registered_repos SET last_synced = $1 WHERE id = $2")
                     .bind(ts)
                     .bind(repo_id)
                     .execute(pool)
                     .await
             {
-                warn!(repo = %repo_id, error = %e, "Failed to update last_synced in SQLite");
+                warn!(repo = %repo_id, error = %e, "Failed to update last_synced in PostgreSQL");
             }
+        }
+
+        // 8. Chunk changed .rs files and upsert embeddings into Postgres so the
+        //    RAG pipeline always reflects the latest source.  This runs in the
+        //    background (fire-and-forget) so it never blocks the sync response.
+        if let Some(pool) = self.db.clone() {
+            let rs_files: Vec<PathBuf> = walked_files
+                .iter()
+                .filter(|p| p.extension().map(|e| e == "rs").unwrap_or(false))
+                .cloned()
+                .collect();
+
+            tokio::spawn(async move {
+                if let Err(e) = embed_rust_files(&pool, &rs_files).await {
+                    warn!(error = %e, "Background embedding pass failed");
+                } else {
+                    // Rebuild the in-process HNSW index so chat handler RAG is current.
+                    if let Err(e) = refresh_rag_index(&pool).await {
+                        warn!(error = %e, "RAG index refresh failed after sync");
+                    }
+                }
+            });
         }
 
         let duration_ms = start.elapsed().as_millis() as u64;
@@ -677,38 +709,128 @@ impl RepoSyncService {
 
 /// Recursive async directory walker.
 #[async_recursion::async_recursion]
-async fn walk_dir(
-    root: &Path,
-    current: &Path,
-    skip_dirs: &[String],
-    include_exts: &[String],
-    lines: &mut Vec<String>,
-    files: &mut Vec<PathBuf>,
-) -> anyhow::Result<()> {
-    // TODO: replace with tokio::fs::ReadDir stream for better performance on large repos
-    let mut entries = fs::read_dir(current).await?;
+// ---------------------------------------------------------------------------
+// Background embedding helper
+// ---------------------------------------------------------------------------
 
-    while let Some(entry) = entries.next_entry().await? {
-        let path = entry.path();
-        let name = entry.file_name().to_string_lossy().to_string();
+/// Chunk each `.rs` file into overlapping windows and upsert vector embeddings
+/// into the `document_embeddings` / `document_chunks` tables so the RAG index
+/// has fresh data after every sync.
+///
+/// Uses BGE-small-EN (384D) via `fastembed` — the same model used by the
+/// startup `refresh_rag_index` pass.  Each file becomes one "document" whose
+/// chunks are stored under a stable chunk_id derived from `<repo>/<rel_path>#<idx>`.
+///
+/// This is intentionally lenient: individual file failures are logged and
+/// skipped without aborting the rest of the batch.
+async fn embed_rust_files(pool: &sqlx::PgPool, files: &[PathBuf]) -> anyhow::Result<()> {
+    if files.is_empty() {
+        return Ok(());
+    }
 
-        if path.is_dir() {
-            if skip_dirs.iter().any(|s| s == &name) {
+    let generator = match EmbeddingGenerator::new(EmbeddingConfig::default()) {
+        Ok(g) => g,
+        Err(e) => {
+            warn!(error = %e, "Could not initialise embedding model — skipping embed pass");
+            return Ok(());
+        }
+    };
+
+    let model_name = generator.model_name().to_string();
+    let mut total_chunks = 0usize;
+
+    for path in files {
+        let content = match tokio::fs::read_to_string(path).await {
+            Ok(c) => c,
+            Err(e) => {
+                warn!(path = ?path, error = %e, "embed_rust_files: skipping unreadable file");
                 continue;
             }
-            walk_dir(root, &path, skip_dirs, include_exts, lines, files).await?;
-        } else {
-            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-            if !include_exts.iter().any(|e| e == ext) {
-                continue;
+        };
+
+        if content.trim().is_empty() {
+            continue;
+        }
+
+        // Simple fixed-size window chunking: 60 lines per chunk, 10-line overlap.
+        let lines: Vec<&str> = content.lines().collect();
+        let window = 60usize;
+        let overlap = 10usize;
+        let step = window.saturating_sub(overlap).max(1);
+
+        let path_str = path.to_string_lossy();
+        let chunks: Vec<String> = (0..lines.len())
+            .step_by(step)
+            .map(|start| {
+                let end = (start + window).min(lines.len());
+                lines[start..end].join("\n")
+            })
+            .filter(|c| !c.trim().is_empty())
+            .collect();
+
+        for (idx, chunk_text) in chunks.iter().enumerate() {
+            let chunk_id = format!("repo-sync:{}#{}", path_str, idx);
+
+            let embedding = match generator.embed(chunk_text).await {
+                Ok(e) => e,
+                Err(e) => {
+                    warn!(chunk_id = %chunk_id, error = %e, "embed failed — skipping chunk");
+                    continue;
+                }
+            };
+
+            if let Err(e) =
+                store_embedding(pool, chunk_id.clone(), embedding.vector, model_name.clone()).await
+            {
+                warn!(chunk_id = %chunk_id, error = %e, "store_embedding failed");
+            } else {
+                total_chunks += 1;
             }
-            let relative = path.strip_prefix(root).unwrap_or(&path);
-            lines.push(relative.to_string_lossy().to_string());
-            files.push(path);
         }
     }
 
+    info!(
+        files = files.len(),
+        chunks = total_chunks,
+        "embed_rust_files complete"
+    );
     Ok(())
+}
+
+fn walk_dir<'a>(
+    root: &'a Path,
+    current: &'a Path,
+    skip_dirs: &'a [String],
+    include_exts: &'a [String],
+    lines: &'a mut Vec<String>,
+    files: &'a mut Vec<PathBuf>,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send + 'a>> {
+    Box::pin(async move {
+        // TODO: replace with tokio::fs::ReadDir stream for better performance on large repos
+        let mut entries = fs::read_dir(current).await?;
+
+        while let Some(entry) = entries.next_entry().await? {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+
+            if path.is_dir() {
+                if skip_dirs.iter().any(|s| s == &name) {
+                    continue;
+                }
+                walk_dir(root, &path, skip_dirs, include_exts, lines, files).await?;
+            } else {
+                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                if !include_exts.iter().any(|e| e == ext) {
+                    continue;
+                }
+                let relative = path.strip_prefix(root).unwrap_or(&path);
+                lines.push(relative.to_string_lossy().to_string());
+                files.push(path);
+            }
+        }
+
+        Ok(())
+    })
 }
 
 fn parse_todo_line(line: &str, file: &str, line_num: usize) -> Option<TodoItem> {
@@ -1173,5 +1295,57 @@ mod tests {
     fn slugify_basic() {
         assert_eq!(slugify("My Cool Repo"), "my-cool-repo");
         assert_eq!(slugify("rustassistant"), "rustassistant");
+    }
+
+    /// Verify that `register()` writes `.rustassistant/.gitignore` containing
+    /// `embeddings.bin` so that the binary embedding file is never accidentally
+    /// committed to the target repo.
+    #[tokio::test]
+    async fn register_writes_gitignore_with_embeddings_bin() {
+        let tmp = tempfile::tempdir().expect("failed to create tempdir");
+        let repo_path = tmp.path().to_path_buf();
+
+        let repo = RegisteredRepo::new("test-gitignore-repo", &repo_path);
+        let mut svc = RepoSyncService::new();
+        svc.register(repo).await.expect("register failed");
+
+        let gitignore_path = repo_path.join(".rustassistant").join(".gitignore");
+        assert!(
+            gitignore_path.exists(),
+            ".rustassistant/.gitignore was not created by register()"
+        );
+
+        let contents = std::fs::read_to_string(&gitignore_path).expect("failed to read .gitignore");
+        assert!(
+            contents.contains("embeddings.bin"),
+            ".gitignore does not contain 'embeddings.bin'; got: {:?}",
+            contents
+        );
+    }
+
+    /// Re-registering the same repo must not overwrite an existing `.gitignore`
+    /// (idempotency — users may add their own entries).
+    #[tokio::test]
+    async fn register_does_not_overwrite_existing_gitignore() {
+        let tmp = tempfile::tempdir().expect("failed to create tempdir");
+        let repo_path = tmp.path().to_path_buf();
+
+        // Pre-create the cache dir and a custom .gitignore
+        let cache_dir = repo_path.join(".rustassistant");
+        std::fs::create_dir_all(&cache_dir).expect("create cache dir");
+        let gitignore_path = cache_dir.join(".gitignore");
+        std::fs::write(&gitignore_path, "embeddings.bin\nmy-custom-entry\n")
+            .expect("write gitignore");
+
+        let repo = RegisteredRepo::new("test-gitignore-idempotent", &repo_path);
+        let mut svc = RepoSyncService::new();
+        svc.register(repo).await.expect("register failed");
+
+        let contents = std::fs::read_to_string(&gitignore_path).expect("failed to read .gitignore");
+        assert!(
+            contents.contains("my-custom-entry"),
+            "register() overwrote the existing .gitignore; contents: {:?}",
+            contents
+        );
     }
 }

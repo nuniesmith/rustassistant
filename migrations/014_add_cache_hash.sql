@@ -1,9 +1,10 @@
--- Migration: Add cache_hash column to repositories table
--- This stores the precomputed cache directory hash so the web interface
--- doesn't need to recompute it (which can fail if the repo path doesn't
--- exist on the web server's filesystem).
+-- Migration: 014_add_cache_hash.sql
+-- Rewritten for PostgreSQL
+-- Adds cache_hash column to repositories table.
+-- Changes from SQLite version:
+--   - ADD COLUMN IF NOT EXISTS (safe to re-run in Postgres)
 
-ALTER TABLE repositories ADD COLUMN cache_hash TEXT;
+ALTER TABLE repositories ADD COLUMN IF NOT EXISTS cache_hash TEXT;
 
--- Index for faster lookups
-CREATE INDEX IF NOT EXISTS idx_repositories_cache_hash ON repositories(cache_hash);
+CREATE INDEX IF NOT EXISTS idx_repositories_cache_hash ON repositories(cache_hash)
+    WHERE cache_hash IS NOT NULL;

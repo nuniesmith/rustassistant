@@ -411,7 +411,7 @@ pub async fn db_table_handler(
         offset,
     );
 
-    let rows: Vec<sqlx::sqlite::SqliteRow> = sqlx::query(&query)
+    let rows: Vec<sqlx::postgres::PgRow> = sqlx::query(&query)
         .fetch_all(pool)
         .await
         .unwrap_or_default();
@@ -580,7 +580,7 @@ pub async fn db_table_handler(
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
             <h2 style="margin:0;">📋 {table}</h2>
             <div style="display: flex; gap: 0.5rem;">
-                <a href="/db/query?sql=SELECT+*+FROM+%22{table}%22+LIMIT+100" class="btn btn-primary btn-sm">🔍 Query</a>
+                <a href="/db/query$1sql=SELECT+*+FROM+%22{table}%22+LIMIT+100" class="btn btn-primary btn-sm">🔍 Query</a>
             </div>
         </div>
 

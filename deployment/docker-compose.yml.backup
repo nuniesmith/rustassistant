@@ -1,0 +1,110 @@
+services:
+    # ============================================================================
+    # Rustassistant Server (API + Web UI combined)
+    # Single server serves both Web UI and API endpoints
+    # ============================================================================
+    rustassistant:
+        build:
+            context: .
+            dockerfile: docker/Dockerfile
+            args:
+                SERVICE_TYPE: web
+                SERVICE_PORT: 3000
+        container_name: rustassistant
+        restart: unless-stopped
+        ports:
+            - "${PORT:-3000}:3000"
+        environment:
+            - HOST=0.0.0.0
+            - PORT=3000
+            - RUST_LOG=${RUST_LOG:-info,rustassistant=debug}
+            - DATABASE_URL=sqlite:/app/data/rustassistant.db
+            - CACHE_DB_PATH=/app/data/rustassistant_cache.db
+            - REPOS_DIR=/app/repos
+            - REDIS_URL=redis://redis:6379
+            - XAI_API_KEY=${XAI_API_KEY}
+            - XAI_BASE_URL=${XAI_BASE_URL:-https://api.x.ai/v1}
+            - GITHUB_TOKEN=${GITHUB_TOKEN}
+            - AUTO_SCAN_ENABLED=${AUTO_SCAN_ENABLED:-true}
+            - AUTO_SCAN_INTERVAL=${AUTO_SCAN_INTERVAL:-60}
+            - AUTO_SCAN_MAX_CONCURRENT=${AUTO_SCAN_MAX_CONCURRENT:-2}
+        volumes:
+            - rustassistant_data:/app/data
+            - repos_data:/app/repos
+        depends_on:
+            redis:
+                condition: service_healthy
+        networks:
+            - rustassistant
+        healthcheck:
+            test:
+                [
+                    "CMD",
+                    "wget",
+                    "--no-verbose",
+                    "--tries=1",
+                    "--spider",
+                    "http://localhost:3000/health",
+                ]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            start_period: 40s
+        deploy:
+            resources:
+                limits:
+                    memory: 1G
+                    cpus: "2.0"
+                reservations:
+                    memory: 512M
+                    cpus: "1.0"
+
+    # ============================================================================
+    # Redis Cache - For LLM Response Caching
+    # ============================================================================
+    redis:
+        image: redis:7-alpine
+        container_name: rustassistant-redis
+        restart: unless-stopped
+        command: >
+            redis-server
+            --maxmemory 256mb
+            --maxmemory-policy allkeys-lru
+            --save 60 1
+            --appendonly yes
+            --appendfsync everysec
+        ports:
+            - "6379:6379"
+        volumes:
+            - redis_data:/data
+        networks:
+            - rustassistant
+        healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+        deploy:
+            resources:
+                limits:
+                    memory: 256M
+                    cpus: "0.5"
+                reservations:
+                    memory: 128M
+                    cpus: "0.25"
+
+volumes:
+    rustassistant_data:
+        driver: local
+        name: rustassistant_data
+    redis_data:
+        driver: local
+        name: rustassistant_redis_data
+    repos_data:
+        driver: local
+        name: rustassistant_repos_data
+
+networks:
+    rustassistant:
+        driver: bridge
+        name: rustassistant-network

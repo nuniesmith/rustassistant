@@ -16,7 +16,7 @@
 //! use rustassistant::db::chunks::{ChunkStore, ChunkRecord, ChunkLocationRecord};
 //!
 //! # async fn example() -> anyhow::Result<()> {
-//! # let pool = rustassistant::db::init_db("sqlite::memory:").await?;
+//! # let pool = rustassistant::db::init_db(&std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgresql://rustassistant:changeme@localhost:5432/rustassistant_test".to_string())).await?;
 //! let store = ChunkStore::new(pool).await?;
 //!
 //! // Insert a chunk
@@ -52,7 +52,7 @@
 use anyhow::{Context, Result};
 
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use tracing::{debug, info};
 
 // ---------------------------------------------------------------------------
@@ -250,12 +250,12 @@ pub struct DedupStats {
 
 /// Persistent store for code chunks and dedup index
 pub struct ChunkStore {
-    pool: SqlitePool,
+    pool: PgPool,
 }
 
 impl ChunkStore {
     /// Create a new ChunkStore, initializing the schema if needed
-    pub async fn new(pool: SqlitePool) -> Result<Self> {
+    pub async fn new(pool: PgPool) -> Result<Self> {
         let store = Self { pool };
         store.initialize_schema().await?;
         Ok(store)
@@ -399,7 +399,7 @@ impl ChunkStore {
                 word_count, complexity_score, is_public, has_tests,
                 is_test_code, issue_count, embedding, last_analyzed
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, datetime('now'))
             ON CONFLICT(content_hash) DO UPDATE SET
                 entity_type = excluded.entity_type,
                 entity_name = excluded.entity_name,
@@ -460,7 +460,7 @@ impl ChunkStore {
                    is_test_code, issue_count, embedding, created_at,
                    updated_at, last_analyzed
             FROM code_chunks
-            WHERE content_hash = ?
+            WHERE content_hash = $1
             "#,
         )
         .bind(content_hash)
@@ -489,7 +489,7 @@ impl ChunkStore {
     /// Check if a content hash already exists in the store
     pub async fn contains(&self, content_hash: &str) -> Result<bool> {
         let row =
-            sqlx::query_as::<_, (i64,)>("SELECT COUNT(*) FROM code_chunks WHERE content_hash = ?")
+            sqlx::query_as::<_, (i64,)>("SELECT COUNT(*) FROM code_chunks WHERE content_hash = $1")
                 .bind(content_hash)
                 .fetch_one(&self.pool)
                 .await
@@ -500,7 +500,7 @@ impl ChunkStore {
 
     /// Delete a chunk and all its locations
     pub async fn delete_chunk(&self, content_hash: &str) -> Result<bool> {
-        let result = sqlx::query("DELETE FROM code_chunks WHERE content_hash = ?")
+        let result = sqlx::query("DELETE FROM code_chunks WHERE content_hash = $1")
             .bind(content_hash)
             .execute(&self.pool)
             .await
@@ -530,7 +530,7 @@ impl ChunkStore {
                     word_count, complexity_score, is_public, has_tests,
                     is_test_code, issue_count, embedding, last_analyzed
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, datetime('now'))
                 ON CONFLICT(content_hash) DO UPDATE SET
                     entity_type = excluded.entity_type,
                     entity_name = excluded.entity_name,
@@ -574,8 +574,8 @@ impl ChunkStore {
         let result = sqlx::query(
             r#"
             UPDATE code_chunks
-            SET embedding = ?, updated_at = datetime('now')
-            WHERE content_hash = ?
+            SET embedding = $1, updated_at = datetime('now')
+            WHERE content_hash = $2
             "#,
         )
         .bind(embedding_json)
@@ -616,7 +616,7 @@ impl ChunkStore {
             FROM code_chunks
             WHERE embedding IS NULL
             ORDER BY complexity_score DESC
-            LIMIT ?
+            LIMIT $1
             "#,
         )
         .bind(limit)
@@ -656,7 +656,7 @@ impl ChunkStore {
             INSERT INTO chunk_locations (
                 content_hash, repo_id, file_path, start_line, end_line, entity_name
             )
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT(content_hash, repo_id, file_path, start_line) DO UPDATE SET
                 end_line = excluded.end_line,
                 entity_name = excluded.entity_name
@@ -694,7 +694,7 @@ impl ChunkStore {
                 INSERT INTO chunk_locations (
                     content_hash, repo_id, file_path, start_line, end_line, entity_name
                 )
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES ($1, $2, $3, $4, $5, $6)
                 ON CONFLICT(content_hash, repo_id, file_path, start_line) DO UPDATE SET
                     end_line = excluded.end_line,
                     entity_name = excluded.entity_name
@@ -727,7 +727,7 @@ impl ChunkStore {
             r#"
             SELECT id, content_hash, repo_id, file_path, start_line, end_line, entity_name, created_at
             FROM chunk_locations
-            WHERE content_hash = ?
+            WHERE content_hash = $1
             ORDER BY repo_id, file_path
             "#,
         )
@@ -761,7 +761,7 @@ impl ChunkStore {
             r#"
             SELECT id, content_hash, repo_id, file_path, start_line, end_line, entity_name, created_at
             FROM chunk_locations
-            WHERE repo_id = ? AND file_path = ?
+            WHERE repo_id = $1 AND file_path = $2
             ORDER BY start_line
             "#,
         )
@@ -788,19 +788,20 @@ impl ChunkStore {
 
     /// Remove all locations for a specific file (used before re-chunking)
     pub async fn clear_file_locations(&self, repo_id: &str, file_path: &str) -> Result<u64> {
-        let result = sqlx::query("DELETE FROM chunk_locations WHERE repo_id = ? AND file_path = ?")
-            .bind(repo_id)
-            .bind(file_path)
-            .execute(&self.pool)
-            .await
-            .context("Failed to clear file locations")?;
+        let result =
+            sqlx::query("DELETE FROM chunk_locations WHERE repo_id = $1 AND file_path = $2")
+                .bind(repo_id)
+                .bind(file_path)
+                .execute(&self.pool)
+                .await
+                .context("Failed to clear file locations")?;
 
         Ok(result.rows_affected())
     }
 
     /// Remove all locations for a repo (used before full re-scan)
     pub async fn clear_repo_locations(&self, repo_id: &str) -> Result<u64> {
-        let result = sqlx::query("DELETE FROM chunk_locations WHERE repo_id = ?")
+        let result = sqlx::query("DELETE FROM chunk_locations WHERE repo_id = $1")
             .bind(repo_id)
             .execute(&self.pool)
             .await
@@ -824,7 +825,7 @@ impl ChunkStore {
             SELECT cl.content_hash, COUNT(DISTINCT cl.repo_id) as repo_count
             FROM chunk_locations cl
             JOIN code_chunks cc ON cc.content_hash = cl.content_hash
-            WHERE cc.complexity_score >= ?
+            WHERE cc.complexity_score >= $1
             GROUP BY cl.content_hash
             HAVING repo_count > 1
             ORDER BY repo_count DESC
@@ -871,7 +872,7 @@ impl ChunkStore {
         let row = sqlx::query_as::<_, (i64,)>(
             r#"
             SELECT COUNT(*) FROM code_chunks
-            WHERE content_hash = ? AND last_analyzed IS NOT NULL
+            WHERE content_hash = $1 AND last_analyzed IS NOT NULL
             "#,
         )
         .bind(content_hash)
@@ -888,7 +889,7 @@ impl ChunkStore {
 
     /// Record a static analysis savings decision
     pub async fn record_savings(&self, record: &ScanSavingsRecord) -> Result<i64> {
-        let id = sqlx::query(
+        let row: (i64,) = sqlx::query_as(
             r#"
             INSERT INTO scan_savings (
                 repo_id, file_path, recommendation, skip_reason,
@@ -896,7 +897,8 @@ impl ChunkStore {
                 estimated_cost_saved_usd, llm_called, actual_cost_usd,
                 scan_session_id
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            RETURNING id
             "#,
         )
         .bind(&record.repo_id)
@@ -909,10 +911,10 @@ impl ChunkStore {
         .bind(record.llm_called)
         .bind(record.actual_cost_usd)
         .bind(&record.scan_session_id)
-        .execute(&self.pool)
+        .fetch_one(&self.pool)
         .await
-        .context("Failed to record scan savings")?
-        .last_insert_rowid();
+        .context("Failed to record scan savings")?;
+        let id = row.0;
 
         Ok(id)
     }
@@ -939,7 +941,7 @@ impl ChunkStore {
                     estimated_cost_saved_usd, llm_called, actual_cost_usd,
                     scan_session_id
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                 "#,
             )
             .bind(&record.repo_id)
@@ -1189,7 +1191,7 @@ impl ChunkStore {
         let result = sqlx::query(
             r#"
             DELETE FROM scan_savings
-            WHERE created_at < datetime('now', ? || ' days')
+            WHERE created_at < datetime('now', $1 || ' days')
             "#,
         )
         .bind(format!("-{}", days))
@@ -1209,7 +1211,7 @@ impl ChunkStore {
     }
 
     /// Get the pool reference (for advanced queries)
-    pub fn pool(&self) -> &SqlitePool {
+    pub fn pool(&self) -> &PgPool {
         &self.pool
     }
 }
@@ -1286,10 +1288,12 @@ pub fn estimate_llm_cost_for_file(char_count: usize) -> f64 {
 mod tests {
     use super::*;
 
-    async fn create_test_pool() -> SqlitePool {
-        SqlitePool::connect("sqlite::memory:")
-            .await
-            .expect("Failed to create test pool")
+    async fn create_test_pool() -> PgPool {
+        PgPool::connect(&std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgresql://rustassistant:changeme@localhost:5432/rustassistant_test".to_string()
+        }))
+        .await
+        .expect("Failed to create test pool")
     }
 
     #[tokio::test]

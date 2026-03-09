@@ -4,7 +4,7 @@
 //! Designed for easy LLM processing and IDE export.
 
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, SqlitePool};
+use sqlx::{FromRow, PgPool};
 
 use uuid::Uuid;
 
@@ -286,7 +286,7 @@ impl TaskGroup {
 // Database Operations
 // ============================================================================
 
-pub async fn create_task(pool: &SqlitePool, task: &Task) -> anyhow::Result<()> {
+pub async fn create_task(pool: &PgPool, task: &Task) -> anyhow::Result<()> {
     sqlx::query(
         r#"
         INSERT INTO tasks (
@@ -331,7 +331,7 @@ pub async fn create_task(pool: &SqlitePool, task: &Task) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn get_task(pool: &SqlitePool, id: &str) -> anyhow::Result<Option<Task>> {
+pub async fn get_task(pool: &PgPool, id: &str) -> anyhow::Result<Option<Task>> {
     let task = sqlx::query_as::<_, Task>("SELECT * FROM tasks WHERE id = ?")
         .bind(id)
         .fetch_optional(pool)
@@ -339,7 +339,7 @@ pub async fn get_task(pool: &SqlitePool, id: &str) -> anyhow::Result<Option<Task
     Ok(task)
 }
 
-pub async fn get_pending_tasks(pool: &SqlitePool, limit: i32) -> anyhow::Result<Vec<Task>> {
+pub async fn get_pending_tasks(pool: &PgPool, limit: i32) -> anyhow::Result<Vec<Task>> {
     let tasks = sqlx::query_as::<_, Task>(
         "SELECT * FROM tasks WHERE status IN ('pending', 'review', 'ready') ORDER BY priority DESC, created_at ASC LIMIT ?"
     )
@@ -350,7 +350,7 @@ pub async fn get_pending_tasks(pool: &SqlitePool, limit: i32) -> anyhow::Result<
 }
 
 pub async fn get_tasks_by_status(
-    pool: &SqlitePool,
+    pool: &PgPool,
     status: &str,
     limit: i32,
 ) -> anyhow::Result<Vec<Task>> {
@@ -365,7 +365,7 @@ pub async fn get_tasks_by_status(
 }
 
 pub async fn update_task_status(
-    pool: &SqlitePool,
+    pool: &PgPool,
     id: &str,
     status: TaskStatus,
 ) -> anyhow::Result<()> {
@@ -401,7 +401,7 @@ pub async fn update_task_status(
 }
 
 pub async fn update_task_analysis(
-    pool: &SqlitePool,
+    pool: &PgPool,
     id: &str,
     priority: i32,
     category: &str,
@@ -426,7 +426,7 @@ pub async fn update_task_analysis(
     Ok(())
 }
 
-pub async fn mark_task_failed(pool: &SqlitePool, id: &str, error: &str) -> anyhow::Result<()> {
+pub async fn mark_task_failed(pool: &PgPool, id: &str, error: &str) -> anyhow::Result<()> {
     let now = chrono::Utc::now().timestamp();
 
     sqlx::query(
@@ -441,7 +441,7 @@ pub async fn mark_task_failed(pool: &SqlitePool, id: &str, error: &str) -> anyho
     Ok(())
 }
 
-pub async fn check_duplicate(pool: &SqlitePool, content_hash: &str) -> anyhow::Result<bool> {
+pub async fn check_duplicate(pool: &PgPool, content_hash: &str) -> anyhow::Result<bool> {
     let count: (i64,) =
         sqlx::query_as("SELECT COUNT(*) FROM tasks WHERE content_hash = ? AND status != 'done'")
             .bind(content_hash)
@@ -452,7 +452,7 @@ pub async fn check_duplicate(pool: &SqlitePool, content_hash: &str) -> anyhow::R
 }
 
 pub async fn assign_group(
-    pool: &SqlitePool,
+    pool: &PgPool,
     task_id: &str,
     group_id: &str,
     reason: &str,
@@ -483,7 +483,7 @@ pub struct TaskStats {
     pub total_tokens: i64,
 }
 
-pub async fn get_task_stats(pool: &SqlitePool) -> anyhow::Result<TaskStats> {
+pub async fn get_task_stats(pool: &PgPool) -> anyhow::Result<TaskStats> {
     let stats =
         sqlx::query_as::<_, (String, i64)>("SELECT status, COUNT(*) FROM tasks GROUP BY status")
             .fetch_all(pool)

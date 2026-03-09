@@ -15,9 +15,9 @@
 //!
 //! ```rust,no_run
 //! use rustassistant::search::{SemanticSearcher, SearchQuery, SearchConfig};
-//! use sqlx::SqlitePool;
+//! use sqlx::PgPool;
 //!
-//! # async fn example(pool: &SqlitePool) -> anyhow::Result<()> {
+//! # async fn example(pool: &PgPool) -> anyhow::Result<()> {
 //! let searcher = SemanticSearcher::new(SearchConfig::default()).await?;
 //!
 //! let query = SearchQuery {
@@ -38,7 +38,7 @@
 use crate::embeddings::{Embedding, EmbeddingGenerator};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use sqlx::{Row, SqlitePool};
+use sqlx::{Row, PgPool};
 use std::collections::HashMap;
 
 // ============================================================================
@@ -235,7 +235,7 @@ impl SemanticSearcher {
     /// Perform semantic search
     pub async fn search(
         &self,
-        pool: &SqlitePool,
+        pool: &PgPool,
         query: &SearchQuery,
     ) -> Result<Vec<SearchResult>> {
         // Determine top_k
@@ -255,7 +255,7 @@ impl SemanticSearcher {
     /// Perform semantic-only search
     async fn semantic_search_only(
         &self,
-        pool: &SqlitePool,
+        pool: &PgPool,
         query: &SearchQuery,
         top_k: usize,
     ) -> Result<Vec<SearchResult>> {
@@ -338,7 +338,7 @@ impl SemanticSearcher {
     /// Perform hybrid search (semantic + keyword)
     async fn hybrid_search(
         &self,
-        pool: &SqlitePool,
+        pool: &PgPool,
         query: &SearchQuery,
         top_k: usize,
     ) -> Result<Vec<SearchResult>> {
@@ -357,7 +357,7 @@ impl SemanticSearcher {
     /// Perform keyword-based search
     async fn keyword_search(
         &self,
-        pool: &SqlitePool,
+        pool: &PgPool,
         query: &SearchQuery,
         top_k: usize,
     ) -> Result<Vec<SearchResult>> {
@@ -480,7 +480,7 @@ impl SemanticSearcher {
     /// Get candidate embeddings from database with filters
     async fn get_candidate_embeddings(
         &self,
-        pool: &SqlitePool,
+        pool: &PgPool,
         filters: &SearchFilters,
     ) -> Result<Vec<CandidateEmbedding>> {
         let filter_clause = self.build_filter_clause(filters);

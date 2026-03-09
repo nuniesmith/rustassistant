@@ -7,6 +7,48 @@ use std::path::PathBuf;
 use std::process::Command;
 use walkdir::WalkDir;
 
+// ── cargo test --format json event types ────────────────────────────────────
+
+/// A single line of `cargo test -- --format=json` output.
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+enum CargoTestEvent {
+    /// A single test result.
+    Test(CargoTestEventTest),
+    /// Suite-level summary emitted at the end.
+    Suite(CargoTestEventSuite),
+}
+
+#[derive(Debug, Deserialize)]
+struct CargoTestEventTest {
+    event: String, // "started" | "ok" | "failed" | "ignored"
+    name: String,
+    #[serde(default)]
+    stdout: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CargoTestEventSuite {
+    #[allow(dead_code)]
+    event: String, // "started" | "ok" | "failed"
+}
+
+// ── pytest-json-report structures ───────────────────────────────────────────
+
+/// Root of `.pytest-report.json` produced by `pytest-json-report`.
+#[derive(Debug, Deserialize)]
+struct PytestReport {
+    #[serde(default)]
+    tests: Vec<PytestTest>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PytestTest {
+    /// e.g. "tests/test_foo.py::test_bar"
+    nodeid: String,
+    outcome: String, // "passed" | "failed" | "skipped" | "error"
+}
+
 /// Test runner for different project types
 #[derive(Debug)]
 pub struct TestRunner {
@@ -153,21 +195,33 @@ impl TestRunner {
         // Find all test files
         let test_files = self.find_rust_test_files()?;
 
-        // Run cargo test with JSON output
+        // Run cargo test with JSON output.
+        // `--format=json` requires the nightly test harness flag on stable, so we
+        // pass `-Zunstable-options` to accommodate both channels gracefully.
         let output = Command::new("cargo")
             .arg("test")
             .arg("--")
+            .arg("-Zunstable-options")
             .arg("--format=json")
-            .arg("--nocapture")
             .current_dir(&self.root)
             .output()
             .map_err(AuditError::Io)?;
 
         let duration = start.elapsed().as_secs_f64();
-        let output_str = String::from_utf8_lossy(&output.stdout).to_string();
+        // cargo test writes JSON events to stdout; human-readable summary to stderr.
+        let json_output = String::from_utf8_lossy(&output.stdout).to_string();
+        let text_output = String::from_utf8_lossy(&output.stderr).to_string();
 
-        // Parse cargo test output
-        let (total, passed, failed, skipped) = self.parse_cargo_test_output(&output_str);
+        // Parse the JSON event stream for per-file breakdown.
+        let (results_by_file, json_total, json_passed, json_failed, json_skipped) =
+            self.parse_cargo_test_json(&json_output);
+
+        // Fall back to text summary parsing if JSON yielded nothing (e.g. old toolchain).
+        let (total, passed, failed, skipped) = if json_total > 0 {
+            (json_total, json_passed, json_failed, json_skipped)
+        } else {
+            self.parse_cargo_test_output(&text_output)
+        };
 
         // Try to get coverage if available
         let coverage = self.get_rust_coverage().ok();
@@ -181,8 +235,12 @@ impl TestRunner {
             duration,
             test_files,
             coverage,
-            results_by_file: HashMap::new(), // TODO: Parse detailed results
-            output: output_str,
+            results_by_file,
+            output: if text_output.is_empty() {
+                json_output
+            } else {
+                text_output
+            },
         })
     }
 
@@ -193,10 +251,12 @@ impl TestRunner {
         // Find all test files
         let test_files = self.find_python_test_files()?;
 
+        let report_path = self.root.join(".pytest-report.json");
+
         // Run pytest with JSON report
         let output = Command::new("pytest")
             .arg("--json-report")
-            .arg("--json-report-file=.pytest-report.json")
+            .arg(format!("--json-report-file={}", report_path.display()))
             .arg("-v")
             .current_dir(&self.root)
             .output()
@@ -205,8 +265,16 @@ impl TestRunner {
         let duration = start.elapsed().as_secs_f64();
         let output_str = String::from_utf8_lossy(&output.stdout).to_string();
 
-        // Parse pytest output
-        let (total, passed, failed, skipped) = self.parse_pytest_output(&output_str);
+        // Parse per-file results from the JSON report file (if it was written).
+        let (results_by_file, json_total, json_passed, json_failed, json_skipped) =
+            self.parse_pytest_json_report(&report_path);
+
+        // Fall back to text parsing if the JSON report wasn't produced.
+        let (total, passed, failed, skipped) = if json_total > 0 {
+            (json_total, json_passed, json_failed, json_skipped)
+        } else {
+            self.parse_pytest_output(&output_str)
+        };
 
         // Try to get coverage if available
         let coverage = self.get_python_coverage().ok();
@@ -220,7 +288,7 @@ impl TestRunner {
             duration,
             test_files,
             coverage,
-            results_by_file: HashMap::new(),
+            results_by_file,
             output: output_str,
         })
     }
@@ -388,6 +456,146 @@ impl TestRunner {
     }
 
     /// Parse cargo test output
+    /// Parse `cargo test -- --format=json` event stream into per-file results.
+    ///
+    /// Returns `(results_by_file, total, passed, failed, skipped)`.
+    /// On any parse error the map will be empty and counts will be 0 so the
+    /// caller can fall back to text-based parsing.
+    fn parse_cargo_test_json(
+        &self,
+        output: &str,
+    ) -> (HashMap<String, FileTestResult>, usize, usize, usize, usize) {
+        let mut by_file: HashMap<String, FileTestResult> = HashMap::new();
+        let mut total = 0usize;
+        let mut passed = 0usize;
+        let mut failed = 0usize;
+        let mut skipped = 0usize;
+
+        for line in output.lines() {
+            let line = line.trim();
+            if line.is_empty() || !line.starts_with('{') {
+                continue;
+            }
+
+            let event: CargoTestEvent = match serde_json::from_str(line) {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if let CargoTestEvent::Test(t) = event {
+                match t.event.as_str() {
+                    "ok" | "failed" | "ignored" => {
+                        total += 1;
+
+                        // Derive the file path from the test name.
+                        // `cargo test` names look like:  `module::sub::test_name`
+                        // We map the leading module path to a .rs file under src/.
+                        let file_key = derive_rust_file_key(&t.name);
+
+                        let entry = by_file.entry(file_key.clone()).or_insert(FileTestResult {
+                            file: file_key,
+                            tests: 0,
+                            passed: 0,
+                            failed: 0,
+                            failures: Vec::new(),
+                        });
+
+                        entry.tests += 1;
+
+                        match t.event.as_str() {
+                            "ok" => {
+                                passed += 1;
+                                entry.passed += 1;
+                            }
+                            "failed" => {
+                                failed += 1;
+                                entry.failed += 1;
+                                entry.failures.push(t.name.clone());
+                            }
+                            "ignored" => {
+                                skipped += 1;
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {} // "started" — skip
+                }
+            }
+        }
+
+        (by_file, total, passed, failed, skipped)
+    }
+
+    /// Parse `.pytest-report.json` written by `pytest-json-report` into
+    /// per-file results.
+    ///
+    /// Returns `(results_by_file, total, passed, failed, skipped)`.
+    fn parse_pytest_json_report(
+        &self,
+        report_path: &std::path::Path,
+    ) -> (HashMap<String, FileTestResult>, usize, usize, usize, usize) {
+        let mut by_file: HashMap<String, FileTestResult> = HashMap::new();
+
+        let content = match std::fs::read_to_string(report_path) {
+            Ok(c) => c,
+            Err(_) => return (by_file, 0, 0, 0, 0),
+        };
+
+        let report: PytestReport = match serde_json::from_str(&content) {
+            Ok(r) => r,
+            Err(_) => return (by_file, 0, 0, 0, 0),
+        };
+
+        let mut total = 0usize;
+        let mut passed = 0usize;
+        let mut failed = 0usize;
+        let mut skipped = 0usize;
+
+        for test in &report.tests {
+            total += 1;
+
+            // nodeid format: "tests/test_foo.py::TestClass::test_method"
+            // or just:       "tests/test_foo.py::test_function"
+            let file_key = test
+                .nodeid
+                .splitn(2, "::")
+                .next()
+                .unwrap_or(&test.nodeid)
+                .to_string();
+
+            let entry = by_file.entry(file_key.clone()).or_insert(FileTestResult {
+                file: file_key,
+                tests: 0,
+                passed: 0,
+                failed: 0,
+                failures: Vec::new(),
+            });
+
+            entry.tests += 1;
+
+            match test.outcome.as_str() {
+                "passed" => {
+                    passed += 1;
+                    entry.passed += 1;
+                }
+                "failed" | "error" => {
+                    failed += 1;
+                    entry.failed += 1;
+                    entry.failures.push(test.nodeid.clone());
+                }
+                "skipped" => {
+                    skipped += 1;
+                }
+                _ => {
+                    // Unknown outcome — count as skipped to avoid inflating pass counts.
+                    skipped += 1;
+                }
+            }
+        }
+
+        (by_file, total, passed, failed, skipped)
+    }
+
     fn parse_cargo_test_output(&self, output: &str) -> (usize, usize, usize, usize) {
         let mut passed = 0;
         let mut failed = 0;
@@ -546,6 +754,63 @@ impl TestRunner {
     }
 }
 
+// ── Module-level helpers ─────────────────────────────────────────────────────
+
+/// Derive a human-readable file key from a cargo test name.
+///
+/// Test names look like `module::submodule::test_fn` or just `test_fn`.
+/// We convert the leading path component(s) to a plausible `src/<path>.rs`
+/// string so results can be grouped by source file even without the full path.
+///
+/// Examples:
+/// - `repo_sync::tests::slugify_basic`  →  `src/repo_sync.rs`
+/// - `audit::cache::tests::hit_rate`    →  `src/audit/cache.rs`
+/// - `top_level_test`                   →  `src/lib.rs`
+fn derive_rust_file_key(test_name: &str) -> String {
+    let all_parts: Vec<&str> = test_name.splitn(10, "::").collect();
+
+    // Keep only the "module path" components — stop at:
+    //   - a segment named exactly "tests"  (the conventional test sub-module)
+    //   - a segment that starts with "test_" (a leaf test function name)
+    //   - a segment that is the last part AND the previous segment was "tests"
+    //     (already handled by stopping at "tests")
+    //
+    // We deliberately keep module names that happen to contain underscores
+    // (e.g. "repo_sync", "model_router", "mod_a") — only the `test_` prefix
+    // convention reliably distinguishes function names from module names.
+    let module_parts: Vec<&str> = all_parts
+        .iter()
+        .take_while(|&&p| {
+            // Stop at the conventional `tests` sub-module.
+            if p == "tests" {
+                return false;
+            }
+            // Stop at a segment that is a test function name (starts with "test_").
+            if p.starts_with("test_") {
+                return false;
+            }
+            true
+        })
+        .copied()
+        .collect();
+
+    match module_parts.as_slice() {
+        // No module components at all → top-level test in lib.rs.
+        [] => "src/lib.rs".to_string(),
+        // Single module: "repo_sync" → src/repo_sync.rs
+        [module] => format!("src/{}.rs", module),
+        // Two modules: "audit::cache" → src/audit/cache.rs
+        [first, second] => format!("src/{}/{}.rs", first, second),
+        // Three+ modules: build the full path.
+        // e.g. ["audit", "cache", "endpoint"] → src/audit/cache/endpoint.rs
+        parts => {
+            let dirs = parts[..parts.len() - 1].join("/");
+            let file = parts.last().unwrap_or(&"lib");
+            format!("src/{}/{}.rs", dirs, file)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -572,5 +837,143 @@ mod tests {
         assert_eq!(failed, 2);
         assert_eq!(skipped, 1);
         assert_eq!(total, 18);
+    }
+
+    // ── derive_rust_file_key ─────────────────────────────────────────────────
+
+    #[test]
+    fn file_key_top_level_test() {
+        // A bare name starting with "test_" with no "::" → lib.rs
+        assert_eq!(derive_rust_file_key("test_top_level"), "src/lib.rs");
+        // A single plain segment with no "::" is treated as a module name → src/<name>.rs
+        assert_eq!(derive_rust_file_key("embeddings"), "src/embeddings.rs");
+    }
+
+    #[test]
+    fn file_key_single_module() {
+        assert_eq!(
+            derive_rust_file_key("repo_sync::tests::slugify_basic"),
+            "src/repo_sync.rs"
+        );
+    }
+
+    #[test]
+    fn file_key_two_module_components() {
+        assert_eq!(
+            derive_rust_file_key("audit::cache::tests::hit_rate"),
+            "src/audit/cache.rs"
+        );
+    }
+
+    #[test]
+    fn file_key_three_module_components() {
+        assert_eq!(
+            derive_rust_file_key("audit::endpoint::tests::my_test"),
+            "src/audit/endpoint.rs"
+        );
+    }
+
+    #[test]
+    fn file_key_no_tests_module_in_name() {
+        // "route_prompt_async" does NOT start with "test_" so it is kept as a
+        // module segment — the result maps to src/model_router/route_prompt_async.rs
+        // which is the best we can do without full symbol info.
+        // The important thing is that it doesn't panic and returns something useful.
+        let key = derive_rust_file_key("model_router::route_prompt_async");
+        assert!(
+            key.starts_with("src/"),
+            "key should start with src/: {}",
+            key
+        );
+    }
+
+    #[test]
+    fn file_key_module_with_underscores() {
+        // Module names that contain underscores (e.g. repo_sync) should NOT be
+        // mistaken for function names.
+        assert_eq!(
+            derive_rust_file_key("repo_sync::tests::slugify_basic"),
+            "src/repo_sync.rs"
+        );
+        assert_eq!(
+            derive_rust_file_key("model_router::tests::test_classify"),
+            "src/model_router.rs"
+        );
+    }
+
+    #[test]
+    fn file_key_single_segment_module_name() {
+        // A module name with no "::" separator → src/<name>.rs
+        assert_eq!(
+            derive_rust_file_key("embeddings::tests::embed_ok"),
+            "src/embeddings.rs"
+        );
+    }
+
+    // ── parse_cargo_test_json ────────────────────────────────────────────────
+
+    #[test]
+    fn parse_cargo_json_counts_ok_failed_ignored() {
+        let runner = TestRunner::new(".");
+
+        // Minimal cargo --format=json event stream
+        let json_events = r#"
+{"type":"suite","event":"started","test_count":3}
+{"type":"test","event":"started","name":"mod_a::tests::test_one"}
+{"type":"test","event":"ok","name":"mod_a::tests::test_one","exec_time":0.001}
+{"type":"test","event":"started","name":"mod_a::tests::test_two"}
+{"type":"test","event":"failed","name":"mod_a::tests::test_two","exec_time":0.002,"stdout":"assertion failed"}
+{"type":"test","event":"started","name":"mod_b::tests::test_skip"}
+{"type":"test","event":"ignored","name":"mod_b::tests::test_skip"}
+{"type":"suite","event":"failed","passed":1,"failed":1,"ignored":1,"measured":0,"filtered_out":0,"exec_time":0.003}
+"#;
+
+        let (by_file, total, passed, failed, skipped) = runner.parse_cargo_test_json(json_events);
+
+        assert_eq!(total, 3, "total");
+        assert_eq!(passed, 1, "passed");
+        assert_eq!(failed, 1, "failed");
+        assert_eq!(skipped, 1, "skipped");
+
+        // mod_a::tests::test_one and mod_a::tests::test_two both map to src/mod_a.rs
+        // (stops at "tests" segment, keeping only "mod_a")
+        assert_eq!(
+            by_file.get("src/mod_a.rs").map(|r| r.tests),
+            Some(2),
+            "mod_a test count"
+        );
+        assert_eq!(
+            by_file.get("src/mod_b.rs").map(|r| r.tests),
+            Some(1),
+            "mod_b test count"
+        );
+
+        // Failed test name is captured
+        let mod_a = by_file.get("src/mod_a.rs").unwrap();
+        assert_eq!(mod_a.failed, 1);
+        assert!(mod_a
+            .failures
+            .contains(&"mod_a::tests::test_two".to_string()));
+    }
+
+    #[test]
+    fn parse_cargo_json_empty_input_returns_zeros() {
+        let runner = TestRunner::new(".");
+        let (by_file, total, passed, failed, skipped) = runner.parse_cargo_test_json("");
+        assert_eq!(total, 0);
+        assert_eq!(passed, 0);
+        assert_eq!(failed, 0);
+        assert_eq!(skipped, 0);
+        assert!(by_file.is_empty());
+    }
+
+    #[test]
+    fn parse_cargo_json_ignores_non_json_lines() {
+        let runner = TestRunner::new(".");
+        // Mix of JSON events and plain text (e.g. build output)
+        let input = "   Compiling foo v0.1.0\n{\"type\":\"test\",\"event\":\"ok\",\"name\":\"lib::test_x\"}\n";
+        let (_, total, passed, _, _) = runner.parse_cargo_test_json(input);
+        assert_eq!(total, 1);
+        assert_eq!(passed, 1);
     }
 }

@@ -1,13 +1,11 @@
 //! Database module for Rustassistant
 //!
-//! Provides SQLite-based storage for notes, repositories, and tasks.
+//! Provides PostgreSQL-based storage for notes, repositories, and tasks.
 //! Uses sqlx for async database operations.
 
 use serde::{Deserialize, Serialize};
-use sqlx::{sqlite::SqlitePoolOptions, FromRow, SqlitePool};
+use sqlx::{postgres::PgPoolOptions, FromRow, PgPool};
 use thiserror::Error;
-
-use super::queue::create_queue_tables;
 
 // ============================================================================
 // Error Types
@@ -26,6 +24,9 @@ pub enum DbError {
 }
 
 pub type DbResult<T> = Result<T, DbError>;
+
+// Type alias for convenience
+pub type DbPool = PgPool;
 
 // ============================================================================
 // Models
@@ -308,230 +309,20 @@ pub struct DocumentTag {
 // ============================================================================
 
 /// Initialize the database connection pool and create tables
-pub async fn init_db(database_url: &str) -> DbResult<SqlitePool> {
-    // Create the database file directory if needed
-    if database_url.starts_with("sqlite:") {
-        // Handle both sqlite:path and sqlite://path (and sqlite:///abs/path)
-        let raw = database_url.trim_start_matches("sqlite:");
-        let path = raw.trim_start_matches("//");
-        // For absolute paths sqlite:///abs/path the triple-slash leaves a leading /
-        // after the double-slash strip — that's correct. For sqlite://data/foo we
-        // want "data/foo", which is what trim_start_matches("//") gives us.
-        let file_path = std::path::Path::new(path);
-
-        // Create parent directory if needed
-        if let Some(parent) = file_path.parent() {
-            std::fs::create_dir_all(parent).ok();
-        }
-
-        // Create empty database file if it doesn't exist
-        // This ensures SQLx can connect successfully
-        if !file_path.exists() {
-            std::fs::File::create(file_path).ok();
-        }
-    }
-
-    let pool = SqlitePoolOptions::new()
+pub async fn init_db(database_url: &str) -> DbResult<PgPool> {
+    let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(database_url)
         .await?;
 
-    // Run migrations (create tables)
-    create_tables(&pool).await?;
-
-    // Create queue system tables
-    create_queue_tables(&pool).await.map_err(DbError::Sqlx)?;
+    // Run all migrations from the ./migrations directory.
+    // This replaces the old inline create_tables() + create_queue_tables() calls.
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .map_err(|e| DbError::Sqlx(e.into()))?;
 
     Ok(pool)
-}
-
-/// Create all required tables
-async fn create_tables(pool: &SqlitePool) -> DbResult<()> {
-    // Notes table
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS notes (
-            id TEXT PRIMARY KEY,
-            content TEXT NOT NULL,
-            tags TEXT,
-            project TEXT,
-            status TEXT NOT NULL DEFAULT 'inbox',
-            repo_id TEXT,
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
-        )
-        "#,
-    )
-    .execute(pool)
-    .await?;
-
-    // Add columns that may be missing on older notes tables (safe to run repeatedly)
-    let _ = sqlx::query("ALTER TABLE notes ADD COLUMN tags TEXT")
-        .execute(pool)
-        .await;
-    let _ = sqlx::query("ALTER TABLE notes ADD COLUMN project TEXT")
-        .execute(pool)
-        .await;
-    let _ = sqlx::query("ALTER TABLE notes ADD COLUMN repo_id TEXT")
-        .execute(pool)
-        .await;
-
-    // Repositories table — column names must match the migration schema
-    // (local_path, auto_scan, scan_interval_mins, url, last_scanned_at, etc.)
-    // so that sqlx(rename) mappings on the Repository struct work correctly.
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS repositories (
-            id TEXT PRIMARY KEY NOT NULL,
-            name TEXT NOT NULL UNIQUE,
-            url TEXT,
-            local_path TEXT,
-            auto_scan INTEGER NOT NULL DEFAULT 1,
-            scan_interval_mins INTEGER NOT NULL DEFAULT 60,
-            last_scanned_at INTEGER,
-            last_commit_hash TEXT,
-            git_url TEXT,
-            created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-            updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
-            scan_status TEXT DEFAULT 'idle',
-            scan_progress TEXT DEFAULT NULL,
-            scan_current_file TEXT DEFAULT NULL,
-            scan_files_total INTEGER DEFAULT 0,
-            scan_files_processed INTEGER DEFAULT 0,
-            last_scan_duration_ms INTEGER DEFAULT NULL,
-            last_scan_files_found INTEGER DEFAULT 0,
-            last_scan_issues_found INTEGER DEFAULT 0,
-            last_error TEXT DEFAULT NULL,
-            source_type TEXT DEFAULT 'git',
-            clone_depth INTEGER DEFAULT 1,
-            last_sync_at INTEGER
-        )
-        "#,
-    )
-    .execute(pool)
-    .await?;
-
-    // Add columns that may be missing on older databases (safe to run repeatedly)
-    let _ = sqlx::query("ALTER TABLE repositories ADD COLUMN last_commit_hash TEXT")
-        .execute(pool)
-        .await;
-    let _ = sqlx::query("ALTER TABLE repositories ADD COLUMN git_url TEXT")
-        .execute(pool)
-        .await;
-    let _ = sqlx::query("ALTER TABLE repositories ADD COLUMN scan_status TEXT DEFAULT 'idle'")
-        .execute(pool)
-        .await;
-    let _ = sqlx::query("ALTER TABLE repositories ADD COLUMN scan_progress TEXT DEFAULT NULL")
-        .execute(pool)
-        .await;
-    let _ = sqlx::query("ALTER TABLE repositories ADD COLUMN scan_current_file TEXT DEFAULT NULL")
-        .execute(pool)
-        .await;
-    let _ = sqlx::query("ALTER TABLE repositories ADD COLUMN scan_files_total INTEGER DEFAULT 0")
-        .execute(pool)
-        .await;
-    let _ =
-        sqlx::query("ALTER TABLE repositories ADD COLUMN scan_files_processed INTEGER DEFAULT 0")
-            .execute(pool)
-            .await;
-    let _ = sqlx::query(
-        "ALTER TABLE repositories ADD COLUMN last_scan_duration_ms INTEGER DEFAULT NULL",
-    )
-    .execute(pool)
-    .await;
-    let _ =
-        sqlx::query("ALTER TABLE repositories ADD COLUMN last_scan_files_found INTEGER DEFAULT 0")
-            .execute(pool)
-            .await;
-    let _ =
-        sqlx::query("ALTER TABLE repositories ADD COLUMN last_scan_issues_found INTEGER DEFAULT 0")
-            .execute(pool)
-            .await;
-    let _ = sqlx::query("ALTER TABLE repositories ADD COLUMN last_error TEXT DEFAULT NULL")
-        .execute(pool)
-        .await;
-    let _ = sqlx::query("ALTER TABLE repositories ADD COLUMN source_type TEXT DEFAULT 'git'")
-        .execute(pool)
-        .await;
-    let _ = sqlx::query("ALTER TABLE repositories ADD COLUMN clone_depth INTEGER DEFAULT 1")
-        .execute(pool)
-        .await;
-    let _ = sqlx::query("ALTER TABLE repositories ADD COLUMN last_sync_at INTEGER")
-        .execute(pool)
-        .await;
-    let _ = sqlx::query(
-        "ALTER TABLE repositories ADD COLUMN review_requested INTEGER NOT NULL DEFAULT 0",
-    )
-    .execute(pool)
-    .await;
-
-    // Tasks table
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS tasks (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            description TEXT,
-            priority INTEGER NOT NULL DEFAULT 3,
-            status TEXT NOT NULL DEFAULT 'pending',
-            source TEXT NOT NULL DEFAULT 'manual',
-            source_id TEXT,
-            repo_id TEXT,
-            file_path TEXT,
-            line_number INTEGER,
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL,
-            FOREIGN KEY (repo_id) REFERENCES repositories(id)
-        )
-        "#,
-    )
-    .execute(pool)
-    .await?;
-
-    // Note tags table (normalized tags for notes)
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS note_tags (
-            note_id TEXT NOT NULL,
-            tag TEXT NOT NULL,
-            created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-            PRIMARY KEY (note_id, tag),
-            FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
-        )
-        "#,
-    )
-    .execute(pool)
-    .await?;
-
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_note_tags_note_id ON note_tags(note_id)")
-        .execute(pool)
-        .await?;
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_note_tags_tag ON note_tags(tag)")
-        .execute(pool)
-        .await?;
-
-    // Create indexes for common queries
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_notes_status ON notes(status)")
-        .execute(pool)
-        .await?;
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_notes_project ON notes(project)")
-        .execute(pool)
-        .await?;
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_notes_created ON notes(created_at DESC)")
-        .execute(pool)
-        .await?;
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority, status)")
-        .execute(pool)
-        .await?;
-    // Use let _ = because migration-created tasks table uses `source_repo` not `repo_id`
-    let _ = sqlx::query("CREATE INDEX IF NOT EXISTS idx_tasks_repo ON tasks(repo_id)")
-        .execute(pool)
-        .await;
-    let _ = sqlx::query("CREATE INDEX IF NOT EXISTS idx_tasks_source_repo ON tasks(source_repo)")
-        .execute(pool)
-        .await;
-
-    Ok(())
 }
 
 // ============================================================================
@@ -540,7 +331,7 @@ async fn create_tables(pool: &SqlitePool) -> DbResult<()> {
 
 /// Create a new note with optional tags and repo linking
 pub async fn create_note_with_tags(
-    pool: &SqlitePool,
+    pool: &PgPool,
     content: &str,
     tags: &[&str],
     project: Option<&str>,
@@ -553,7 +344,7 @@ pub async fn create_note_with_tags(
     sqlx::query(
         r#"
         INSERT INTO notes (id, content, tags, project, status, repo_id, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'inbox', ?, ?, ?)
+        VALUES ($1, $2, $3, $4, 'inbox', $5, $6, $7)
         "#,
     )
     .bind(&id)
@@ -593,7 +384,7 @@ pub async fn create_note_with_tags(
 
 /// Create a new note (legacy API - backward compatible)
 pub async fn create_note(
-    pool: &SqlitePool,
+    pool: &PgPool,
     content: &str,
     tags: Option<&str>,
     project: Option<&str>,
@@ -606,8 +397,8 @@ pub async fn create_note(
 }
 
 /// Get a note by ID
-pub async fn get_note(pool: &SqlitePool, id: &str) -> DbResult<Note> {
-    sqlx::query_as::<_, Note>("SELECT * FROM notes WHERE id = ?")
+pub async fn get_note(pool: &PgPool, id: &str) -> DbResult<Note> {
+    sqlx::query_as::<_, Note>("SELECT * FROM notes WHERE id = $1")
         .bind(id)
         .fetch_optional(pool)
         .await?
@@ -616,25 +407,30 @@ pub async fn get_note(pool: &SqlitePool, id: &str) -> DbResult<Note> {
 
 /// List notes with optional filtering
 pub async fn list_notes(
-    pool: &SqlitePool,
+    pool: &PgPool,
     limit: i64,
     status: Option<&str>,
     project: Option<&str>,
     tag: Option<&str>,
 ) -> DbResult<Vec<Note>> {
+    // Build query with positional Postgres placeholders ($1, $2, ...)
     let mut query = String::from("SELECT * FROM notes WHERE 1=1");
+    let mut param_idx: u32 = 1;
 
     if status.is_some() {
-        query.push_str(" AND status = ?");
+        query.push_str(&format!(" AND status = ${}", param_idx));
+        param_idx += 1;
     }
     if project.is_some() {
-        query.push_str(" AND project = ?");
+        query.push_str(&format!(" AND project = ${}", param_idx));
+        param_idx += 1;
     }
     if tag.is_some() {
-        query.push_str(" AND tags LIKE ?");
+        query.push_str(&format!(" AND tags LIKE ${}", param_idx));
+        param_idx += 1;
     }
 
-    query.push_str(" ORDER BY created_at DESC LIMIT ?");
+    query.push_str(&format!(" ORDER BY created_at DESC LIMIT ${}", param_idx));
 
     let mut q = sqlx::query_as::<_, Note>(&query);
 
@@ -653,15 +449,15 @@ pub async fn list_notes(
 }
 
 /// Search notes by content
-pub async fn search_notes(pool: &SqlitePool, query: &str, limit: i64) -> DbResult<Vec<Note>> {
+pub async fn search_notes(pool: &PgPool, query: &str, limit: i64) -> DbResult<Vec<Note>> {
     let search_pattern = format!("%{}%", query);
 
     Ok(sqlx::query_as::<_, Note>(
         r#"
         SELECT * FROM notes
-        WHERE content LIKE ? OR tags LIKE ?
+        WHERE content LIKE $1 OR tags LIKE $2
         ORDER BY created_at DESC
-        LIMIT ?
+        LIMIT $3
         "#,
     )
     .bind(&search_pattern)
@@ -672,10 +468,10 @@ pub async fn search_notes(pool: &SqlitePool, query: &str, limit: i64) -> DbResul
 }
 
 /// Update note status
-pub async fn update_note_status(pool: &SqlitePool, id: &str, status: &str) -> DbResult<()> {
+pub async fn update_note_status(pool: &PgPool, id: &str, status: &str) -> DbResult<()> {
     let now = chrono::Utc::now().timestamp();
 
-    let result = sqlx::query("UPDATE notes SET status = ?, updated_at = ? WHERE id = ?")
+    let result = sqlx::query("UPDATE notes SET status = $1, updated_at = $2 WHERE id = $3")
         .bind(status)
         .bind(now)
         .bind(id)
@@ -690,8 +486,8 @@ pub async fn update_note_status(pool: &SqlitePool, id: &str, status: &str) -> Db
 }
 
 /// Delete a note
-pub async fn delete_note(pool: &SqlitePool, id: &str) -> DbResult<()> {
-    let result = sqlx::query("DELETE FROM notes WHERE id = ?")
+pub async fn delete_note(pool: &PgPool, id: &str) -> DbResult<()> {
+    let result = sqlx::query("DELETE FROM notes WHERE id = $1")
         .bind(id)
         .execute(pool)
         .await?;
@@ -708,7 +504,7 @@ pub async fn delete_note(pool: &SqlitePool, id: &str) -> DbResult<()> {
 // ============================================================================
 
 /// Get all tags ordered by usage count
-pub async fn list_tags(pool: &SqlitePool) -> DbResult<Vec<Tag>> {
+pub async fn list_tags(pool: &PgPool) -> DbResult<Vec<Tag>> {
     Ok(
         sqlx::query_as::<_, Tag>("SELECT * FROM tags ORDER BY usage_count DESC, name ASC")
             .fetch_all(pool)
@@ -717,9 +513,9 @@ pub async fn list_tags(pool: &SqlitePool) -> DbResult<Vec<Tag>> {
 }
 
 /// Get a specific tag by name
-pub async fn get_tag(pool: &SqlitePool, name: &str) -> DbResult<Option<Tag>> {
+pub async fn get_tag(pool: &PgPool, name: &str) -> DbResult<Option<Tag>> {
     Ok(
-        sqlx::query_as::<_, Tag>("SELECT * FROM tags WHERE name = ?")
+        sqlx::query_as::<_, Tag>("SELECT * FROM tags WHERE name = $1")
             .bind(name)
             .fetch_optional(pool)
             .await?,
@@ -728,7 +524,7 @@ pub async fn get_tag(pool: &SqlitePool, name: &str) -> DbResult<Option<Tag>> {
 
 /// Create or update a tag
 pub async fn upsert_tag(
-    pool: &SqlitePool,
+    pool: &PgPool,
     name: &str,
     color: Option<&str>,
     description: Option<&str>,
@@ -738,11 +534,11 @@ pub async fn upsert_tag(
     sqlx::query(
         r#"
         INSERT INTO tags (name, color, description, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?)
+        VALUES ($1, $2, $3, $4, $5)
         ON CONFLICT(name) DO UPDATE SET
-            color = COALESCE(?, color),
-            description = COALESCE(?, description),
-            updated_at = ?
+            color = COALESCE($6, color),
+            description = COALESCE($7, description),
+            updated_at = $8
         "#,
     )
     .bind(name)
@@ -762,8 +558,8 @@ pub async fn upsert_tag(
 }
 
 /// Delete a tag (will cascade delete note_tags relationships)
-pub async fn delete_tag(pool: &SqlitePool, name: &str) -> DbResult<()> {
-    let result = sqlx::query("DELETE FROM tags WHERE name = ?")
+pub async fn delete_tag(pool: &PgPool, name: &str) -> DbResult<()> {
+    let result = sqlx::query("DELETE FROM tags WHERE name = $1")
         .bind(name)
         .execute(pool)
         .await?;
@@ -776,13 +572,13 @@ pub async fn delete_tag(pool: &SqlitePool, name: &str) -> DbResult<()> {
 }
 
 /// Add a tag to a note
-pub async fn add_tag_to_note(pool: &SqlitePool, note_id: &str, tag: &str) -> DbResult<()> {
+pub async fn add_tag_to_note(pool: &PgPool, note_id: &str, tag: &str) -> DbResult<()> {
     let now = chrono::Utc::now().timestamp();
 
     sqlx::query(
         r#"
         INSERT OR IGNORE INTO note_tags (note_id, tag, created_at)
-        VALUES (?, ?, ?)
+        VALUES ($1, $2, $3)
         "#,
     )
     .bind(note_id)
@@ -795,8 +591,8 @@ pub async fn add_tag_to_note(pool: &SqlitePool, note_id: &str, tag: &str) -> DbR
 }
 
 /// Remove a tag from a note
-pub async fn remove_tag_from_note(pool: &SqlitePool, note_id: &str, tag: &str) -> DbResult<()> {
-    sqlx::query("DELETE FROM note_tags WHERE note_id = ? AND tag = ?")
+pub async fn remove_tag_from_note(pool: &PgPool, note_id: &str, tag: &str) -> DbResult<()> {
+    sqlx::query("DELETE FROM note_tags WHERE note_id = $1 AND tag = $2")
         .bind(note_id)
         .bind(tag)
         .execute(pool)
@@ -806,8 +602,8 @@ pub async fn remove_tag_from_note(pool: &SqlitePool, note_id: &str, tag: &str) -
 }
 
 /// Get all tags for a note
-pub async fn get_note_tags(pool: &SqlitePool, note_id: &str) -> DbResult<Vec<String>> {
-    let tags = sqlx::query_scalar::<_, String>("SELECT tag FROM note_tags WHERE note_id = ?")
+pub async fn get_note_tags(pool: &PgPool, note_id: &str) -> DbResult<Vec<String>> {
+    let tags = sqlx::query_scalar::<_, String>("SELECT tag FROM note_tags WHERE note_id = $1")
         .bind(note_id)
         .fetch_all(pool)
         .await?;
@@ -816,12 +612,12 @@ pub async fn get_note_tags(pool: &SqlitePool, note_id: &str) -> DbResult<Vec<Str
 }
 
 /// Set tags for a note (replaces existing tags)
-pub async fn set_note_tags(pool: &SqlitePool, note_id: &str, tags: &[&str]) -> DbResult<()> {
+pub async fn set_note_tags(pool: &PgPool, note_id: &str, tags: &[&str]) -> DbResult<()> {
     // Start a transaction
     let mut tx = pool.begin().await?;
 
     // Remove existing tags
-    sqlx::query("DELETE FROM note_tags WHERE note_id = ?")
+    sqlx::query("DELETE FROM note_tags WHERE note_id = $1")
         .bind(note_id)
         .execute(&mut *tx)
         .await?;
@@ -832,7 +628,7 @@ pub async fn set_note_tags(pool: &SqlitePool, note_id: &str, tags: &[&str]) -> D
         sqlx::query(
             r#"
             INSERT OR IGNORE INTO note_tags (note_id, tag, created_at)
-            VALUES (?, ?, ?)
+            VALUES ($1, $2, $3)
             "#,
         )
         .bind(note_id)
@@ -847,11 +643,7 @@ pub async fn set_note_tags(pool: &SqlitePool, note_id: &str, tags: &[&str]) -> D
 }
 
 /// Search notes by tags (AND logic - note must have all specified tags)
-pub async fn search_notes_by_tags(
-    pool: &SqlitePool,
-    tags: &[&str],
-    limit: i64,
-) -> DbResult<Vec<Note>> {
+pub async fn search_notes_by_tags(pool: &PgPool, tags: &[&str], limit: i64) -> DbResult<Vec<Note>> {
     if tags.is_empty() {
         return list_notes(pool, limit, None, None, None).await;
     }
@@ -865,16 +657,31 @@ pub async fn search_notes_by_tags(
         INNER JOIN note_tags nt ON n.id = nt.note_id
         WHERE nt.tag IN ({})
         GROUP BY n.id
-        HAVING COUNT(DISTINCT nt.tag) = ?
+        HAVING COUNT(DISTINCT nt.tag) = $1
         ORDER BY n.created_at DESC
-        LIMIT ?
+        LIMIT $2
         "#,
-        (0..tag_count).map(|_| "?").collect::<Vec<_>>().join(",")
+        (1..=tag_count)
+            .map(|i| format!("${}", i))
+            .collect::<Vec<_>>()
+            .join(",")
     );
+
+    // Tags are bound as $1..$N, then HAVING count = $(N+1), LIMIT = $(N+2)
+    let having_idx = tag_count + 1;
+    let limit_idx = tag_count + 2;
+
+    // Patch in the correct positional indexes for HAVING and LIMIT
+    let query = query
+        .replace(
+            "HAVING COUNT(DISTINCT nt.tag) = $1",
+            &format!("HAVING COUNT(DISTINCT nt.tag) = ${}", having_idx),
+        )
+        .replace("LIMIT $2", &format!("LIMIT ${}", limit_idx));
 
     let mut q = sqlx::query_as::<_, Note>(&query);
     for tag in tags {
-        q = q.bind(tag);
+        q = q.bind(*tag);
     }
     q = q.bind(tag_count as i64).bind(limit);
 
@@ -882,14 +689,10 @@ pub async fn search_notes_by_tags(
 }
 
 /// Update note with repo_id
-pub async fn update_note_repo(
-    pool: &SqlitePool,
-    note_id: &str,
-    repo_id: Option<&str>,
-) -> DbResult<()> {
+pub async fn update_note_repo(pool: &PgPool, note_id: &str, repo_id: Option<&str>) -> DbResult<()> {
     let now = chrono::Utc::now().timestamp();
 
-    let result = sqlx::query("UPDATE notes SET repo_id = ?, updated_at = ? WHERE id = ?")
+    let result = sqlx::query("UPDATE notes SET repo_id = $1, updated_at = $2 WHERE id = $3")
         .bind(repo_id)
         .bind(now)
         .bind(note_id)
@@ -904,13 +707,13 @@ pub async fn update_note_repo(
 }
 
 /// Get notes for a repository
-pub async fn get_repo_notes(pool: &SqlitePool, repo_id: &str, limit: i64) -> DbResult<Vec<Note>> {
+pub async fn get_repo_notes(pool: &PgPool, repo_id: &str, limit: i64) -> DbResult<Vec<Note>> {
     Ok(sqlx::query_as::<_, Note>(
         r#"
             SELECT * FROM notes
-            WHERE repo_id = ?
+            WHERE repo_id = $1
             ORDER BY created_at DESC
-            LIMIT ?
+            LIMIT $2
             "#,
     )
     .bind(repo_id)
@@ -920,8 +723,8 @@ pub async fn get_repo_notes(pool: &SqlitePool, repo_id: &str, limit: i64) -> DbR
 }
 
 /// Count notes for a repository
-pub async fn count_repo_notes(pool: &SqlitePool, repo_id: &str) -> DbResult<i64> {
-    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM notes WHERE repo_id = ?")
+pub async fn count_repo_notes(pool: &PgPool, repo_id: &str) -> DbResult<i64> {
+    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM notes WHERE repo_id = $1")
         .bind(repo_id)
         .fetch_one(pool)
         .await?;
@@ -935,7 +738,7 @@ pub async fn count_repo_notes(pool: &SqlitePool, repo_id: &str) -> DbResult<i64>
 
 /// Add a repository to track
 pub async fn add_repository(
-    pool: &SqlitePool,
+    pool: &PgPool,
     path: &str,
     name: &str,
     git_url: Option<&str>,
@@ -946,7 +749,7 @@ pub async fn add_repository(
     sqlx::query(
         r#"
         INSERT INTO repositories (id, local_path, name, url, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES ($1, $2, $3, $4, $5, $6)
         "#,
     )
     .bind(&id)
@@ -987,8 +790,8 @@ pub async fn add_repository(
 }
 
 /// Get a repository by ID
-pub async fn get_repository(pool: &SqlitePool, id: &str) -> DbResult<Repository> {
-    sqlx::query_as::<_, Repository>("SELECT * FROM repositories WHERE id = ?")
+pub async fn get_repository(pool: &PgPool, id: &str) -> DbResult<Repository> {
+    sqlx::query_as::<_, Repository>("SELECT * FROM repositories WHERE id = $1")
         .bind(id)
         .fetch_optional(pool)
         .await?
@@ -996,9 +799,9 @@ pub async fn get_repository(pool: &SqlitePool, id: &str) -> DbResult<Repository>
 }
 
 /// Get a repository by path
-pub async fn get_repository_by_path(pool: &SqlitePool, path: &str) -> DbResult<Option<Repository>> {
+pub async fn get_repository_by_path(pool: &PgPool, path: &str) -> DbResult<Option<Repository>> {
     Ok(
-        sqlx::query_as::<_, Repository>("SELECT * FROM repositories WHERE local_path = ?")
+        sqlx::query_as::<_, Repository>("SELECT * FROM repositories WHERE local_path = $1")
             .bind(path)
             .fetch_optional(pool)
             .await?,
@@ -1006,7 +809,7 @@ pub async fn get_repository_by_path(pool: &SqlitePool, path: &str) -> DbResult<O
 }
 
 /// List all repositories
-pub async fn list_repositories(pool: &SqlitePool) -> DbResult<Vec<Repository>> {
+pub async fn list_repositories(pool: &PgPool) -> DbResult<Vec<Repository>> {
     Ok(
         sqlx::query_as::<_, Repository>("SELECT * FROM repositories ORDER BY name ASC")
             .fetch_all(pool)
@@ -1016,14 +819,14 @@ pub async fn list_repositories(pool: &SqlitePool) -> DbResult<Vec<Repository>> {
 
 /// Update repository analysis timestamp and metadata
 pub async fn update_repository_analysis(
-    pool: &SqlitePool,
+    pool: &PgPool,
     id: &str,
     _metadata: Option<&str>,
 ) -> DbResult<()> {
     let now = chrono::Utc::now().timestamp();
 
     let result =
-        sqlx::query("UPDATE repositories SET last_scanned_at = ?, updated_at = ? WHERE id = ?")
+        sqlx::query("UPDATE repositories SET last_scanned_at = $1, updated_at = $2 WHERE id = $3")
             .bind(now)
             .bind(now)
             .bind(id)
@@ -1038,8 +841,8 @@ pub async fn update_repository_analysis(
 }
 
 /// Remove a repository
-pub async fn remove_repository(pool: &SqlitePool, id: &str) -> DbResult<()> {
-    let result = sqlx::query("DELETE FROM repositories WHERE id = ?")
+pub async fn remove_repository(pool: &PgPool, id: &str) -> DbResult<()> {
+    let result = sqlx::query("DELETE FROM repositories WHERE id = $1")
         .bind(id)
         .execute(pool)
         .await?;
@@ -1056,21 +859,21 @@ pub async fn remove_repository(pool: &SqlitePool, id: &str) -> DbResult<()> {
 // ============================================================================
 
 /// Start a scan - set status to 'scanning' and initialize progress tracking
-pub async fn start_scan(pool: &SqlitePool, repo_id: &str, total_files: i64) -> DbResult<()> {
+pub async fn start_scan(pool: &PgPool, repo_id: &str, total_files: i64) -> DbResult<()> {
     let now = chrono::Utc::now().timestamp();
 
     let result = sqlx::query(
         r#"
         UPDATE repositories
         SET scan_status = 'scanning',
-            scan_files_total = ?,
+            scan_files_total = $1,
             scan_files_processed = 0,
             scan_progress = 'Starting scan...',
             scan_current_file = NULL,
-            last_scanned_at = ?,
+            last_scanned_at = $2,
             last_error = NULL,
-            updated_at = ?
-        WHERE id = ?
+            updated_at = $3
+        WHERE id = $4
         "#,
     )
     .bind(total_files)
@@ -1102,7 +905,7 @@ pub async fn start_scan(pool: &SqlitePool, repo_id: &str, total_files: i64) -> D
 
 /// Update scan progress during scanning
 pub async fn update_scan_progress(
-    pool: &SqlitePool,
+    pool: &PgPool,
     repo_id: &str,
     files_processed: i64,
     current_file: Option<&str>,
@@ -1117,11 +920,11 @@ pub async fn update_scan_progress(
     let result = sqlx::query(
         r#"
         UPDATE repositories
-        SET scan_files_processed = ?,
-            scan_current_file = ?,
-            scan_progress = ?,
-            updated_at = ?
-        WHERE id = ?
+        SET scan_files_processed = $1,
+            scan_current_file = $2,
+            scan_progress = $3,
+            updated_at = $4
+        WHERE id = $5
         "#,
     )
     .bind(files_processed)
@@ -1144,7 +947,7 @@ pub async fn update_scan_progress(
 
 /// Complete a scan - set status to 'idle' and record metrics
 pub async fn complete_scan(
-    pool: &SqlitePool,
+    pool: &PgPool,
     repo_id: &str,
     duration_ms: i64,
     files_found: i64,
@@ -1158,12 +961,12 @@ pub async fn complete_scan(
         SET scan_status = 'idle',
             scan_progress = 'Scan complete',
             scan_current_file = NULL,
-            last_scan_duration_ms = ?,
-            last_scan_files_found = ?,
-            last_scan_issues_found = ?,
-            last_scanned_at = ?,
-            updated_at = ?
-        WHERE id = ?
+            last_scan_duration_ms = $1,
+            last_scan_files_found = $2,
+            last_scan_issues_found = $3,
+            last_scanned_at = $4,
+            updated_at = $5
+        WHERE id = $6
         "#,
     )
     .bind(duration_ms)
@@ -1206,7 +1009,7 @@ pub async fn complete_scan(
 }
 
 /// Mark a scan as failed with error
-pub async fn fail_scan(pool: &SqlitePool, repo_id: &str, error_message: &str) -> DbResult<()> {
+pub async fn fail_scan(pool: &PgPool, repo_id: &str, error_message: &str) -> DbResult<()> {
     let now = chrono::Utc::now().timestamp();
 
     let result = sqlx::query(
@@ -1215,9 +1018,9 @@ pub async fn fail_scan(pool: &SqlitePool, repo_id: &str, error_message: &str) ->
         SET scan_status = 'error',
             scan_progress = 'Scan failed',
             scan_current_file = NULL,
-            last_error = ?,
-            updated_at = ?
-        WHERE id = ?
+            last_error = $1,
+            updated_at = $2
+        WHERE id = $3
         "#,
     )
     .bind(error_message)
@@ -1245,7 +1048,7 @@ pub async fn fail_scan(pool: &SqlitePool, repo_id: &str, error_message: &str) ->
 
 /// Log a scan event to the scan_events table
 pub async fn log_scan_event(
-    pool: &SqlitePool,
+    pool: &PgPool,
     repo_id: &str,
     event_type: &str,
     message: &str,
@@ -1256,7 +1059,7 @@ pub async fn log_scan_event(
     sqlx::query(
         r#"
         INSERT INTO scan_events (repo_id, event_type, message, metadata, created_at)
-        VALUES (?, ?, ?, ?, ?)
+        VALUES ($1, $2, $3, $4, $5)
         "#,
     )
     .bind(repo_id)
@@ -1272,7 +1075,7 @@ pub async fn log_scan_event(
 
 /// Get recent scan events for a repository
 pub async fn get_scan_events(
-    pool: &SqlitePool,
+    pool: &PgPool,
     repo_id: Option<&str>,
     limit: i64,
 ) -> DbResult<Vec<ScanEvent>> {
@@ -1280,9 +1083,9 @@ pub async fn get_scan_events(
         sqlx::query_as::<_, ScanEvent>(
             r#"
             SELECT * FROM scan_events
-            WHERE repo_id = ?
+            WHERE repo_id = $1
             ORDER BY created_at DESC
-            LIMIT ?
+            LIMIT $2
             "#,
         )
         .bind(rid)
@@ -1294,7 +1097,7 @@ pub async fn get_scan_events(
             r#"
             SELECT * FROM scan_events
             ORDER BY created_at DESC
-            LIMIT ?
+            LIMIT $1
             "#,
         )
         .bind(limit)
@@ -1348,7 +1151,7 @@ impl ScanEvent {
 /// Create a new task
 #[allow(clippy::too_many_arguments)]
 pub async fn create_task(
-    pool: &SqlitePool,
+    pool: &PgPool,
     title: &str,
     description: Option<&str>,
     priority: i32,
@@ -1368,7 +1171,7 @@ pub async fn create_task(
         r#"
         INSERT INTO tasks (id, title, description, priority, status, source, source_id,
                           repo_id, file_path, line_number, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)
+        VALUES ($1, $2, $3, $4, 'pending', $5, $6, $7, $8, $9, $10, $11)
         "#,
     )
     .bind(&id)
@@ -1403,7 +1206,7 @@ pub async fn create_task(
 
 /// List tasks with optional filtering
 pub async fn list_tasks(
-    pool: &SqlitePool,
+    pool: &PgPool,
     limit: i64,
     status: Option<&str>,
     priority: Option<i32>,
@@ -1425,17 +1228,25 @@ pub async fn list_tasks(
          FROM tasks WHERE 1=1",
     );
 
+    let mut param_idx: u32 = 1;
+
     if status.is_some() {
-        query.push_str(" AND status = ?");
+        query.push_str(&format!(" AND status = ${}", param_idx));
+        param_idx += 1;
     }
     if priority.is_some() {
-        query.push_str(" AND priority <= ?");
+        query.push_str(&format!(" AND priority <= ${}", param_idx));
+        param_idx += 1;
     }
     if repo_id.is_some() {
-        query.push_str(" AND repo_id = ?");
+        query.push_str(&format!(" AND repo_id = ${}", param_idx));
+        param_idx += 1;
     }
 
-    query.push_str(" ORDER BY priority ASC, created_at DESC LIMIT ?");
+    query.push_str(&format!(
+        " ORDER BY priority ASC, created_at DESC LIMIT ${}",
+        param_idx
+    ));
 
     let mut q = sqlx::query_as::<_, Task>(&query);
 
@@ -1454,10 +1265,10 @@ pub async fn list_tasks(
 }
 
 /// Update task status
-pub async fn update_task_status(pool: &SqlitePool, id: &str, status: &str) -> DbResult<()> {
+pub async fn update_task_status(pool: &PgPool, id: &str, status: &str) -> DbResult<()> {
     let now = chrono::Utc::now().timestamp();
 
-    let result = sqlx::query("UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?")
+    let result = sqlx::query("UPDATE tasks SET status = $1, updated_at = $2 WHERE id = $3")
         .bind(status)
         .bind(now)
         .bind(id)
@@ -1472,7 +1283,7 @@ pub async fn update_task_status(pool: &SqlitePool, id: &str, status: &str) -> Db
 }
 
 /// Get the next recommended task (highest priority pending task)
-pub async fn get_next_task(pool: &SqlitePool) -> DbResult<Option<Task>> {
+pub async fn get_next_task(pool: &PgPool) -> DbResult<Option<Task>> {
     Ok(sqlx::query_as::<_, Task>(
         r#"
         SELECT id,
@@ -1511,7 +1322,7 @@ pub struct DbStats {
     pub pending_tasks: i64,
 }
 
-pub async fn get_stats(pool: &SqlitePool) -> DbResult<DbStats> {
+pub async fn get_stats(pool: &PgPool) -> DbResult<DbStats> {
     let total_notes: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM notes")
         .fetch_one(pool)
         .await?;
@@ -1550,8 +1361,11 @@ pub async fn get_stats(pool: &SqlitePool) -> DbResult<DbStats> {
 mod tests {
     use super::*;
 
-    async fn setup_test_db() -> SqlitePool {
-        init_db("sqlite::memory:").await.unwrap()
+    async fn setup_test_db() -> PgPool {
+        let url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgresql://rustassistant:changeme@localhost:5432/rustassistant_test".to_string()
+        });
+        init_db(&url).await.unwrap()
     }
 
     #[tokio::test]
@@ -1713,7 +1527,7 @@ mod tests {
 /// Backward-compatible Database wrapper
 #[derive(Clone)]
 pub struct Database {
-    pub pool: SqlitePool,
+    pub pool: PgPool,
 }
 
 impl Database {
@@ -1723,13 +1537,13 @@ impl Database {
         Ok(Self { pool })
     }
 
-    /// Create a Database from an existing SqlitePool
-    pub fn from_pool(pool: SqlitePool) -> Self {
+    /// Create a Database from an existing PgPool
+    pub fn from_pool(pool: PgPool) -> Self {
         Self { pool }
     }
 
     /// Get a reference to the pool
-    pub fn pool(&self) -> &SqlitePool {
+    pub fn pool(&self) -> &PgPool {
         &self.pool
     }
 

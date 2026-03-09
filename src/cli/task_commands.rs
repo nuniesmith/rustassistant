@@ -12,7 +12,7 @@ use crate::task::{
 use anyhow::Result;
 use clap::Subcommand;
 use colored::Colorize;
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 
 #[derive(Subcommand)]
 pub enum TaskCommands {
@@ -100,7 +100,7 @@ pub enum TaskCommands {
     },
 }
 
-pub async fn handle_task_command(pool: &SqlitePool, cmd: TaskCommands) -> Result<()> {
+pub async fn handle_task_command(pool: &PgPool, cmd: TaskCommands) -> Result<()> {
     match cmd {
         TaskCommands::Add {
             content,

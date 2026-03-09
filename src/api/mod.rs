@@ -24,7 +24,7 @@ use std::sync::Arc;
 
 use crate::embeddings::{EmbeddingConfig, EmbeddingGenerator};
 use crate::indexing::IndexingConfig;
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 
 pub use auth::{generate_api_key, hash_api_key, AuthConfig, AuthResult};
 pub use handlers::ApiState;
@@ -38,7 +38,7 @@ pub use types::*;
 
 /// Create the API router with all endpoints
 pub async fn create_api_router(
-    db_pool: SqlitePool,
+    db_pool: PgPool,
     auth_config: AuthConfig,
     rate_limit_config: RateLimitConfig,
     indexing_config: IndexingConfig,
@@ -104,7 +104,7 @@ pub async fn create_api_router(
 }
 
 /// Create API router with default configuration
-pub async fn create_default_api_router(db_pool: SqlitePool) -> Router {
+pub async fn create_default_api_router(db_pool: PgPool) -> Router {
     create_api_router(
         db_pool,
         AuthConfig::default(),
@@ -172,7 +172,7 @@ impl ApiConfig {
     }
 
     /// Build router with this configuration
-    pub async fn build_router(self, db_pool: SqlitePool) -> Router {
+    pub async fn build_router(self, db_pool: PgPool) -> Router {
         create_api_router(
             db_pool,
             self.auth,

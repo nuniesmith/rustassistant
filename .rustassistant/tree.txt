@@ -1,5 +1,5 @@
 # Project tree: rustassistant
-# Generated: 1772940807
+# Generated: 1773069673
 
 .fastembed_cache/models--Xenova--bge-small-en-v1.5/snapshots/ea104dacec62c0de699686887e3f920caeb4f3e3/config.json
 .fastembed_cache/models--Xenova--bge-small-en-v1.5/snapshots/ea104dacec62c0de699686887e3f920caeb4f3e3/special_tokens_map.json
@@ -28,7 +28,6 @@ askama.toml
 config/docs_schema_profile.toml
 config/research.toml
 deployment/README.md
-docker-compose.rustassistant.yml
 docker-compose.yml
 docker/DEPLOYMENT_CHECKLIST.md
 docker/QUICKREF.md
@@ -143,6 +142,7 @@ scripts/gh-sync-systemd.sh
 scripts/install.sh
 scripts/manage_repos.sh
 scripts/migrate_to_centralized.sh
+scripts/pg_pool_swap.sh
 scripts/quick_setup.sh
 scripts/run.sh
 scripts/setup-pi.sh
@@ -287,10 +287,3 @@ static/README.md
 tests/api_integration_tests.rs
 tests/fixtures/sample.rs
 todo.md
-todo/WIRING_GUIDE.md
-todo/docker-compose.rustassistant.yml
-todo/merge.md
-todo/model_router.rs
-todo/repo_sync.rs
-todo/repos_api.rs
-todo/sync_scheduler.rs

@@ -8,7 +8,7 @@
 //! 5. Test hybrid search
 
 use rustassistant::chunking::ChunkConfig;
-use rustassistant::db::{create_document, init_pool};
+use rustassistant::db::{create_document, init_pool, DatabaseConfig};
 use rustassistant::indexing::{DocumentIndexer, IndexingConfig};
 use rustassistant::search::{SearchConfig, SearchFilters, SearchQuery, SemanticSearcher};
 
@@ -25,8 +25,10 @@ async fn main() -> anyhow::Result<()> {
 
     // Setup test database
     println!("📋 Setting up test database...");
-    let db_config = rustassistant::db::DatabaseConfig {
-        path: std::path::PathBuf::from(":memory:"),
+    let db_config = DatabaseConfig {
+        url: std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgresql://rustassistant:changeme@localhost:5432/rustassistant".to_string()
+        }),
         ..Default::default()
     };
     let pool = init_pool(&db_config).await?;
@@ -46,7 +48,7 @@ async fn main() -> anyhow::Result<()> {
     // Test 1: Basic semantic search
     println!("📋 Test 1: Basic Semantic Search");
     println!("─────────────────────────────────────────────────────────────────────────");
-    test_basic_search(&pool).await?;
+    test_semantic_search(&pool).await?;
     println!();
 
     // Test 2: Search with filters
@@ -74,7 +76,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn create_sample_documents(pool: &sqlx::SqlitePool) -> anyhow::Result<Vec<String>> {
+async fn create_sample_documents(pool: &sqlx::PgPool) -> anyhow::Result<Vec<String>> {
     let documents = vec![
         (
             "Asynchronous Programming in Rust",
@@ -147,7 +149,7 @@ async fn create_sample_documents(pool: &sqlx::SqlitePool) -> anyhow::Result<Vec<
     Ok(doc_ids)
 }
 
-async fn index_documents(pool: &sqlx::SqlitePool, doc_ids: &[String]) -> anyhow::Result<()> {
+async fn index_documents(pool: &sqlx::PgPool, doc_ids: &[String]) -> anyhow::Result<()> {
     let config = IndexingConfig {
         chunk_config: ChunkConfig {
             target_words: 100,
@@ -171,7 +173,7 @@ async fn index_documents(pool: &sqlx::SqlitePool, doc_ids: &[String]) -> anyhow:
     Ok(())
 }
 
-async fn test_basic_search(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
+async fn test_semantic_search(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     let searcher = SemanticSearcher::new(SearchConfig::default()).await?;
 
     let query = SearchQuery {
@@ -201,7 +203,7 @@ async fn test_basic_search(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn test_filtered_search(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
+async fn test_hybrid_search(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     let searcher = SemanticSearcher::new(SearchConfig::default()).await?;
 
     // Search only in "code" documents
@@ -232,7 +234,7 @@ async fn test_filtered_search(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn test_semantic_vs_keyword(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
+async fn test_semantic_vs_keyword(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     // Semantic search
     let semantic_config = SearchConfig {
         use_hybrid_search: false,
@@ -265,7 +267,7 @@ async fn test_semantic_vs_keyword(pool: &sqlx::SqlitePool) -> anyhow::Result<()>
     Ok(())
 }
 
-async fn test_hybrid_search(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
+async fn test_filtered_search(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     let hybrid_config = SearchConfig {
         use_hybrid_search: true,
         semantic_weight: 0.7,

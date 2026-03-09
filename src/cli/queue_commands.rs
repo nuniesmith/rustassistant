@@ -16,7 +16,7 @@ use crate::scanner::github::{
 use anyhow::Result;
 use clap::Subcommand;
 use colored::Colorize;
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use std::path::PathBuf;
 
 // ============================================================================
@@ -177,7 +177,7 @@ pub enum ReportCommands {
 // Command Handlers
 // ============================================================================
 
-pub async fn handle_queue_command(pool: &SqlitePool, cmd: QueueCommands) -> Result<()> {
+pub async fn handle_queue_command(pool: &PgPool, cmd: QueueCommands) -> Result<()> {
     // Ensure tables exist
     create_queue_tables(pool).await?;
 
@@ -306,7 +306,7 @@ pub async fn handle_queue_command(pool: &SqlitePool, cmd: QueueCommands) -> Resu
     Ok(())
 }
 
-pub async fn handle_scan_command(pool: &SqlitePool, cmd: ScanCommands) -> Result<()> {
+pub async fn handle_scan_command(pool: &PgPool, cmd: ScanCommands) -> Result<()> {
     create_queue_tables(pool).await?;
 
     match cmd {
@@ -487,7 +487,7 @@ pub async fn handle_scan_command(pool: &SqlitePool, cmd: ScanCommands) -> Result
             // For each repo, scan TODOs and build tree
             for repo_id in &repo_ids {
                 let repo: Option<(String, String)> =
-                    sqlx::query_as("SELECT name, path FROM repositories WHERE id = ?")
+                    sqlx::query_as("SELECT name, path FROM repositories WHERE id = $1")
                         .bind(repo_id)
                         .fetch_optional(pool)
                         .await?;
@@ -533,7 +533,7 @@ pub async fn handle_scan_command(pool: &SqlitePool, cmd: ScanCommands) -> Result
     Ok(())
 }
 
-pub async fn handle_report_command(pool: &SqlitePool, cmd: ReportCommands) -> Result<()> {
+pub async fn handle_report_command(pool: &PgPool, cmd: ReportCommands) -> Result<()> {
     match cmd {
         ReportCommands::Todos { priority, repo } => {
             let mut query = String::from(
@@ -757,7 +757,7 @@ pub async fn handle_report_command(pool: &SqlitePool, cmd: ReportCommands) -> Re
 
             // Get sample files (first 5 analyzed files)
             let samples: Vec<(String, Option<String>)> = sqlx::query_as(
-                "SELECT file_path, summary FROM file_analysis WHERE repo_id = ? LIMIT 5",
+                "SELECT file_path, summary FROM file_analysis WHERE repo_id = $1 LIMIT 5",
             )
             .bind(&repo_id)
             .fetch_all(pool)
@@ -847,7 +847,7 @@ fn parse_stage(s: &str) -> QueueStage {
     }
 }
 
-async fn resolve_repo(pool: &SqlitePool, input: &str) -> Result<(String, PathBuf)> {
+async fn resolve_repo(pool: &PgPool, input: &str) -> Result<(String, PathBuf)> {
     // Try as path first
     let path = PathBuf::from(input);
     if path.exists() && path.is_dir() {
@@ -858,7 +858,7 @@ async fn resolve_repo(pool: &SqlitePool, input: &str) -> Result<(String, PathBuf
             .unwrap_or("unknown");
 
         let existing: Option<(String,)> =
-            sqlx::query_as("SELECT id FROM repositories WHERE local_path = ?")
+            sqlx::query_as("SELECT id FROM repositories WHERE local_path = $1")
                 .bind(path.to_string_lossy().as_ref())
                 .fetch_optional(pool)
                 .await?;
@@ -870,7 +870,7 @@ async fn resolve_repo(pool: &SqlitePool, input: &str) -> Result<(String, PathBuf
             let now = chrono::Utc::now().timestamp();
 
             sqlx::query(
-                "INSERT INTO repositories (id, local_path, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)"
+                "INSERT INTO repositories (id, local_path, name, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)"
             )
             .bind(&id)
             .bind(path.to_string_lossy().as_ref())
@@ -888,7 +888,7 @@ async fn resolve_repo(pool: &SqlitePool, input: &str) -> Result<(String, PathBuf
 
     // Try as repo name or ID
     let repo: Option<(String, String)> =
-        sqlx::query_as("SELECT id, local_path FROM repositories WHERE id = ? OR name = ?")
+        sqlx::query_as("SELECT id, local_path FROM repositories WHERE id = $1 OR name = $2")
             .bind(input)
             .bind(input)
             .fetch_optional(pool)
