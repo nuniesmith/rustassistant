@@ -258,13 +258,13 @@ impl AutoScanner {
     async fn check_and_scan_repo(&self, repo: &Repository) -> Result<()> {
         let repo_name = &repo.name;
         let now = chrono::Utc::now().timestamp();
-        let interval_secs = repo.scan_interval_minutes * 60;
+        let interval_secs = repo.scan_interval_minutes as i64 * 60;
 
         // ── On-demand project review (bypasses interval check) ──────────
         // The web UI sets review_requested = 1 when the user clicks
         // "📋 Re-run Review".  We handle it here so it fires on the next
         // 60-second loop iteration regardless of scan_interval_mins.
-        let review_requested = repo.review_requested.unwrap_or(0) == 1;
+        let review_requested = repo.review_requested.unwrap_or(false);
         if review_requested {
             info!(
                 "📋 Web-requested project review for {} — bypassing interval check",

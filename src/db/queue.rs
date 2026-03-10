@@ -204,47 +204,35 @@ pub struct FileAnalysis {
 }
 
 // ============================================================================
-// TODO Item (Extracted from Code)
+// TODO Item (Extracted from Code) — DEPRECATED
 // ============================================================================
 
-/// A TODO/FIXME/HACK comment found in code
+/// **Deprecated.** TODO comments are now written directly to the `tasks` table
+/// by `scanner/github.rs` (source = `"github_scanner"`) and the queue processor
+/// (source = `"queue_processor"`). The `todo_items` table was dropped by
+/// migration `017_drop_todo_items.sql`.
+///
+/// This struct is kept here only so that existing call-sites that reference
+/// `db::queue::TodoItem` continue to compile. Do not add new usages.
+#[deprecated(
+    since = "0.2.0",
+    note = "Use db::core::Task / db::core::create_task instead. \
+            The todo_items table was dropped in migration 017."
+)]
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct TodoItem {
     pub id: String,
-
-    /// Repository containing this TODO
     pub repo_id: String,
-
-    /// File path
     pub file_path: String,
-
-    /// Line number
     pub line_number: i32,
-
-    /// The TODO text
     pub content: String,
-
-    /// Type: TODO, FIXME, HACK, NOTE, XXX
     pub todo_type: String,
-
-    /// LLM-assigned priority (1-4)
     pub priority: Option<i32>,
-
-    /// LLM-generated context
     pub context: Option<String>,
-
-    /// Estimated effort (hours)
     pub estimated_effort: Option<f32>,
-
-    /// Linked task ID (if converted to task)
     pub task_id: Option<String>,
-
-    /// Content hash for change detection
     pub content_hash: String,
-
-    /// Is this TODO still present in code?
     pub is_active: bool,
-
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -365,31 +353,9 @@ pub async fn create_queue_tables(pool: &PgPool) -> Result<(), sqlx::Error> {
     .execute(pool)
     .await?;
 
-    // TODO items
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS todo_items (
-            id TEXT PRIMARY KEY,
-            repo_id TEXT NOT NULL,
-            file_path TEXT NOT NULL,
-            line_number INTEGER NOT NULL,
-            content TEXT NOT NULL,
-            todo_type TEXT NOT NULL,
-            priority INTEGER,
-            context TEXT,
-            estimated_effort REAL,
-            task_id TEXT,
-            content_hash TEXT NOT NULL,
-            is_active INTEGER NOT NULL DEFAULT 1,
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL,
-            FOREIGN KEY (repo_id) REFERENCES repositories(id),
-            FOREIGN KEY (task_id) REFERENCES tasks(id)
-        )
-    "#,
-    )
-    .execute(pool)
-    .await?;
+    // Note: todo_items table was removed in migration 017_drop_todo_items.sql.
+    // TODOs are now stored in the `tasks` table (source = 'github_scanner' or
+    // 'queue_processor'). No DDL emitted here.
 
     // Repository cache
     sqlx::query(
@@ -444,16 +410,7 @@ pub async fn create_queue_tables(pool: &PgPool) -> Result<(), sqlx::Error> {
         .execute(pool)
         .await?;
 
-    // Indexes for TODOs
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_todo_repo ON todo_items(repo_id)")
-        .execute(pool)
-        .await?;
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_todo_active ON todo_items(is_active)")
-        .execute(pool)
-        .await?;
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_todo_priority ON todo_items(priority)")
-        .execute(pool)
-        .await?;
+    // Note: idx_todo_* indexes were dropped along with todo_items in migration 017.
 
     Ok(())
 }

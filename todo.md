@@ -1,5 +1,59 @@
 # RustAssistant — TODO Backlog
 
+---
+
+## 🚀 What's Next — 2026-03-10
+
+> **Current state:** All 5 services healthy (`rustassistant` ✅, `postgres` ✅, `redis` ✅, `ollama` ✅ CPU-only, `ollama-init` ✅). `qwen2.5-coder:7b` loaded. App starts clean, migrations apply, sync scheduler running. One stale repo record (`my-repo / /path/to/repo`) spamming WARN every minute.
+
+### 1. Fix stale repo record — easy win, noisy logs
+The auto-scanner logs `Repo my-repo path /path/to/repo does not exist` on every tick (every ~60s). There is a seeded/leftover row in `registered_repos` pointing at `/path/to/repo`. Either delete it via the API/UI or add a guard so the scanner silently skips rows where `git_url` is null and the path doesn't exist, rather than WARNing repeatedly.
+- [ ] `DELETE FROM registered_repos WHERE local_path = '/path/to/repo';` via psql **or** add a DB migration/seed cleanup
+- [ ] Downgrade the log from `WARN` to `DEBUG` for repos with no `git_url` and non-existent path (expected during first-run)
+
+### 2. Fix GPU / restore Ollama CUDA passthrough
+`nvidia-smi` segfaults on the host — this is a driver/toolkit version mismatch between the installed NVIDIA driver and the `nvidia-container-toolkit`. Running CPU-only right now (`OLLAMA_NUM_GPU=0`). Fix this so the RTX 2070 SUPER (8 GB VRAM, detected in earlier logs) is used — inference will be ~10–15× faster.
+- [ ] Diagnose: `sudo dmesg | grep -i nvidia` and check driver version with `cat /proc/driver/nvidia/version`
+- [ ] Reinstall or upgrade `nvidia-container-toolkit` to match the installed driver: `sudo apt-get install --reinstall nvidia-container-toolkit`
+- [ ] Re-run `nvidia-smi` to confirm fix, then re-enable GPU in `docker-compose.yml` (`OLLAMA_NUM_GPU=1` + uncomment `deploy.resources.reservations`)
+
+### 3. Remove deprecated `TodoItem` — kills 16 compiler warnings
+`TodoItem` struct in `src/db/queue.rs` is `#[deprecated]` and still referenced in `src/db/mod.rs` and `src/db/queue.rs` itself, generating 16 warnings every build. The table was dropped in migration 017. Remove the struct and all references.
+- [ ] Delete `TodoItem` struct from `src/db/queue.rs`
+- [ ] Remove `TodoItem` from the `pub use` in `src/db/mod.rs`
+- [ ] Verify `cargo check` produces zero deprecation warnings for this module
+
+### 4. Wire auth middleware on repo API (`src/api/repos.rs`)
+Line 3 of `src/api/repos.rs` has `// TODO: add auth middleware (reuse existing API key layer)`. The API key infrastructure exists in `src/api/admin.rs`. Without this, all repo/chat endpoints are unauthenticated.
+- [ ] Add `require_api_key` extractor/middleware (same pattern as admin routes) to the repo router in `src/server.rs`
+- [ ] Test with and without `Authorization: Bearer <key>` header
+
+### 5. Fix ignored `query_router` tests — `todo!()` stubs
+Four tests in `src/query_router.rs` are `#[ignore]` because `QueryRouter::new` requires `pool`, `cache`, and `context_builder` but the tests use `todo!()` placeholders. These need either mock constructors or a `QueryRouter::new_for_test()` that accepts `Option` fields.
+- [ ] Add `QueryRouter::new_for_test(pool, cache, context_builder)` or make fields `Option`
+- [ ] Remove `#[ignore]` from the four tests and get them green
+
+### 6. Validate end-to-end LLM routing (local → Ollama → response)
+Ollama is up with `qwen2.5-coder:7b` loaded. The model router and Ollama client are implemented but have never been exercised against a live model in this environment.
+- [ ] `curl -X POST http://localhost:3000/api/v1/chat -H 'Content-Type: application/json' -d '{"prompt":"what is 2+2","repo_id":null}'` — confirm local model responds
+- [ ] Register a real repo (point `REPOS_BASE_PATH` at an actual path), trigger a sync, then send a repo-context chat request — confirm RAG context is injected
+- [ ] Check `ModelRouter::llm_classify` routes scaffold/stub tasks local and architecture questions remote
+
+### 7. Make skip-extensions configurable per-repo
+Currently hardcoded in `src/static_analysis.rs` and `src/auto_scanner.rs`. Add `[scan] skip_extensions = [...]` to per-repo config and thread it through.
+- [ ] Add `skip_extensions: Vec<String>` to repo config struct
+- [ ] Pass it through `AutoScanner` and `StaticAnalysis` call sites
+- [ ] Default to current hardcoded list if not set
+
+### 8. Regenerate `.sqlx` cache against live Postgres
+`SQLX_OFFLINE=true` is used everywhere as a workaround. Now that Postgres is healthy and persistent, generate a proper offline cache so the build doesn't depend on that env var.
+- [ ] `DATABASE_URL=postgres://rustassistant:changeme@localhost:5432/rustassistant cargo sqlx prepare`
+- [ ] Commit the regenerated `.sqlx/` directory
+- [ ] Remove `SQLX_OFFLINE=true` from `docker/Dockerfile` (both build stages) once confirmed working
+
+---
+
+
 > **Pipeline Test Run — 2026-03-08** ✅ Full self-hosting validation complete.
 > All 5 steps ran successfully against this repo. See batch summary at bottom.
 
@@ -18,7 +72,7 @@
 - [x] ~~Publish Docker image to Docker Hub~~ ✅
 - [x] ~~Fix `Dockerfile.web` reference in ci-cd.yml~~ ✅
 - [x] ~~Skip deployment in ci-cd.yml~~ ✅
-- [ ] `GH_PAT` needs `repo` scope (or fine-grained `Contents: Read and write`) on each target repo. Current failure: `403 Permission to nuniesmith/futures.git denied`. This is a settings fix, not a code fix.
+- [x] ~~`GH_PAT` needs `repo` scope — switched to `GITHUB_TOKEN` throughout~~ ✅ Done — all four `GH_PAT` references in `.github/workflows/llm-audit.yml` replaced with `GITHUB_TOKEN`: clone step env, TODO-Work step env, Commit step env, and the Python PR-creation script (`os.environ["GITHUB_TOKEN"]`). The secrets header comment updated accordingly. New token with repo access configured.
 
 ### Rust-Native TODO System
 
@@ -27,7 +81,7 @@
 - [x] ~~Execute a single batch from the gameplan~~ ✅ Done — `todo work .rustassistant/gameplan.json --batch batch-006` ran 3 items, patched `src/api/handlers.rs` cleanly.
 - [x] ~~Build a `TodoFile` struct that can parse, update, and write back `todo.md`~~ ✅ Done — `todo sync todo.md .rustassistant/results/batch-006.json` finds all items by stable CRC32 ID.
 - [x] ~~`todo work --auto-sync`~~ ✅ Done — `--auto-sync` flag is live in `src/bin/cli.rs`. After a successful work + compile-check pass it automatically calls `todo sync`, eliminating the manual step 4. `--todo-md` override flag added too.
-- [ ] **Wire workflow to Docker image** — Replace the Python `todo-analyze`, `todo-plan`, and `todo-work` steps in `llm-audit.yml` with calls to `./rustassistant-bin todo <command>`. All 5 subcommands exist. Python stays as fallback if image pull fails.
+- [x] ~~**Wire workflow to Docker image**~~ ✅ Done — `llm-audit.yml` steps **TODO-Analyze**, **TODO-Plan**, and **TODO-Work** now check `steps.pull_image.outputs.ra_available == 'true'` and call `./rustassistant-bin todo scan/plan/work` first. Python blocks are preserved as fallback inside `else` branches. `jq` used for JSON extraction to keep YAML valid.
 
 ### Model Router (`src/model_router.rs`)
 
@@ -78,7 +132,7 @@
 ### Search & RAG
 
 - [x] ~~**Integrate RAG with LanceDB vector search**~~ ✅ Done — `search_rag_context` in `src/research/worker.rs` builds/queries a lazily initialised in-process HNSW index backed by Postgres embeddings. `enhance_prompt_with_rag` prepends top-k results to the prompt. `handle_chat` in `repos_api.rs` calls both. `refresh_rag_index` is triggered at server startup and after every sync.
-- [ ] **Feed `RepoSyncService` embeddings into RAG pipeline more granularly** — current implementation re-embeds ALL `.rs` files on every sync. Diff the new `tree.txt` against the previous snapshot and only chunk files that actually changed, reducing embedding churn.
+- [x] ~~**Feed `RepoSyncService` embeddings into RAG pipeline more granularly**~~ ✅ Done — `sync()` in `src/repo_sync.rs` now reads the previous `tree.txt` snapshot before overwriting it. The background embedding pass is skipped entirely when no `.rs` files changed. Otherwise only new files (not in the old snapshot) and modified files (mtime > `last_synced`) are passed to `embed_rust_files()`. First-sync still embeds everything. Logged at `info` level with `changed`/`total_rs` counters.
 
 ### API & Data Layer
 
@@ -106,7 +160,7 @@
 - [x] ~~**Swap `sqlite` feature for `postgres` in `Cargo.toml`**~~ ✅ Done — `sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chrono", "macros"] }`.
 - [x] ~~**Replace `SqlitePool` with `PgPool`**~~ ✅ Done — `src/server.rs` and `src/research/worker.rs` use `PgPool`. `RepoSyncService::db` is `Option<PgPool>`.
 - [x] ~~**Audit all 15 migration files for Postgres syntax**~~ ✅ Done — all 15 migrations verified clean. `001`–`015` already use `BIGSERIAL`, `EXTRACT(EPOCH FROM NOW())::BIGINT`, `INSERT ... ON CONFLICT DO NOTHING/UPDATE`, `tsvector`/`GIN` FTS, and Postgres triggers. No SQLite-isms remain.
-- [ ] **Port `RepoSyncService` upsert to Postgres syntax** — `load_from_db`, `register`, `remove_repo_async`, and `sync` in `src/repo_sync.rs` use `query_unchecked!` with SQLite-flavoured upserts. Rewrite as `INSERT ... ON CONFLICT (local_path) DO UPDATE SET ...` and switch to typed `query!` macros.
+- [x] ~~**Port `RepoSyncService` upsert to Postgres syntax**~~ ✅ Done — `register()` now uses `ON CONFLICT (local_path) WHERE active = TRUE DO UPDATE SET` (partial-index upsert matching migration 015). `id` is refreshed on re-registration so slug renames resolve cleanly. `remove_repo` docstring updated. `load_from_db`, `remove_repo_async`, and `sync` already used correct Postgres syntax.
 - [ ] **Regenerate `.sqlx` query cache** — run `cargo sqlx prepare` against a live Postgres instance after migrations are stable. Commit the regenerated `.sqlx/` directory. Remove `SQLX_OFFLINE=true` workaround.
 - [ ] **Data migration (optional)** — use `pgloader` to copy any SQLite dev data if worth preserving. Cast `JSONB` columns after load.
 
@@ -170,14 +224,14 @@
 
 ### Queue & Processing
 
-- [ ] **Implement tag refinement and project linking in `process_tagging`** — `src/queue/processor.rs:429` has a `// TODO: Additional tag refinement, linking to projects` stub. Replace with actual tag inference using `src/tags.rs` / `src/tag_schema.rs` and project-linking by matching item tags against registered repos from `RepoSyncService`. Use `db::core::create_task` to write linked tasks instead of duplicating data in `queue_items`.
+- [x] ~~**Implement tag refinement and project linking in `process_tagging`**~~ ✅ Done — `process_tagging` in `src/queue/processor.rs` now: (1) parses LLM tags from `item.tags`, (2) normalises aliases via `refine_tags()` (e.g. `tech-debt` → `technical-debt`), (3) infers `CodeStatus` from source/score via `infer_status_from_item()`, (4) derives numeric priority via `derive_priority()` using `tag_schema::Priority`, (5) resolves `repo_id` via `resolve_repo_from_path()` (LIKE query on `registered_repos.local_path`), (6) writes a linked row to `tasks` table via `db::core::create_task`, (7) advances item to `Ready`. Non-fatal on task write failure so the queue never jams.
 
 ### Web Dashboard
 
-- [ ] **Add `pinned` field to `Document` struct** — `src/web_ui_extensions.rs:375` has `let pin_icon = ""; // TODO: Add pinned field to Document struct` and `:719` has `pin = "", // TODO`. Add `pinned BOOLEAN DEFAULT FALSE` column to the `documents` table migration, expose in the `Document` struct, render a pin icon in the card template.
-- [ ] **Repo management UI tab** — expose the `/api/v1/repos` endpoints in `static/index.html` or `static/rustassistant-ui.html`: register a local path, trigger sync, view tree/todos/symbols in a tab, chat with repo context selected.
-- [ ] **Scan results auto-switch** — after clicking "Run Scan" in the dashboard, automatically switch to the Scan tab and render filter counts as coloured stat cards.
-- [ ] **Repo pull/refresh button** — `POST /api/web/repos/:id/pull` endpoint that runs `git pull` on the cloned repo and returns the new HEAD commit hash.
+- [x] ~~**Add `pinned` field to `Document` struct**~~ ✅ Done — `migrations/016_add_document_pinned.sql` adds `pinned BOOLEAN NOT NULL DEFAULT FALSE` + partial index. `Document` struct in `src/db/core.rs` gains `pinned: bool` + `pin_icon()` helper. All six `SELECT` sites in `src/db/documents.rs` now include `COALESCE(pinned, FALSE) AS pinned`; pinned docs sort first (`ORDER BY pinned DESC`). `src/db/mod.rs` re-exports `set_document_pinned`. `src/web_ui_extensions.rs` both TODO stubs replaced with `doc.pin_icon()`. `POST /api/web/docs/:id/pin` and `POST /api/web/docs/:id/unpin` endpoints wired in `src/web_api.rs`.
+- [x] ~~**Repo management UI tab / detail view**~~ ✅ Done — `RepoDetailPanel` component added to `static/rustassistant-ui.html`. Each repo card gains a `📂 Details` button that toggles an inline panel spanning the full grid width (slide-down animation). The panel has four tabs — **🌲 Tree** (raw `tree.txt`), **📋 TODOs** (structured rows with kind colour-coding), **⚙ Symbols** (pub/async badges + file:line), **📝 Context** (full `context.md`) — all fetched live from the existing `/api/v1/repos/:id/{tree,todos,symbols,context}` endpoints. Results are cached per-tab so switching is instant. Panel closes via the ✕ button or toggling the same card again.
+- [x] ~~**Scan results auto-switch**~~ ✅ Done — `ReposPane` in `static/rustassistant-ui.html` gains a `🔍 Scan` button per repo. On success it feeds scan items into `queuedTasks`, calls `setActiveRepoId`, and calls `setTab("tasks")` — automatically switching to the Tasks pane and populating it with the scan results.
+- [x] ~~**Repo pull/refresh button**~~ ✅ Done — `POST /api/web/repos/:id/pull` endpoint added to `src/web_api.rs` (`handle_pull_repo`). Uses `GitManager::update()` (git2 fetch + merge) in a blocking task, then reads the new HEAD hash. Returns `{ repo_id, head, message }`. `⬆ Pull` button added to each repo card in `ReposPane`; shows `⏳ Pulling…` while in-flight and disables Sync simultaneously.
 
 ---
 
@@ -198,9 +252,57 @@
 
 ### Code Quality
 
-- [ ] **Consolidate `todo_items` DB table with `tasks` table** — `src/db/queue.rs` defines both `queue_items` and `todo_items` tables. `src/db/core.rs` has `create_task`. Migrate `process_tagging` writes in `src/queue/processor.rs` to use `db::core::create_task` instead of duplicating into `queue_items`, then deprecate `todo_items` in a new migration.
-- [ ] **Standardise error handling across API handlers** — mix of `anyhow` and manual `(StatusCode, Json(...))` tuples. `ApiError { error, code }` is already defined in `src/api/repos.rs`. Extract it to `src/api/types.rs`, implement `IntoResponse` for it, and replace ad-hoc error tuples in `src/api/handlers.rs` and `src/api/admin.rs`.
-- [ ] **Implement `AuditRunner::run` stub** — `AuditRunner::run` (without Grok) currently returns `Err("not yet implemented")`. Either remove it (since `AuditRunnerWithGrok::run` is the real path) or wire it to `run_static_only()` as a sensible no-key fallback.
+- [x] ~~**Consolidate `todo_items` DB table with `tasks` table**~~ ✅ Done — `migrations/017_drop_todo_items.sql` drops the table and its three indexes. `src/db/queue.rs` `create_queue_tables` no longer emits `todo_items` DDL; `TodoItem` struct marked `#[deprecated]`. `src/scanner/github.rs` `scan_repo_for_todos` rewritten to write directly to `tasks` (source=`"github_scanner"`, source_id=content_hash for dedup). `src/cli/queue_commands.rs` `handle_report_command` migrated to read from `tasks` with Postgres `$N` placeholders. `process_tagging` already wrote to `tasks` — no change needed there.
+- [x] ~~**Standardise error handling across API handlers**~~ ✅ Done — `ApiError { error, code }` moved to `src/api/types.rs` with full `IntoResponse`, `Display`, `std::error::Error`, `From<sqlx::Error>`, and `From<anyhow::Error>` impls. Added `bad_request`, `unauthorized`, and `from_error` constructors. `src/api/repos.rs` now re-exports it via `pub use crate::api::types::ApiError`. `src/api/admin.rs` SQLite `?` placeholders replaced with Postgres `$N` throughout (`create_api_key`, `revoke_api_key`, `list_jobs`, `retry_job`).
+- [x] ~~**Implement `AuditRunner::run` stub**~~ ✅ Done — `AuditRunner::run` now delegates to `run_static_only(&request.repo)` and carries the original `AuditRequest` back in the response. No LLM cost (`estimated_cost_usd = 0.0`). `AuditRunnerWithGrok::run` remains the full LLM-assisted path. 8/8 `audit::runner::tests` green, including updated tests that assert `Ok` instead of `Err("not yet implemented")`.
+
+---
+
+### Batch `batch-012` Summary — 2026-03-08 (repo detail view + todo_items consolidation)
+
+| # | Item | File(s) | Result |
+|---|------|---------|--------|
+| 1 | `RepoDetailPanel` component — tabbed tree/todos/symbols/context inline panel | `static/rustassistant-ui.html` | ✅ |
+| 2 | `📂 Details` button per repo card, `detailOpen` state, `React.Fragment` wrapper | `static/rustassistant-ui.html` | ✅ |
+| 3 | CSS styles for `.repo-detail-panel`, `.detail-tabs`, `.detail-tab`, `.detail-body`, `.todo-row`, `.sym-row` | `static/rustassistant-ui.html` | ✅ |
+| 4 | `migrations/017_drop_todo_items.sql` — drop `todo_items` table + indexes | `migrations/017_drop_todo_items.sql` | ✅ |
+| 5 | Remove `todo_items` DDL from `create_queue_tables`; deprecate `TodoItem` struct | `src/db/queue.rs` | ✅ |
+| 6 | Migrate `scan_repo_for_todos` to write to `tasks` table (dedup via `source_id`) | `src/scanner/github.rs` | ✅ |
+| 7 | Migrate `report todos` CLI command to read from `tasks` with Postgres `$N` | `src/cli/queue_commands.rs` | ✅ |
+
+- Build: ✅ `SQLX_OFFLINE=true cargo build --bin rustassistant` — clean (warnings only, all pre-existing)
+- Tests: ✅ 404 passed; 45 pre-existing Postgres integration failures (require live DB); 0 new failures
+
+### Batch `batch-011` Summary — 2026-03-08 (pinned docs + repo pull + incremental RAG + scan auto-switch)
+
+| # | Item | File(s) | Result |
+|---|------|---------|--------|
+| 1 | `migrations/016_add_document_pinned.sql` — add `pinned` column + partial index | `migrations/016_add_document_pinned.sql` | ✅ |
+| 2 | `Document` struct + `pin_icon()` helper + all DB query sites updated | `src/db/core.rs`, `src/db/documents.rs`, `src/db/mod.rs` | ✅ |
+| 3 | `set_document_pinned()` DB helper + `POST /api/web/docs/:id/pin|unpin` endpoints | `src/db/documents.rs`, `src/web_api.rs` | ✅ |
+| 4 | Replace pin `TODO` stubs with `doc.pin_icon()` in web UI extensions | `src/web_ui_extensions.rs` | ✅ |
+| 5 | `POST /api/web/repos/:id/pull` endpoint (`handle_pull_repo`) | `src/web_api.rs` | ✅ |
+| 6 | `⬆ Pull` button in `ReposPane` SPA (disables Sync while in-flight) | `static/rustassistant-ui.html` | ✅ |
+| 7 | `🔍 Scan` button in `ReposPane` with auto-switch to Tasks tab | `static/rustassistant-ui.html` | ✅ |
+| 8 | Incremental RAG embedding — diff `tree.txt`, skip unchanged `.rs` files | `src/repo_sync.rs` | ✅ |
+
+- Build: ✅ `SQLX_OFFLINE=true cargo build --bin rustassistant` — clean (warnings only, all pre-existing)
+- Tests: ✅ 404 passed; 45 pre-existing Postgres integration failures (require live DB); 0 new failures
+
+### Batch `batch-010` Summary — 2026-03-08 (postgres + error handling + audit + queue)
+
+| # | Item | File(s) | Result |
+|---|------|---------|--------|
+| 1 | Port `RepoSyncService` upsert to `ON CONFLICT (local_path)` | `src/repo_sync.rs` | ✅ |
+| 2 | Wire `llm-audit.yml` TODO steps to Docker binary | `.github/workflows/llm-audit.yml` | ✅ |
+| 3 | Implement `process_tagging` tag refinement + `create_task` linking | `src/queue/processor.rs` | ✅ |
+| 4 | Move `ApiError` to `src/api/types.rs` with `IntoResponse` | `src/api/types.rs`, `src/api/repos.rs` | ✅ |
+| 5 | Fix SQLite `?` placeholders → Postgres `$N` in `admin.rs` | `src/api/admin.rs` | ✅ |
+| 6 | Wire `AuditRunner::run` stub to `run_static_only()` | `src/audit/runner.rs` | ✅ |
+
+- Build: ✅ `SQLX_OFFLINE=true cargo build --bin rustassistant` — clean (warnings only)
+- Tests: ✅ 404 passed; 45 pre-existing Postgres integration failures (require live DB); 0 new failures
+- YAML: ✅ `python3 -c "import yaml; yaml.safe_load(...)"` — valid
 
 ---
 

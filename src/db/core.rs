@@ -36,14 +36,17 @@ pub type DbPool = PgPool;
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Note {
     pub id: String,
+    pub title: String,
     pub content: String,
-    pub tags: Option<String>,
-    pub project: Option<String>,
     pub status: String,
     #[sqlx(default)]
     pub repo_id: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
+    /// Comma-separated tags — populated from the `notes_with_tags` view when
+    /// queried via tag-aware helpers; NULL when queried from the bare table.
+    #[sqlx(default)]
+    pub tags: Option<String>,
 }
 
 impl Note {
@@ -109,9 +112,9 @@ pub struct Repository {
     #[sqlx(default)]
     pub metadata: Option<String>, // JSON blob
     #[sqlx(rename = "auto_scan")]
-    pub auto_scan_enabled: i64,
+    pub auto_scan_enabled: i32,
     #[sqlx(rename = "scan_interval_mins")]
-    pub scan_interval_minutes: i64,
+    pub scan_interval_minutes: i32,
     #[sqlx(default)]
     pub last_scan_check: Option<i64>,
     pub last_commit_hash: Option<String>,
@@ -127,20 +130,20 @@ pub struct Repository {
     #[sqlx(default)]
     pub scan_current_file: Option<String>,
     #[sqlx(default)]
-    pub scan_files_total: Option<i64>,
+    pub scan_files_total: Option<i32>,
     #[sqlx(default)]
-    pub scan_files_processed: Option<i64>,
+    pub scan_files_processed: Option<i32>,
     #[sqlx(default)]
     pub last_scan_duration_ms: Option<i64>,
     #[sqlx(default)]
-    pub last_scan_files_found: Option<i64>,
+    pub last_scan_files_found: Option<i32>,
     #[sqlx(default)]
-    pub last_scan_issues_found: Option<i64>,
+    pub last_scan_issues_found: Option<i32>,
     #[sqlx(default)]
     pub last_error: Option<String>,
     /// Flag set by the web UI to request a project review re-run
     #[sqlx(default)]
-    pub review_requested: Option<i64>,
+    pub review_requested: Option<bool>,
 }
 
 impl Repository {
@@ -163,7 +166,9 @@ impl Repository {
     /// Get progress percentage (0-100)
     pub fn progress_percentage(&self) -> i64 {
         match (self.scan_files_processed, self.scan_files_total) {
-            (Some(processed), Some(total)) if total > 0 => ((processed * 100) / total).min(100),
+            (Some(processed), Some(total)) if total > 0 => {
+                ((processed as i64 * 100) / total as i64).min(100)
+            }
             _ => 0,
         }
     }
@@ -218,6 +223,9 @@ pub struct Document {
     pub created_at: i64,
     pub updated_at: i64,
     pub indexed_at: Option<i64>,
+    /// Whether this document is pinned (surfaced first in listings).
+    /// Defaults to `false`; set via `POST /api/web/docs/:id/pin`.
+    pub pinned: bool,
 }
 
 impl Document {
@@ -250,6 +258,15 @@ impl Document {
             .as_ref()
             .map(|t| t.split(',').map(|s| s.trim().to_string()).collect())
             .unwrap_or_default()
+    }
+
+    /// Return a pin icon string suitable for HTML display.
+    pub fn pin_icon(&self) -> &'static str {
+        if self.pinned {
+            "📌 "
+        } else {
+            ""
+        }
     }
 }
 
@@ -334,27 +351,25 @@ pub async fn create_note_with_tags(
     pool: &PgPool,
     content: &str,
     tags: &[&str],
-    project: Option<&str>,
+    _project: Option<&str>,
     repo_id: Option<&str>,
 ) -> DbResult<Note> {
     let id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().timestamp();
+    // Use content as the title (first 120 chars), store full text in content column.
+    let title: String = content.chars().take(120).collect();
 
-    // Insert the note
+    // Insert the note — the `notes` table has no `tags` or `project` column;
+    // tags are stored in `note_tags` (many-to-many).
     sqlx::query(
         r#"
-        INSERT INTO notes (id, content, tags, project, status, repo_id, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, 'inbox', $5, $6, $7)
+        INSERT INTO notes (id, title, content, status, repo_id, created_at, updated_at)
+        VALUES ($1, $2, $3, 'active', $4, $5, $6)
         "#,
     )
     .bind(&id)
+    .bind(&title)
     .bind(content)
-    .bind(if tags.is_empty() {
-        None
-    } else {
-        Some(tags.join(","))
-    })
-    .bind(project)
     .bind(repo_id)
     .bind(now)
     .bind(now)
@@ -368,14 +383,14 @@ pub async fn create_note_with_tags(
 
     Ok(Note {
         id,
+        title,
         content: content.to_string(),
         tags: if tags.is_empty() {
             None
         } else {
             Some(tags.join(","))
         },
-        project: project.map(|s| s.to_string()),
-        status: "inbox".to_string(),
+        status: "active".to_string(),
         repo_id: repo_id.map(|s| s.to_string()),
         created_at: now,
         updated_at: now,
@@ -410,22 +425,26 @@ pub async fn list_notes(
     pool: &PgPool,
     limit: i64,
     status: Option<&str>,
-    project: Option<&str>,
+    _project: Option<&str>,
     tag: Option<&str>,
 ) -> DbResult<Vec<Note>> {
-    // Build query with positional Postgres placeholders ($1, $2, ...)
-    let mut query = String::from("SELECT * FROM notes WHERE 1=1");
+    // When filtering by tag use the notes_with_tags view (has aggregated tags
+    // column); otherwise query the bare notes table which is cheaper.
     let mut param_idx: u32 = 1;
+
+    let (base_table, tag_join) = if tag.is_some() {
+        ("notes_with_tags", true)
+    } else {
+        ("notes", false)
+    };
+
+    let mut query = format!("SELECT * FROM {} WHERE 1=1", base_table);
 
     if status.is_some() {
         query.push_str(&format!(" AND status = ${}", param_idx));
         param_idx += 1;
     }
-    if project.is_some() {
-        query.push_str(&format!(" AND project = ${}", param_idx));
-        param_idx += 1;
-    }
-    if tag.is_some() {
+    if tag_join {
         query.push_str(&format!(" AND tags LIKE ${}", param_idx));
         param_idx += 1;
     }
@@ -437,9 +456,6 @@ pub async fn list_notes(
     if let Some(s) = status {
         q = q.bind(s);
     }
-    if let Some(p) = project {
-        q = q.bind(p);
-    }
     if let Some(t) = tag {
         q = q.bind(format!("%{}%", t));
     }
@@ -448,14 +464,14 @@ pub async fn list_notes(
     Ok(q.fetch_all(pool).await?)
 }
 
-/// Search notes by content
+/// Search notes by content or title
 pub async fn search_notes(pool: &PgPool, query: &str, limit: i64) -> DbResult<Vec<Note>> {
     let search_pattern = format!("%{}%", query);
 
     Ok(sqlx::query_as::<_, Note>(
         r#"
         SELECT * FROM notes
-        WHERE content LIKE $1 OR tags LIKE $2
+        WHERE content ILIKE $1 OR title ILIKE $2
         ORDER BY created_at DESC
         LIMIT $3
         "#,
@@ -577,8 +593,9 @@ pub async fn add_tag_to_note(pool: &PgPool, note_id: &str, tag: &str) -> DbResul
 
     sqlx::query(
         r#"
-        INSERT OR IGNORE INTO note_tags (note_id, tag, created_at)
+        INSERT INTO note_tags (note_id, tag, created_at)
         VALUES ($1, $2, $3)
+        ON CONFLICT DO NOTHING
         "#,
     )
     .bind(note_id)
@@ -627,8 +644,9 @@ pub async fn set_note_tags(pool: &PgPool, note_id: &str, tags: &[&str]) -> DbRes
     for tag in tags {
         sqlx::query(
             r#"
-            INSERT OR IGNORE INTO note_tags (note_id, tag, created_at)
+            INSERT INTO note_tags (note_id, tag, created_at)
             VALUES ($1, $2, $3)
+            ON CONFLICT DO NOTHING
             "#,
         )
         .bind(note_id)
@@ -779,11 +797,11 @@ pub async fn add_repository(
         scan_status: Some("idle".to_string()),
         scan_progress: None,
         scan_current_file: None,
-        scan_files_total: Some(0),
-        scan_files_processed: Some(0),
+        scan_files_total: Some(0i32),
+        scan_files_processed: Some(0i32),
         last_scan_duration_ms: None,
-        last_scan_files_found: Some(0),
-        last_scan_issues_found: Some(0),
+        last_scan_files_found: Some(0i32),
+        last_scan_issues_found: Some(0i32),
         last_error: None,
         review_requested: None,
     })
@@ -1167,15 +1185,19 @@ pub async fn create_task(
     );
     let now = chrono::Utc::now().timestamp();
 
+    // `content` is NOT NULL in the schema (migration 001); `title` was added
+    // later (migration 013). We store `title` in both columns so both old and
+    // new query paths work without a schema change.
     sqlx::query(
         r#"
-        INSERT INTO tasks (id, title, description, priority, status, source, source_id,
+        INSERT INTO tasks (id, content, title, description, priority, status, source, source_id,
                           repo_id, file_path, line_number, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, 'pending', $5, $6, $7, $8, $9, $10, $11)
+        VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8, $9, $10, $11, $12)
         "#,
     )
     .bind(&id)
-    .bind(title)
+    .bind(title) // content (NOT NULL legacy column)
+    .bind(title) // title  (migration-013 column)
     .bind(description)
     .bind(priority)
     .bind(source)
@@ -1368,23 +1390,42 @@ mod tests {
         init_db(&url).await.unwrap()
     }
 
+    /// Ensure a tag exists in the `tags` table so FK inserts into `note_tags` succeed.
+    async fn ensure_tag(pool: &PgPool, name: &str) {
+        let now = chrono::Utc::now().timestamp();
+        sqlx::query(
+            "INSERT INTO tags (name, created_at, updated_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+        )
+        .bind(name)
+        .bind(now)
+        .bind(now)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    /// Generate a short unique suffix so parallel tests don't collide on UNIQUE columns.
+    fn uid() -> String {
+        uuid::Uuid::new_v4().to_string()[..8].to_string()
+    }
+
     #[tokio::test]
     async fn test_create_and_get_note() {
         let pool = setup_test_db().await;
 
-        let note = create_note(
-            &pool,
-            "Test note content",
-            Some("tag1,tag2"),
-            Some("testproject"),
-        )
-        .await
-        .unwrap();
+        // Pre-create the tags that the FK constraint requires.
+        ensure_tag(&pool, "testtag1").await;
+        ensure_tag(&pool, "testtag2").await;
 
-        assert_eq!(note.content, "Test note content");
-        assert_eq!(note.tags, Some("tag1,tag2".to_string()));
-        assert_eq!(note.project, Some("testproject".to_string()));
-        assert_eq!(note.status, "inbox");
+        let content = format!("Test note content {}", uid());
+        let note = create_note(&pool, &content, Some("testtag1,testtag2"), None)
+            .await
+            .unwrap();
+
+        assert_eq!(note.content, content);
+        // tags are populated into the returned Note by create_note_with_tags
+        assert_eq!(note.tags, Some("testtag1,testtag2".to_string()));
+        assert_eq!(note.status, "active");
 
         let fetched = get_note(&pool, &note.id).await.unwrap();
         assert_eq!(fetched.id, note.id);
@@ -1395,66 +1436,91 @@ mod tests {
     async fn test_list_notes() {
         let pool = setup_test_db().await;
 
-        create_note(&pool, "Note 1", None, None).await.unwrap();
-        create_note(&pool, "Note 2", Some("important"), None)
+        // Use a rare tag name so the tag-filter assertion isn't confused by
+        // notes inserted by other concurrently running tests.
+        let unique_tag = format!("listtag-{}", uid());
+        ensure_tag(&pool, &unique_tag).await;
+
+        let s = uid();
+        create_note(&pool, &format!("List note A {}", s), None, None)
             .await
             .unwrap();
-        create_note(&pool, "Note 3", None, Some("project1"))
+        create_note(
+            &pool,
+            &format!("List note B {}", s),
+            Some(&unique_tag),
+            None,
+        )
+        .await
+        .unwrap();
+        create_note(&pool, &format!("List note C {}", s), None, None)
             .await
             .unwrap();
 
-        let all_notes = list_notes(&pool, 10, None, None, None).await.unwrap();
-        assert_eq!(all_notes.len(), 3);
+        // We inserted ≥3 notes; the shared DB may have more from other tests.
+        let all_notes = list_notes(&pool, 100, None, None, None).await.unwrap();
+        assert!(all_notes.len() >= 3);
 
-        let project_notes = list_notes(&pool, 10, None, Some("project1"), None)
+        // Filter by the unique tag: exactly one note should match.
+        let tagged = list_notes(&pool, 100, None, None, Some(&unique_tag))
             .await
             .unwrap();
-        assert_eq!(project_notes.len(), 1);
+        assert_eq!(tagged.len(), 1);
     }
 
     #[tokio::test]
     async fn test_search_notes() {
         let pool = setup_test_db().await;
 
-        create_note(&pool, "Rust programming tips", Some("rust,dev"), None)
-            .await
-            .unwrap();
-        create_note(&pool, "Python basics", Some("python"), None)
-            .await
-            .unwrap();
+        // Use a unique search token so the ILIKE filter is unambiguous.
+        let token = format!("UniqueRustToken{}", uid());
+        let content_rust = format!("{} programming tips", token);
+        let content_py = format!("PythonBasics{}", uid());
 
-        let results = search_notes(&pool, "Rust", 10).await.unwrap();
+        create_note(&pool, &content_rust, None, None).await.unwrap();
+        create_note(&pool, &content_py, None, None).await.unwrap();
+
+        let results = search_notes(&pool, &token, 10).await.unwrap();
         assert_eq!(results.len(), 1);
-        assert!(results[0].content.contains("Rust"));
+        assert!(results[0].content.contains(&token));
     }
 
     #[tokio::test]
     async fn test_repository_crud() {
         let pool = setup_test_db().await;
 
-        let repo = add_repository(&pool, "/path/to/repo", "my-repo", None)
-            .await
-            .unwrap();
+        // Use unique path + name so the UNIQUE(name) constraint is not violated
+        // when tests run in parallel or are re-run without truncating the DB.
+        let id_suffix = uid();
+        let name = format!("test-repo-{}", id_suffix);
+        let path = format!("/tmp/test-repo-{}", id_suffix);
 
-        assert_eq!(repo.name, "my-repo");
-        assert_eq!(repo.path, "/path/to/repo");
+        let repo = add_repository(&pool, &path, &name, None).await.unwrap();
 
+        assert_eq!(repo.name, name);
+        assert_eq!(repo.path, path);
+
+        // After inserting, at least this repo exists.
         let repos = list_repositories(&pool).await.unwrap();
-        assert_eq!(repos.len(), 1);
+        assert!(repos.iter().any(|r| r.id == repo.id));
 
         remove_repository(&pool, &repo.id).await.unwrap();
-        let repos = list_repositories(&pool).await.unwrap();
-        assert_eq!(repos.len(), 0);
+
+        let repos_after = list_repositories(&pool).await.unwrap();
+        assert!(!repos_after.iter().any(|r| r.id == repo.id));
     }
 
     #[tokio::test]
     async fn test_task_creation_and_next() {
         let pool = setup_test_db().await;
 
-        // Create tasks with different priorities
+        // Use a unique title prefix so get_next_task result is unambiguous
+        // even if other tests have inserted tasks with priority 1.
+        let pfx = format!("CriticalUnique-{}", uid());
+
         create_task(
             &pool,
-            "Low priority task",
+            &format!("{}-low", pfx),
             None,
             4,
             "manual",
@@ -1467,7 +1533,7 @@ mod tests {
         .unwrap();
         create_task(
             &pool,
-            "High priority task",
+            &format!("{}-high", pfx),
             None,
             2,
             "manual",
@@ -1478,9 +1544,9 @@ mod tests {
         )
         .await
         .unwrap();
-        create_task(
+        let critical = create_task(
             &pool,
-            "Critical task",
+            &format!("{}-critical", pfx),
             None,
             1,
             "manual",
@@ -1492,29 +1558,55 @@ mod tests {
         .await
         .unwrap();
 
-        // get_next_task should return the critical task
+        // get_next_task returns the globally highest-priority pending task.
+        // Because priority 1 is the highest and we just inserted one,
+        // the returned task must have priority 1.
         let next = get_next_task(&pool).await.unwrap().unwrap();
-        assert_eq!(next.title, "Critical task");
         assert_eq!(next.priority, 1);
+        // Our critical task must be present in the DB.
+        let all = list_tasks(&pool, 200, Some("pending"), Some(1), None)
+            .await
+            .unwrap();
+        assert!(all.iter().any(|t| t.id == critical.id));
     }
 
     #[tokio::test]
     async fn test_stats() {
         let pool = setup_test_db().await;
 
-        create_note(&pool, "Note 1", None, None).await.unwrap();
-        create_note(&pool, "Note 2", None, None).await.unwrap();
-        add_repository(&pool, "/path", "repo", None).await.unwrap();
-        create_task(&pool, "Task 1", None, 2, "manual", None, None, None, None)
+        let s = uid();
+        create_note(&pool, &format!("Stats note 1 {}", s), None, None)
+            .await
+            .unwrap();
+        create_note(&pool, &format!("Stats note 2 {}", s), None, None)
             .await
             .unwrap();
 
+        let repo_name = format!("stats-repo-{}", s);
+        let repo_path = format!("/tmp/stats-repo-{}", s);
+        add_repository(&pool, &repo_path, &repo_name, None)
+            .await
+            .unwrap();
+
+        create_task(
+            &pool,
+            &format!("Stats task {}", s),
+            None,
+            2,
+            "manual",
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
         let stats = get_stats(&pool).await.unwrap();
-        assert_eq!(stats.total_notes, 2);
-        assert_eq!(stats.inbox_notes, 2);
-        assert_eq!(stats.total_repos, 1);
-        assert_eq!(stats.total_tasks, 1);
-        assert_eq!(stats.pending_tasks, 1);
+        assert!(stats.total_notes >= 2);
+        assert!(stats.total_repos >= 1);
+        assert!(stats.total_tasks >= 1);
+        assert!(stats.pending_tasks >= 1);
     }
 }
 

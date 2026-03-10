@@ -125,33 +125,9 @@ pub struct ChatResponse {
     pub cached: bool,
 }
 
-#[derive(Debug, Serialize)]
-pub struct ApiError {
-    pub error: String,
-    pub code: String,
-}
-
-impl ApiError {
-    fn not_found(msg: impl Into<String>) -> (StatusCode, Json<Self>) {
-        (
-            StatusCode::NOT_FOUND,
-            Json(Self {
-                error: msg.into(),
-                code: "NOT_FOUND".to_string(),
-            }),
-        )
-    }
-
-    fn internal(msg: impl Into<String>) -> (StatusCode, Json<Self>) {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(Self {
-                error: msg.into(),
-                code: "INTERNAL_ERROR".to_string(),
-            }),
-        )
-    }
-}
+// ApiError is defined in crate::api::types and re-exported here for
+// backwards-compat with any code that was importing it from this module.
+pub use crate::api::types::ApiError;
 
 // ---------------------------------------------------------------------------
 // Repo handlers

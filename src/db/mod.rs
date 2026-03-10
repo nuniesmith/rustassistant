@@ -63,6 +63,7 @@ pub use documents::{
     search_documents_by_tags,
     search_documents_by_title,
     search_tags,
+    set_document_pinned,
     store_embedding,
     update_document,
     update_idea_status,

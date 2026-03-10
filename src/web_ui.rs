@@ -124,7 +124,7 @@ impl WebAppState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DashboardStats {
     pub total_repos: i64,
-    pub auto_scan_enabled: i64,
+    pub auto_scan_enabled: i32,
     pub tasks_pending: i64,
     pub tasks_in_progress: i64,
     pub tasks_completed: i64,
@@ -140,13 +140,13 @@ pub struct RepoItem {
     pub git_url: Option<String>,
     pub status: String,
     pub auto_scan_enabled: bool,
-    pub scan_interval_minutes: i64,
+    pub scan_interval_minutes: i32,
     pub last_scan_check: Option<String>,
     pub created_at: String,
     // Scan progress fields
     pub scan_status: Option<String>,
-    pub scan_files_processed: Option<i64>,
-    pub scan_files_total: Option<i64>,
+    pub scan_files_processed: Option<i32>,
+    pub scan_files_total: Option<i32>,
     pub scan_current_file: Option<String>,
 }
 
@@ -159,7 +159,7 @@ impl From<Repository> for RepoItem {
             git_url: repo.git_url,
             status: repo.status,
             auto_scan_enabled: repo.auto_scan_enabled != 0,
-            scan_interval_minutes: repo.scan_interval_minutes,
+            scan_interval_minutes: repo.scan_interval_minutes as i32,
             last_scan_check: repo.last_scan_check.map(|ts| {
                 chrono::DateTime::from_timestamp(ts, 0)
                     .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
@@ -1070,7 +1070,7 @@ pub async fn delete_repo_handler(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     // Look up the repo before deleting so we can clean up the clone directory
-    let repo_path = sqlx::query_scalar::<_, String>("SELECT path FROM repositories WHERE id = ?")
+    let repo_path = sqlx::query_scalar::<_, String>("SELECT path FROM repositories WHERE id = $1")
         .bind(&id)
         .fetch_optional(&state.db.pool)
         .await
@@ -1146,7 +1146,7 @@ async fn get_dashboard_stats(db: &Database) -> anyhow::Result<DashboardStats> {
         sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM repositories WHERE auto_scan = 1")
             .fetch_one(&db.pool)
             .await
-            .unwrap_or(0);
+            .unwrap_or(0) as i32;
 
     // Get task stats from the consolidated tasks table
     let tasks_pending =
@@ -1185,7 +1185,9 @@ async fn get_dashboard_stats(db: &Database) -> anyhow::Result<DashboardStats> {
 }
 
 async fn toggle_repo_autoscan(db: &Database, id: &str) -> anyhow::Result<()> {
-    sqlx::query("UPDATE repositories SET auto_scan = NOT auto_scan, updated_at = ? WHERE id = ?")
+    sqlx::query(
+        "UPDATE repositories SET auto_scan = CASE WHEN auto_scan = 1 THEN 0 ELSE 1 END, updated_at = $1 WHERE id = $2"
+    )
         .bind(chrono::Utc::now().timestamp())
         .bind(id)
         .execute(&db.pool)
@@ -1200,24 +1202,32 @@ async fn update_repo_settings(
     id: &str,
     settings: UpdateRepoSettingsRequest,
 ) -> anyhow::Result<()> {
-    let mut query_parts = vec!["UPDATE repositories SET updated_at = ?".to_string()];
-    let mut bindings: Vec<i64> = vec![chrono::Utc::now().timestamp()];
+    let now = chrono::Utc::now().timestamp();
+    let mut set_clauses: Vec<String> = vec!["updated_at = $1".to_string()];
+    let mut param_idx: u32 = 2;
+
+    if settings.scan_interval_minutes.is_some() {
+        set_clauses.push(format!("scan_interval_mins = ${}", param_idx));
+        param_idx += 1;
+    }
+    if settings.auto_scan_enabled.is_some() {
+        set_clauses.push(format!("auto_scan = ${}", param_idx));
+        param_idx += 1;
+    }
+
+    let query_str = format!(
+        "UPDATE repositories SET {} WHERE id = ${}",
+        set_clauses.join(", "),
+        param_idx
+    );
+
+    let mut query = sqlx::query(&query_str).bind(now);
 
     if let Some(interval) = settings.scan_interval_minutes {
-        query_parts.push("scan_interval_mins = ?".to_string());
-        bindings.push(interval);
+        query = query.bind(interval);
     }
-
     if let Some(enabled) = settings.auto_scan_enabled {
-        query_parts.push("auto_scan = ?".to_string());
-        bindings.push(if enabled { 1 } else { 0 });
-    }
-
-    let query_str = format!("{} WHERE id = ?", query_parts.join(", "));
-
-    let mut query = sqlx::query(&query_str);
-    for binding in bindings {
-        query = query.bind(binding);
+        query = query.bind(if enabled { 1i64 } else { 0i64 });
     }
     query = query.bind(id);
 
@@ -1292,7 +1302,7 @@ async fn get_task_items(db: &Database) -> anyhow::Result<Vec<QueueItemDisplay>> 
 
 /// Delete a task from the consolidated `tasks` table.
 async fn delete_task_item(db: &Database, id: &str) -> anyhow::Result<()> {
-    sqlx::query("DELETE FROM tasks WHERE id = ?")
+    sqlx::query("DELETE FROM tasks WHERE id = $1")
         .bind(id)
         .execute(&db.pool)
         .await?;
@@ -1311,7 +1321,7 @@ struct ScannerRepoItem {
     name: String,
     path: String,
     auto_scan_enabled: bool,
-    scan_interval_minutes: i64,
+    scan_interval_minutes: i32,
     last_scan_check: Option<String>,
     last_commit_hash: Option<String>,
     last_analyzed: Option<String>,
@@ -1334,7 +1344,7 @@ pub async fn force_scan_handler(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     match sqlx::query(
-        "UPDATE repositories SET last_scanned_at = NULL, last_commit_hash = NULL WHERE id = ?",
+        "UPDATE repositories SET last_scanned_at = NULL, last_commit_hash = NULL WHERE id = $1",
     )
     .bind(&id)
     .execute(&state.db.pool)
@@ -1367,7 +1377,7 @@ pub async fn request_review_handler(
     State(state): State<Arc<WebAppState>>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    match sqlx::query("UPDATE repositories SET review_requested = 1 WHERE id = ?")
+    match sqlx::query("UPDATE repositories SET review_requested = TRUE WHERE id = $1")
         .bind(&id)
         .execute(&state.db.pool)
         .await

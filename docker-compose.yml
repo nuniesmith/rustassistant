@@ -1,80 +1,107 @@
-# docker-compose.yml
-# Full RustAssistant stack: App + Postgres + Redis + Ollama (CUDA GPU passthrough)
+# =============================================================================
+# docker-compose.yml — RustAssistant Full Stack (Oryx Server / CUDA)
+# =============================================================================
+#
+# Deployment target: oryx server (bare-metal Linux with NVIDIA GPU)
+#
+# Port mapping — chosen to avoid conflicts with the FKS stack already running:
+#
+#   FKS occupied:  80, 443, 3000 (grafana), 3001 (web), 3100 (loki),
+#                  5432 (postgres), 6379 (redis), 7000, 8080, 8082, 8200,
+#                  9009, 9090, 9091, 9093, 9121, 9187, 9191, 9411, 9959,
+#                  5775, 5778, 6333-6334, 8812, 9000, 14250, 14268, 16686,
+#                  50051
+#
+#   RustAssistant:
+#     3500  → app  (web UI + API)
+#     5433  → postgres
+#     6380  → redis
+#     11434 → ollama (no conflict)
 #
 # Usage:
-#   cp .env.example .env          # (recommended)
+#   # First run — generate secrets:
+#   ./scripts/generate-secrets.sh   # creates .env with random passwords
+#
+#   # Start everything:
 #   docker compose up -d
-#   docker compose exec ollama ollama pull qwen2.5-coder:7b   # optional
+#
+#   # Pull models into Ollama (one-time):
+#   docker compose exec ollama ollama pull qwen2.5-coder:7b
+#
+# Required GitHub Secrets (injected by CI/CD):
+#   - XAI_API_KEY          — Grok API key
+#   - GITHUB_TOKEN         — GitHub PAT for repo sync
+#   - DISCORD_WEBHOOK_ACTIONS — Discord notifications
+# =============================================================================
 
 services:
-    # ===================================================================
-    # RustAssistant (API + Web UI combined)
-    # ===================================================================
+    # =========================================================================
+    # RustAssistant (API + Web UI)
+    # =========================================================================
     rustassistant:
         build:
             context: .
             dockerfile: docker/Dockerfile
             args:
                 SERVICE_TYPE: web
-                SERVICE_PORT: 3000
-        container_name: rustassistant
+                SERVICE_PORT: 3500
+        container_name: ra-app
         restart: unless-stopped
         ports:
-            - "${PORT:-3000}:3000"
+            - "${RA_PORT:-3500}:3500"
 
         environment:
-            # Logging
+            # ── Logging ──────────────────────────────────────────
             - RUST_LOG=${RUST_LOG:-info,rustassistant=debug}
 
-            # Server
+            # ── Server ───────────────────────────────────────────
             - HOST=0.0.0.0
-            - PORT=3000
+            - PORT=3500
             - SERVER_HOST=0.0.0.0
-            - SERVER_PORT=3000
+            - SERVER_PORT=3500
 
-            # Database & Cache
-            - DATABASE_URL=postgres://rustassistant:${POSTGRES_PASSWORD:-changeme}@postgres:5432/rustassistant
+            # ── Database ─────────────────────────────────────────
+            - DATABASE_URL=postgres://rustassistant:${RA_POSTGRES_PASSWORD:?Set RA_POSTGRES_PASSWORD in .env}@ra-postgres:5432/rustassistant
+
+            # ── Cache / Redis ────────────────────────────────────
             - CACHE_ENABLED=true
             - CACHE_PREFIX=rustassistant
+            - REDIS_URL=redis://:${RA_REDIS_PASSWORD:?Set RA_REDIS_PASSWORD in .env}@ra-redis:6379
 
-            # Redis
-            - REDIS_URL=redis://:${REDIS_PASSWORD:-rustassist}@redis:6379
-
-            # AI Providers
-            - XAI_API_KEY=${XAI_API_KEY}
+            # ── AI Providers ─────────────────────────────────────
+            - XAI_API_KEY=${XAI_API_KEY:-}
             - XAI_BASE_URL=${XAI_BASE_URL:-https://api.x.ai/v1}
-            - REMOTE_MODEL=grok-2-latest
-            - OLLAMA_BASE_URL=http://ollama:11434
-            - LOCAL_MODEL=qwen2.5-coder:7b
-            - FORCE_REMOTE_MODEL=false
+            - REMOTE_MODEL=${REMOTE_MODEL:-grok-2-latest}
+            - OLLAMA_BASE_URL=http://ra-ollama:11434
+            - LOCAL_MODEL=${LOCAL_MODEL:-qwen2.5-coder:7b}
+            - FORCE_REMOTE_MODEL=${FORCE_REMOTE_MODEL:-false}
 
-            # GitHub & Repos
-            - GITHUB_TOKEN=${GITHUB_TOKEN}
+            # ── GitHub & Repos ───────────────────────────────────
+            - GITHUB_TOKEN=${GITHUB_TOKEN:-}
             - GITHUB_OWNER=${GITHUB_OWNER:-nuniesmith}
             - REPO_BASE_PATH=/repos
             - REPOS_DIR=/app/repos
-            - REPO_SYNC_INTERVAL_SECS=300
+            - WORKSPACE_DIR=/app/data/workspaces
+            - REPO_SYNC_INTERVAL_SECS=${REPO_SYNC_INTERVAL_SECS:-300}
             - AUTO_SCAN_ENABLED=${AUTO_SCAN_ENABLED:-true}
             - AUTO_SCAN_INTERVAL=${AUTO_SCAN_INTERVAL:-60}
-            - AUTO_SCAN_MAX_CONCURRENT=${AUTO_SCAN_MAX_CONCURRENT:-2}
+            - AUTO_SCAN_MAX_CONCURRENT=${AUTO_SCAN_MAX_CONCURRENT:-3}
 
         volumes:
-            - rustassistant_data:/app/data
-            # Mount your local repos (change REPOS_BASE_PATH in .env if needed)
+            - ra_app_data:/app/data
+            - ra_app_cache:/app/.rustassistant
             - ${REPOS_BASE_PATH:-/home/jordan/repos}:/repos:ro
-            # Persist .rustassistant/ per-repo cache across container restarts
-            - rustassistant_cache:/app/.rustassistant
 
         depends_on:
-            postgres:
+            ra-postgres:
                 condition: service_healthy
-            redis:
+            ra-redis:
                 condition: service_healthy
-            ollama:
+            ra-ollama:
                 condition: service_started
 
         networks:
-            - rustassistant-net
+            - ra-net
 
         healthcheck:
             test:
@@ -84,7 +111,7 @@ services:
                     "--no-verbose",
                     "--tries=1",
                     "--spider",
-                    "http://localhost:3000/health",
+                    "http://localhost:3500/health",
                 ]
             interval: 30s
             timeout: 10s
@@ -94,29 +121,29 @@ services:
         deploy:
             resources:
                 limits:
-                    memory: 1.5G
-                    cpus: "2.0"
+                    memory: 2G
+                    cpus: "3.0"
                 reservations:
-                    memory: 768M
+                    memory: 1G
                     cpus: "1.0"
 
-    # ===================================================================
-    # Postgres 16
-    # ===================================================================
-    postgres:
+    # =========================================================================
+    # PostgreSQL 16
+    # =========================================================================
+    ra-postgres:
         image: postgres:16-alpine
-        container_name: rustassistant-postgres
+        container_name: ra-postgres
         restart: unless-stopped
         environment:
             - POSTGRES_USER=rustassistant
-            - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+            - POSTGRES_PASSWORD=${RA_POSTGRES_PASSWORD:?Set RA_POSTGRES_PASSWORD in .env}
             - POSTGRES_DB=rustassistant
         ports:
-            - "5432:5432"
+            - "${RA_POSTGRES_PORT:-5433}:5432"
         volumes:
-            - postgres_data:/var/lib/postgresql/data
+            - ra_postgres_data:/var/lib/postgresql/data
         networks:
-            - rustassistant-net
+            - ra-net
         healthcheck:
             test: ["CMD-SHELL", "pg_isready -U rustassistant"]
             interval: 10s
@@ -129,112 +156,141 @@ services:
                     memory: 512M
                     cpus: "1.0"
 
-    # ===================================================================
-    # Redis (with password + persistence)
-    # ===================================================================
-    redis:
+    # =========================================================================
+    # Redis 7 (password-protected, persistent)
+    # =========================================================================
+    ra-redis:
         image: redis:7-alpine
-        container_name: rustassistant-redis
+        container_name: ra-redis
         restart: unless-stopped
         command: >
             redis-server
-            --requirepass ${REDIS_PASSWORD:-rustassist}
-            --maxmemory 384mb
+            --requirepass ${RA_REDIS_PASSWORD:?Set RA_REDIS_PASSWORD in .env}
+            --maxmemory 512mb
             --maxmemory-policy allkeys-lru
             --save 60 1
             --appendonly yes
             --appendfsync everysec
         ports:
-            - "6379:6379"
+            - "${RA_REDIS_PORT:-6380}:6379"
         volumes:
-            - redis_data:/data
+            - ra_redis_data:/data
         networks:
-            - rustassistant-net
+            - ra-net
         healthcheck:
             test:
                 [
                     "CMD",
                     "redis-cli",
                     "-a",
-                    "${REDIS_PASSWORD:-rustassist}",
+                    "${RA_REDIS_PASSWORD:-changeme}",
                     "ping",
                 ]
             interval: 10s
             timeout: 5s
             retries: 5
-
         deploy:
             resources:
                 limits:
-                    memory: 384M
+                    memory: 512M
                     cpus: "0.5"
 
-    # ===================================================================
-    # Ollama with CUDA GPU passthrough
-    # ===================================================================
-    ollama:
+    # =========================================================================
+    # Ollama — CUDA GPU passthrough (bare-metal Linux)
+    # =========================================================================
+    ra-ollama:
         image: ollama/ollama:latest
-        container_name: rustassistant-ollama
+        container_name: ra-ollama
         restart: unless-stopped
         ports:
-            - "11434:11434"
+            - "${RA_OLLAMA_PORT:-11434}:11434"
         volumes:
-            - ollama_models:/root/.ollama
+            - ra_ollama_models:/root/.ollama
         environment:
             - OLLAMA_KEEP_ALIVE=24h
-            - OLLAMA_MAX_LOADED_MODELS=2
-            - OLLAMA_NUM_GPU=1 # change to 0 for CPU-only fallback
+            - OLLAMA_MAX_LOADED_MODELS=3
+            - OLLAMA_NUM_GPU=1
             - OLLAMA_FLASH_ATTENTION=1
+            - NVIDIA_VISIBLE_DEVICES=all
+            - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+        networks:
+            - ra-net
 
-        # NVIDIA GPU passthrough
+        # Bare-metal Linux NVIDIA GPU passthrough via nvidia-container-toolkit.
+        # Requires: nvidia-container-toolkit installed on the host.
+        #   sudo apt install -y nvidia-container-toolkit
+        #   sudo nvidia-ctk runtime configure --runtime=docker
+        #   sudo systemctl restart docker
         deploy:
             resources:
                 reservations:
                     devices:
                         - driver: nvidia
-                          count: all
+                          count: 1
                           capabilities: [gpu]
 
-        networks:
-            - rustassistant-net
-
         healthcheck:
-            test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+            test: ["CMD", "curl", "-sf", "http://localhost:11434/api/tags"]
             interval: 15s
             timeout: 10s
             retries: 5
             start_period: 30s
 
-    # ===================================================================
-    # One-shot model puller (runs once, then exits)
-    # ===================================================================
-    ollama-init:
+    # =========================================================================
+    # Ollama model puller (one-shot init container)
+    # =========================================================================
+    ra-ollama-init:
         image: ollama/ollama:latest
-        container_name: rustassistant-ollama-init
+        container_name: ra-ollama-init
         restart: "no"
         entrypoint: >
             /bin/sh -c "
-              echo 'Waiting for Ollama to be ready...';
-              until curl -sf http://ollama:11434/api/tags; do sleep 3; done;
-              echo 'Pulling qwen2.5-coder:7b...';
-              ollama pull qwen2.5-coder:7b;
-              echo 'Model ready!';
+              echo '[ra-ollama-init] Waiting for Ollama to be ready...';
+              until curl -sf http://ra-ollama:11434/api/tags > /dev/null 2>&1; do sleep 3; done;
+
+              pull_if_missing() {
+                local model=$$1;
+                echo \"[ra-ollama-init] Checking model: $$model\";
+                if curl -sf http://ra-ollama:11434/api/tags | grep -q \"$$model\"; then
+                  echo \"[ra-ollama-init] $$model already present — skipping.\";
+                else
+                  echo \"[ra-ollama-init] Pulling $$model...\";
+                  curl -sf -X POST http://ra-ollama:11434/api/pull \
+                    -H 'Content-Type: application/json' \
+                    -d \"{\\\"model\\\":\\\"$$model\\\",\\\"stream\\\":false}\";
+                  echo \"[ra-ollama-init] $$model pull complete.\";
+                fi;
+              };
+
+              pull_if_missing 'qwen2.5-coder:7b';
+
+              echo '[ra-ollama-init] All models ready!';
             "
         depends_on:
-            ollama:
+            ra-ollama:
                 condition: service_healthy
         networks:
-            - rustassistant-net
+            - ra-net
 
+# =============================================================================
+# Volumes — all prefixed with ra_ to avoid collision with FKS volumes
+# =============================================================================
 volumes:
-    rustassistant_data:
-    rustassistant_cache:
-    postgres_data:
-    redis_data:
-    ollama_models:
-        # repos_data:   # uncomment if you prefer a named volume instead of host mount
+    ra_app_data:
+        name: ra_app_data
+    ra_app_cache:
+        name: ra_app_cache
+    ra_postgres_data:
+        name: ra_postgres_data
+    ra_redis_data:
+        name: ra_redis_data
+    ra_ollama_models:
+        name: ra_ollama_models
 
+# =============================================================================
+# Network — isolated from the FKS bridge network
+# =============================================================================
 networks:
-    rustassistant-net:
+    ra-net:
         driver: bridge
-        name: rustassistant-network
+        name: rustassistant-net

@@ -129,17 +129,21 @@ impl AuditRunner {
     // Public API
     // -----------------------------------------------------------------------
 
-    /// Run a full audit — requires a `GrokClient`. Use `AuditRunner::with_grok` to get
-    /// `AuditRunnerWithGrok` which has the real implementation.
+    /// Run a static-only audit on the repo path given in `request.repo`.
     ///
-    /// This stub exists so that callers that only have an `AuditRunner` (no LLM key)
-    /// get a clear error rather than a compile failure.
-    pub async fn run(&self, _request: AuditRequest) -> Result<AuditResponse> {
-        Err(crate::error::AuditError::other(
-            "AuditRunner::run is not yet implemented — use AuditRunner::with_grok(...).run() \
-             to get the full LLM-assisted pipeline, or call run_static_only() for free static analysis."
-                .to_string(),
-        ))
+    /// This is the no-API-key path. It runs the same file collection and static
+    /// analysis as [`run_static_only`] but accepts a full [`AuditRequest`] so
+    /// that callers don't need to branch on whether they have a `GrokClient`.
+    ///
+    /// For LLM-assisted scoring use [`AuditRunner::with_grok`] to get an
+    /// [`AuditRunnerWithGrok`] and call its `run()` method.
+    pub async fn run(&self, request: AuditRequest) -> Result<AuditResponse> {
+        let repo_path = std::path::PathBuf::from(&request.repo);
+        let mut response = self.run_static_only(&repo_path).await?;
+        // Carry the original request back in the response so callers can
+        // inspect mode/filters without having to hold onto it separately.
+        response.request = request;
+        Ok(response)
     }
 
     /// Run only the static analysis stage (no LLM calls, free).
@@ -688,40 +692,54 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_run_returns_not_implemented() {
+    async fn test_run_delegates_to_static_only() {
         let runner = AuditRunner::with_defaults();
+        // Point at a real directory so file collection succeeds (may find 0
+        // files if the path doesn't exist — that's fine, we just want Ok).
         let req = AuditRequest {
-            repo: "nuniesmith/rustassistant".to_string(),
+            repo: std::env::temp_dir().to_string_lossy().to_string(),
             ..AuditRequest::default()
         };
         let result = runner.run(req).await;
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(err.contains("not yet implemented"));
+        // Should succeed (static-only path, no LLM needed).
+        assert!(result.is_ok(), "run() should succeed without a GrokClient");
+        let response = result.unwrap();
+        assert_eq!(response.estimated_cost_usd, 0.0, "no LLM cost expected");
     }
 
     #[tokio::test]
-    async fn test_run_static_only_returns_not_implemented() {
+    async fn test_run_static_only_succeeds_on_real_dir() {
         let runner = AuditRunner::with_defaults();
-        let result = runner.run_static_only("/tmp/test").await;
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_collect_files_returns_empty_stub() {
-        let runner = AuditRunner::with_defaults();
-        let files = runner.collect_files(Path::new("/tmp")).unwrap();
+        // /tmp always exists; may have 0 scannable files but should not error.
+        let result = runner.run_static_only(std::env::temp_dir()).await;
         assert!(
-            files.is_empty(),
-            "stub should return empty until implemented"
+            result.is_ok(),
+            "run_static_only() should succeed on a real directory"
+        );
+        let response = result.unwrap();
+        assert_eq!(
+            response.estimated_cost_usd, 0.0,
+            "static-only path must never incur LLM cost"
         );
     }
 
     #[test]
-    fn test_static_score_returns_zero_stub() {
+    fn test_collect_files_returns_entries_for_real_dir() {
+        let runner = AuditRunner::with_defaults();
+        // /tmp always exists; result may be empty but must not error.
+        let result = runner.collect_files(Path::new(std::env::temp_dir().to_str().unwrap()));
+        assert!(result.is_ok(), "collect_files() should not error on /tmp");
+    }
+
+    #[test]
+    fn test_static_score_returns_float() {
         let runner = AuditRunner::with_defaults();
         let score = runner.static_score(Path::new("src/lib.rs"), "fn main() {}");
-        assert_eq!(score, 0.0, "stub should return 0.0 until implemented");
+        // Score is in 0.0–1.0 range — just ensure it's a valid f32.
+        assert!(
+            score.is_finite(),
+            "static_score() should return a finite f32"
+        );
     }
 
     #[test]

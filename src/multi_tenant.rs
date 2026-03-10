@@ -183,8 +183,8 @@ impl TenantManager {
                 max_searches_per_day INTEGER NOT NULL DEFAULT 100000,
                 max_api_keys INTEGER NOT NULL DEFAULT 10,
                 max_webhooks INTEGER NOT NULL DEFAULT 5,
-                enabled BOOLEAN NOT NULL DEFAULT 1,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
                 custom_domain TEXT
             )
             "#,
@@ -203,7 +203,7 @@ impl TenantManager {
                 searches_today INTEGER NOT NULL DEFAULT 0,
                 api_key_count INTEGER NOT NULL DEFAULT 0,
                 webhook_count INTEGER NOT NULL DEFAULT 0,
-                last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
+                last_updated TIMESTAMPTZ DEFAULT NOW(),
                 FOREIGN KEY (tenant_id) REFERENCES organizations(id) ON DELETE CASCADE
             )
             "#,
@@ -216,7 +216,7 @@ impl TenantManager {
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS tenant_usage_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id BIGSERIAL PRIMARY KEY,
                 tenant_id TEXT NOT NULL,
                 date DATE NOT NULL,
                 documents_created INTEGER NOT NULL DEFAULT 0,
@@ -243,14 +243,14 @@ impl TenantManager {
     ) -> Result<Tenant> {
         let id = uuid::Uuid::new_v4().to_string();
         let created_at_dt = Utc::now();
-        let created_at = created_at_dt.timestamp();
 
+        // Use NOW() default for created_at (TIMESTAMPTZ column) — no binding needed.
         sqlx::query(
             r#"
             INSERT INTO organizations (
                 id, name, slug, max_documents, max_storage_mb, max_searches_per_day,
-                max_api_keys, max_webhooks, created_at, enabled
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1)
+                max_api_keys, max_webhooks, enabled
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE)
             "#,
         )
         .bind(&id)
@@ -261,20 +261,18 @@ impl TenantManager {
         .bind(quota.max_searches_per_day)
         .bind(quota.max_api_keys)
         .bind(quota.max_webhooks)
-        .bind(created_at)
         .execute(&self.db_pool)
         .await
         .context("Failed to create tenant")?;
 
-        // Initialize usage tracking
+        // Initialize usage tracking — last_updated uses NOW() default.
         sqlx::query(
             r#"
-            INSERT INTO tenant_usage (tenant_id, last_updated)
-            VALUES ($1, $2)
+            INSERT INTO tenant_usage (tenant_id)
+            VALUES ($1)
             "#,
         )
         .bind(&id)
-        .bind(created_at)
         .execute(&self.db_pool)
         .await?;
 
@@ -303,7 +301,7 @@ impl TenantManager {
                 i32,
                 i32,
                 bool,
-                i64,
+                DateTime<Utc>,
                 Option<String>,
             ),
         >(
@@ -344,7 +342,7 @@ impl TenantManager {
                     max_webhooks: max_hooks,
                 },
                 enabled,
-                created_at: DateTime::from_timestamp(created, 0).unwrap_or(Utc::now()),
+                created_at: created,
                 custom_domain: domain,
             }))
         } else {
@@ -383,7 +381,7 @@ impl TenantManager {
 
     /// Get current usage for tenant
     pub async fn get_usage(&self, tenant_id: &str) -> Result<TenantUsage> {
-        let row = sqlx::query_as::<_, (i64, i64, i64, i32, i32, i64)>(
+        let row = sqlx::query_as::<_, (i64, i64, i64, i32, i32, DateTime<Utc>)>(
             r#"
             SELECT document_count, storage_mb, searches_today, api_key_count, webhook_count, last_updated
             FROM tenant_usage
@@ -402,7 +400,7 @@ impl TenantManager {
             searches_today: row.2,
             api_key_count: row.3,
             webhook_count: row.4,
-            last_updated: DateTime::from_timestamp(row.5, 0).unwrap_or(Utc::now()),
+            last_updated: row.5,
         })
     }
 
@@ -481,13 +479,12 @@ impl TenantManager {
         };
 
         let query = format!(
-            "UPDATE tenant_usage SET {} = {} + $1, last_updated = $2 WHERE tenant_id = $3",
+            "UPDATE tenant_usage SET {} = {} + $1, last_updated = NOW() WHERE tenant_id = $2",
             field, field
         );
 
         sqlx::query(&query)
             .bind(value)
-            .bind(Utc::now().timestamp())
             .bind(tenant_id)
             .execute(&self.db_pool)
             .await?;
@@ -506,13 +503,12 @@ impl TenantManager {
         };
 
         let query = format!(
-            "UPDATE tenant_usage SET {} = MAX(0, {} - $1), last_updated = $2 WHERE tenant_id = $3",
+            "UPDATE tenant_usage SET {} = GREATEST(0, {} - $1), last_updated = NOW() WHERE tenant_id = $2",
             field, field
         );
 
         sqlx::query(&query)
             .bind(value)
-            .bind(Utc::now().timestamp())
             .bind(tenant_id)
             .execute(&self.db_pool)
             .await?;
@@ -522,10 +518,10 @@ impl TenantManager {
 
     /// Reset daily search counter (call this daily)
     pub async fn reset_daily_searches(&self) -> Result<u64> {
-        let result = sqlx::query("UPDATE tenant_usage SET searches_today = 0, last_updated = $1")
-            .bind(Utc::now().timestamp())
-            .execute(&self.db_pool)
-            .await?;
+        let result =
+            sqlx::query("UPDATE tenant_usage SET searches_today = 0, last_updated = NOW()")
+                .execute(&self.db_pool)
+                .await?;
 
         Ok(result.rows_affected())
     }
@@ -667,7 +663,11 @@ mod tests {
     use super::*;
 
     async fn setup_test_db() -> PgPool {
-        PgPool::connect(&std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgresql://rustassistant:changeme@localhost:5432/rustassistant_test".to_string())).await.unwrap()
+        PgPool::connect(&std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgresql://rustassistant:changeme@localhost:5432/rustassistant_test".to_string()
+        }))
+        .await
+        .unwrap()
     }
 
     #[tokio::test]

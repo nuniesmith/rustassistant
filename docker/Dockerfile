@@ -13,17 +13,28 @@
 # ----------------------------------------------------------------------------
 # Stage 1: Builder - Compile RustAssistant
 # ----------------------------------------------------------------------------
-FROM rust:1.92-slim-bookworm AS builder
+# Use debian:trixie-slim (glibc 2.41) as the builder base to satisfy ort-sys/ONNX Runtime
+# prebuilt binaries which require glibc 2.38+ (__isoc23_strtoll etc.).
+# debian:bookworm only ships glibc 2.36 which causes undefined symbol linker errors.
+FROM debian:trixie-slim AS builder
 
-# Install build dependencies
+# Install Rust toolchain + build dependencies
 RUN apt-get update && apt-get install -y \
+    curl \
     pkg-config \
     libssl-dev \
     ca-certificates \
     git \
     g++ \
-    libstdc++-12-dev \
     && rm -rf /var/lib/apt/lists/*
+
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:$PATH
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+    sh -s -- -y --no-modify-path --profile minimal --default-toolchain 1.92.0 && \
+    chmod -R a+w /usr/local/rustup /usr/local/cargo
 
 # Create build directory
 WORKDIR /build
@@ -60,7 +71,9 @@ RUN cargo build --release --bin rustassistant-server && \
 # ----------------------------------------------------------------------------
 # Stage 2: Runtime - Minimal production image
 # ----------------------------------------------------------------------------
-FROM debian:bookworm-slim
+# Runtime must also have glibc 2.38+ since the binary was linked against trixie (glibc 2.41)
+# and ort-sys embeds ONNX Runtime symbols requiring __isoc23_strtoll etc.
+FROM debian:trixie-slim
 
 # Build arguments for service configuration
 ARG SERVICE_TYPE=web
@@ -69,7 +82,7 @@ ARG SERVICE_PORT=3000
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     ca-certificates \
-    libssl3 \
+    libssl3t64 \
     curl \
     wget \
     sqlite3 \

@@ -134,11 +134,14 @@ pub fn web_api_router(state: WebState) -> Router {
         .route("/api/web/repos/:id", delete(handle_delete_repo))
         .route("/api/web/repos/:id/todo", get(handle_get_todo))
         .route("/api/web/repos/:id/scan", get(handle_scan_repo))
+        .route("/api/web/repos/:id/pull", post(handle_pull_repo))
         .route("/api/web/pipeline/dispatch", post(handle_dispatch))
         .route("/api/web/pipeline/stream", post(handle_dispatch_stream))
         .route("/api/web/chat", post(handle_chat))
         .route("/api/web/jobs", get(handle_list_jobs))
         .route("/api/web/jobs/:id", get(handle_get_job))
+        .route("/api/web/docs/:id/pin", post(handle_pin_doc))
+        .route("/api/web/docs/:id/unpin", post(handle_unpin_doc))
         .with_state(state)
 }
 
@@ -276,6 +279,122 @@ async fn handle_clone_repo(
                 .into_response()
         }
         Err(e) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
+    }
+}
+
+// ============================================================================
+// Repo pull / refresh
+// ============================================================================
+
+/// `POST /api/web/repos/:id/pull`
+///
+/// Runs `git fetch origin` + fast-forward merge on the locally cloned repo and
+/// returns the new HEAD commit hash.  The repo must be tracked in the
+/// `repositories` table (i.e. added via the RustAssistant API / dashboard).
+#[derive(Serialize)]
+struct PullResponse {
+    repo_id: String,
+    head: String,
+    message: String,
+}
+
+async fn handle_pull_repo(
+    State(state): State<WebState>,
+    AxumPath(repo_id): AxumPath<String>,
+) -> impl IntoResponse {
+    // Resolve the repo record so we know the local path.
+    let repo = match db::get_repository(&state.pool, &repo_id).await {
+        Ok(r) => r,
+        Err(_) => return api_error(StatusCode::NOT_FOUND, "Repo not found"),
+    };
+
+    let repo_path = PathBuf::from(&repo.path);
+
+    // Spawn a blocking task — git2 is synchronous.
+    let git = state.git.clone();
+    let result = tokio::task::spawn_blocking(move || git.update(&repo_path)).await;
+
+    match result {
+        Ok(Ok(())) => {
+            // After pulling, read the new HEAD commit hash from git2.
+            let head_hash = {
+                let git2 = state.git.clone();
+                let path = PathBuf::from(&repo.path);
+                tokio::task::spawn_blocking(move || -> String {
+                    let repo = match git2.open(&path) {
+                        Ok(r) => r,
+                        Err(_) => return "unknown".to_string(),
+                    };
+                    let head = match repo.head() {
+                        Ok(h) => h,
+                        Err(_) => return "unknown".to_string(),
+                    };
+                    head.peel_to_commit()
+                        .map(|c| c.id().to_string())
+                        .unwrap_or_else(|_| "unknown".to_string())
+                })
+                .await
+                .unwrap_or_else(|_| "unknown".to_string())
+            };
+
+            (
+                StatusCode::OK,
+                Json(serde_json::json!(PullResponse {
+                    repo_id,
+                    head: head_hash,
+                    message: "Pull successful".to_string(),
+                })),
+            )
+                .into_response()
+        }
+        Ok(Err(e)) => api_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            &format!("git pull failed: {}", e),
+        ),
+        Err(e) => api_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            &format!("task panicked: {}", e),
+        ),
+    }
+}
+
+// ============================================================================
+// Document pin / unpin
+// ============================================================================
+
+/// `POST /api/web/docs/:id/pin`   — mark a document as pinned.
+/// `POST /api/web/docs/:id/unpin` — remove the pin from a document.
+async fn handle_pin_doc(
+    State(state): State<WebState>,
+    AxumPath(doc_id): AxumPath<String>,
+) -> impl IntoResponse {
+    set_doc_pin(&state.pool, &doc_id, true).await
+}
+
+async fn handle_unpin_doc(
+    State(state): State<WebState>,
+    AxumPath(doc_id): AxumPath<String>,
+) -> impl IntoResponse {
+    set_doc_pin(&state.pool, &doc_id, false).await
+}
+
+async fn set_doc_pin(pool: &PgPool, doc_id: &str, pinned: bool) -> Response {
+    match db::set_document_pinned(pool, doc_id, pinned).await {
+        Ok(new_state) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "id": doc_id,
+                "pinned": new_state,
+            })),
+        )
+            .into_response(),
+        Err(crate::db::core::DbError::NotFound(_)) => {
+            api_error(StatusCode::NOT_FOUND, "Document not found")
+        }
+        Err(e) => api_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            &format!("DB error: {}", e),
+        ),
     }
 }
 

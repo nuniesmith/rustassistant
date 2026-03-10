@@ -280,8 +280,10 @@ impl RepoSyncService {
 
     /// Register a repo by local path. Creates `.rustassistant/` dir if missing.
     ///
-    /// Persists to SQLite when a pool is configured (upsert semantics — re-registering
-    /// an existing path is safe and updates the name / branch).
+    /// Persists to PostgreSQL when a pool is configured (upsert semantics — re-registering
+    /// an existing path is safe and updates the name / branch). The upsert uses
+    /// `ON CONFLICT (local_path)` so that re-registering the same physical path
+    /// always refreshes the record rather than inserting a duplicate.
     pub async fn register(&mut self, repo: RegisteredRepo) -> anyhow::Result<String> {
         let id = repo.id.clone();
         info!(repo = %id, path = ?repo.local_path, "Registering repo");
@@ -299,19 +301,25 @@ impl RepoSyncService {
             fs::write(&gitignore, "embeddings.bin\n").await?;
         }
 
-        // Persist to PostgreSQL (upsert — safe to call repeatedly)
+        // Persist to PostgreSQL (upsert by local_path — safe to call repeatedly).
+        //
+        // We conflict on `local_path` (unique partial index on active=TRUE in
+        // migration 015) rather than `id` so that renaming a repo (new id/slug)
+        // on an already-registered path still resolves to a single live row.
         if let Some(ref pool) = self.db {
             let local_path = repo.local_path.to_string_lossy().to_string();
             let last_synced: Option<i64> = repo.last_synced.map(|v| v as i64);
             if let Err(e) = sqlx::query(
                 r#"
-                INSERT INTO registered_repos (id, name, local_path, remote_url, branch, last_synced, active)
+                INSERT INTO registered_repos
+                    (id, name, local_path, remote_url, branch, last_synced, active)
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
-                ON CONFLICT (id) DO UPDATE SET
+                ON CONFLICT (local_path) WHERE active = TRUE DO UPDATE SET
+                    id         = EXCLUDED.id,
                     name       = EXCLUDED.name,
-                    local_path = EXCLUDED.local_path,
                     remote_url = EXCLUDED.remote_url,
                     branch     = EXCLUDED.branch,
+                    last_synced = COALESCE(EXCLUDED.last_synced, registered_repos.last_synced),
                     active     = EXCLUDED.active
                 "#,
             )
@@ -342,7 +350,7 @@ impl RepoSyncService {
         self.repos.values().filter(|r| r.active).collect()
     }
 
-    /// Remove a repo from the in-memory map and soft-delete it in SQLite.
+    /// Remove a repo from the in-memory map (synchronous, no DB write).
     pub fn remove_repo(&mut self, id: &str) -> bool {
         self.repos.remove(id).is_some()
     }
@@ -380,6 +388,18 @@ impl RepoSyncService {
         info!(repo = %repo_id, "Starting sync");
         let start = std::time::Instant::now();
         let mut errors = Vec::new();
+
+        // 0. Read the previous tree.txt snapshot (if any) so we can diff it
+        //    against the new file list and only re-embed changed/added .rs files.
+        let prev_rs_paths: std::collections::HashSet<String> =
+            tokio::fs::read_to_string(repo.tree_path())
+                .await
+                .unwrap_or_default()
+                .lines()
+                // tree.txt lines look like "  src/foo.rs" — strip leading whitespace.
+                .map(|l| l.trim().to_string())
+                .filter(|l| l.ends_with(".rs"))
+                .collect();
 
         // 1. Walk tree
         let (tree_txt, walked_files) = self.walk_tree(&repo).await.unwrap_or_else(|e| {
@@ -453,26 +473,78 @@ impl RepoSyncService {
             }
         }
 
-        // 8. Chunk changed .rs files and upsert embeddings into Postgres so the
-        //    RAG pipeline always reflects the latest source.  This runs in the
-        //    background (fire-and-forget) so it never blocks the sync response.
+        // 8. Incremental embedding pass: only re-embed .rs files that are new
+        //    or whose on-disk mtime is newer than the last sync timestamp.
+        //    If no previous tree.txt existed (first sync) every file is embedded.
         if let Some(pool) = self.db.clone() {
-            let rs_files: Vec<PathBuf> = walked_files
+            let last_synced_secs = repo.last_synced.unwrap_or(0);
+            let is_first_sync = prev_rs_paths.is_empty();
+
+            let changed_rs_files: Vec<PathBuf> = walked_files
                 .iter()
                 .filter(|p| p.extension().map(|e| e == "rs").unwrap_or(false))
+                .filter(|p| {
+                    if is_first_sync {
+                        // Embed everything on the first sync.
+                        return true;
+                    }
+                    // Relative path as it appears in tree.txt (relative to repo root).
+                    let rel = p
+                        .strip_prefix(&repo.local_path)
+                        .map(|r| r.to_string_lossy().replace('\\', "/"))
+                        .unwrap_or_else(|_| p.to_string_lossy().into_owned());
+
+                    // New file: not present in the previous snapshot.
+                    if !prev_rs_paths.contains(&rel) {
+                        return true;
+                    }
+
+                    // Changed file: mtime more recent than last_synced.
+                    if last_synced_secs > 0 {
+                        if let Ok(meta) = std::fs::metadata(p) {
+                            if let Ok(modified) = meta.modified() {
+                                let secs = modified
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .map(|d| d.as_secs())
+                                    .unwrap_or(0);
+                                return secs > last_synced_secs;
+                            }
+                        }
+                    }
+
+                    false
+                })
                 .cloned()
                 .collect();
 
-            tokio::spawn(async move {
-                if let Err(e) = embed_rust_files(&pool, &rs_files).await {
-                    warn!(error = %e, "Background embedding pass failed");
-                } else {
-                    // Rebuild the in-process HNSW index so chat handler RAG is current.
-                    if let Err(e) = refresh_rag_index(&pool).await {
-                        warn!(error = %e, "RAG index refresh failed after sync");
+            let total_rs = rust_files;
+            let changed_count = changed_rs_files.len();
+
+            if changed_rs_files.is_empty() {
+                info!(
+                    repo = %repo_id,
+                    total_rs,
+                    "Incremental embed: no changed .rs files — skipping embedding pass"
+                );
+            } else {
+                info!(
+                    repo = %repo_id,
+                    changed = changed_count,
+                    total_rs,
+                    "Incremental embed: spawning background pass for changed files"
+                );
+
+                tokio::spawn(async move {
+                    if let Err(e) = embed_rust_files(&pool, &changed_rs_files).await {
+                        warn!(error = %e, "Background incremental embedding pass failed");
+                    } else {
+                        // Rebuild the in-process HNSW index so chat handler RAG is current.
+                        if let Err(e) = refresh_rag_index(&pool).await {
+                            warn!(error = %e, "RAG index refresh failed after incremental embed");
+                        }
                     }
-                }
-            });
+                });
+            }
         }
 
         let duration_ms = start.elapsed().as_millis() as u64;

@@ -192,15 +192,15 @@ impl QueryAnalytics {
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS search_analytics (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id BIGSERIAL PRIMARY KEY,
                 query TEXT NOT NULL,
                 search_type TEXT NOT NULL,
                 result_count INTEGER NOT NULL,
                 execution_time_ms INTEGER NOT NULL,
                 user_id TEXT,
                 filters TEXT,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                timestamp TIMESTAMPTZ DEFAULT NOW(),
+                created_at TIMESTAMPTZ DEFAULT NOW()
             )
             "#,
         )
@@ -508,13 +508,16 @@ impl QueryAnalytics {
         let points = sqlx::query_as::<_, (String, i64, f64, i64)>(
             r#"
             SELECT
-                datetime(timestamp, 'start of day', printf('+%d hours',
-                    (strftime('%H', timestamp) / $1) * $2)) as bucket,
+                TO_CHAR(
+                    DATE_TRUNC('hour', timestamp) +
+                    (FLOOR(EXTRACT(HOUR FROM timestamp) / $1::float) * $1::float || ' hours')::INTERVAL,
+                    'YYYY-MM-DD"T"HH24:MI:SS+00:00'
+                ) as bucket,
                 COUNT(*) as query_count,
                 AVG(execution_time_ms) as avg_time,
                 COUNT(DISTINCT query) as unique_queries
             FROM search_analytics
-            WHERE timestamp BETWEEN $3 AND $4
+            WHERE timestamp BETWEEN TO_TIMESTAMP($3) AND TO_TIMESTAMP($4)
             GROUP BY bucket
             ORDER BY bucket
             "#,
@@ -692,7 +695,11 @@ mod tests {
     use super::*;
 
     async fn setup_test_db() -> PgPool {
-        let pool = PgPool::connect(&std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgresql://rustassistant:changeme@localhost:5432/rustassistant_test".to_string())).await.unwrap();
+        let pool = PgPool::connect(&std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgresql://rustassistant:changeme@localhost:5432/rustassistant_test".to_string()
+        }))
+        .await
+        .unwrap();
         QueryAnalytics::init_tables(&pool).await.unwrap();
         pool
     }

@@ -1,10 +1,10 @@
 {
   "id": "rustassistant",
   "name": "rustassistant",
-  "remote_url": "https://github.com/nuniesmith/rustassistant",
+  "remote_url": null,
   "branch": "main",
-  "synced_at": 1773069770,
-  "file_count": 286,
+  "synced_at": 1773129256,
+  "file_count": 291,
   "rust_file_count": 135,
   "cargo_crate_name": "rustassistant",
   "rustassistant_version": "0.1.0"

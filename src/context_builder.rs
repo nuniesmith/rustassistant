@@ -528,7 +528,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_context_builder() -> Result<()> {
-        let db = Database::new(":memory:").await?;
+        let db = Database::new(&std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgresql://rustassistant:changeme@localhost:5432/rustassistant_test".to_string()
+        }))
+        .await?;
 
         let builder = ContextBuilder::new(db)
             .with_language("Rust")

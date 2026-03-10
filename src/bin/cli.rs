@@ -1226,9 +1226,6 @@ async fn handle_note_action(pool: &sqlx::PgPool, action: NoteAction) -> anyhow::
             if let Some(t) = &note.tags {
                 println!("  {} {}", "Tags:".dimmed(), t);
             }
-            if let Some(p) = &note.project {
-                println!("  {} {}", "Project:".dimmed(), p);
-            }
         }
 
         NoteAction::List {
@@ -1291,9 +1288,7 @@ fn print_note(note: &db::Note) {
     if let Some(tags) = &note.tags {
         meta.push(format!("tags: {}", tags));
     }
-    if let Some(project) = &note.project {
-        meta.push(format!("project: {}", project));
-    }
+
     if !meta.is_empty() {
         println!("     {}", meta.join(" | ").dimmed());
     }

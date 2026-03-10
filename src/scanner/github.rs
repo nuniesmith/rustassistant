@@ -5,6 +5,7 @@
 //! - Files needing analysis
 //! - Directory structure caching
 
+use crate::db::core::create_task;
 use crate::db::queue::GITHUB_USERNAME;
 use crate::queue::processor::capture_todo;
 use anyhow::Result;
@@ -282,11 +283,18 @@ pub async fn scan_repo_for_todos(
     let detected = scan_directory_for_todos(repo_path)?;
     let now = Utc::now().timestamp();
 
-    // Mark all existing TODOs for this repo as potentially inactive
-    sqlx::query("UPDATE todo_items SET is_active = 0 WHERE repo_id = $1")
-        .bind(repo_id)
-        .execute(pool)
-        .await?;
+    // Deduplicate against existing tasks for this repo so repeated scans
+    // don't create duplicate rows in the tasks table.
+    let existing_source_ids: std::collections::HashSet<String> = sqlx::query_as::<_, (String,)>(
+        "SELECT source_id FROM tasks WHERE repo_id = $1 AND source = 'github_scanner' AND source_id IS NOT NULL"
+    )
+    .bind(repo_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|(s,)| s)
+    .collect();
 
     let mut new_todos = 0;
     let mut updated_todos = 0;
@@ -300,70 +308,65 @@ pub async fn scan_repo_for_todos(
             ))
         );
 
-        // Check if this TODO already exists
-        let existing: Option<(String,)> =
-            sqlx::query_as("SELECT id FROM todo_items WHERE repo_id = $1 AND content_hash = $2")
-                .bind(repo_id)
-                .bind(&content_hash)
-                .fetch_optional(pool)
-                .await?;
-
-        if let Some((id,)) = existing {
-            // Mark as still active
-            sqlx::query("UPDATE todo_items SET is_active = 1, updated_at = $1 WHERE id = $2")
-                .bind(now)
-                .bind(&id)
-                .execute(pool)
-                .await?;
+        // Skip if a task for this exact content already exists.
+        if existing_source_ids.contains(&content_hash) {
             updated_todos += 1;
+            continue;
+        }
+
+        // Derive a numeric priority from the TODO type.
+        let priority: i32 = match todo.todo_type.to_uppercase().as_str() {
+            "FIXME" | "BUG" | "XXX" => 1,
+            "HACK" => 2,
+            _ => 3, // TODO, NOTE, etc.
+        };
+
+        let title = format!(
+            "[{}] {} ({}:{})",
+            todo.todo_type, todo.content, todo.file_path, todo.line_number
+        );
+
+        // Write directly to the tasks table.
+        if let Err(e) = create_task(
+            pool,
+            &title,
+            None,
+            priority,
+            "github_scanner",
+            Some(content_hash.as_str()), // source_id doubles as dedup key
+            Some(repo_id),
+            Some(todo.file_path.as_str()),
+            Some(todo.line_number),
+        )
+        .await
+        {
+            tracing::warn!(error = %e, "scan_repo_for_todos: failed to create task — skipping");
         } else {
-            // Insert new TODO
-            let id = uuid::Uuid::new_v4().to_string();
-
-            sqlx::query(r#"
-                INSERT INTO todo_items
-                (id, repo_id, file_path, line_number, content, todo_type, content_hash, is_active, created_at, updated_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8, $9)
-            "#)
-            .bind(&id)
-            .bind(repo_id)
-            .bind(&todo.file_path)
-            .bind(todo.line_number)
-            .bind(&todo.content)
-            .bind(&todo.todo_type)
-            .bind(&content_hash)
-            .bind(now)
-            .bind(now)
-            .execute(pool)
-            .await?;
-
-            // Also enqueue for LLM analysis
-            capture_todo(
+            // Also enqueue for LLM analysis so the queue processor can
+            // enrich the task with tags and an LLM summary.
+            let _ = capture_todo(
                 pool,
                 &todo.content,
                 repo_id,
                 &todo.file_path,
                 todo.line_number,
             )
-            .await?;
+            .await;
 
             new_todos += 1;
         }
     }
 
-    // Count removed TODOs (still inactive after scan)
-    let removed: (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM todo_items WHERE repo_id = $1 AND is_active = 0")
-            .bind(repo_id)
-            .fetch_one(pool)
-            .await?;
+    // Count how many tasks exist for this repo from the scanner.
+    let active_count: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM tasks WHERE repo_id = $1 AND source = 'github_scanner'",
+    )
+    .bind(repo_id)
+    .fetch_one(pool)
+    .await
+    .unwrap_or((0,));
 
-    // Update repo cache
-    let active_count: (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM todo_items WHERE repo_id = $1 AND is_active = 1")
-            .bind(repo_id)
-            .fetch_one(pool)
-            .await?;
+    let removed: (i64,) = (0,); // No longer tracked per-item; removal is handled by task status.
 
     sqlx::query(
         "UPDATE repo_cache SET total_todos = $1, active_todos = $2, last_scan_at = $3, updated_at = $4 WHERE repo_id = $5"

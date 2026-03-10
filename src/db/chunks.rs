@@ -50,6 +50,7 @@
 //! ```
 
 use anyhow::{Context, Result};
+use chrono::{DateTime, Utc};
 
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -111,9 +112,9 @@ pub struct StoredChunk {
     pub is_test_code: bool,
     pub issue_count: i64,
     pub embedding: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
-    pub last_analyzed: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub last_analyzed: Option<DateTime<Utc>>,
 }
 
 /// A location where a chunk appears
@@ -148,7 +149,7 @@ pub struct StoredLocation {
     pub start_line: i64,
     pub end_line: i64,
     pub entity_name: String,
-    pub created_at: String,
+    pub created_at: DateTime<Utc>,
 }
 
 /// Record of a static analysis savings decision
@@ -199,7 +200,7 @@ pub struct StoredSavingsRecord {
     pub llm_called: bool,
     pub actual_cost_usd: f64,
     pub scan_session_id: Option<String>,
-    pub created_at: String,
+    pub created_at: DateTime<Utc>,
 }
 
 /// Cross-repo duplicate info
@@ -271,16 +272,16 @@ impl ChunkStore {
                 entity_type TEXT NOT NULL,
                 entity_name TEXT NOT NULL,
                 language TEXT NOT NULL,
-                word_count INTEGER NOT NULL DEFAULT 0,
-                complexity_score INTEGER NOT NULL DEFAULT 0,
-                is_public BOOLEAN NOT NULL DEFAULT 0,
-                has_tests BOOLEAN NOT NULL DEFAULT 0,
-                is_test_code BOOLEAN NOT NULL DEFAULT 0,
-                issue_count INTEGER NOT NULL DEFAULT 0,
+                word_count BIGINT NOT NULL DEFAULT 0,
+                complexity_score BIGINT NOT NULL DEFAULT 0,
+                is_public BOOLEAN NOT NULL DEFAULT FALSE,
+                has_tests BOOLEAN NOT NULL DEFAULT FALSE,
+                is_test_code BOOLEAN NOT NULL DEFAULT FALSE,
+                issue_count BIGINT NOT NULL DEFAULT 0,
                 embedding TEXT,
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-                last_analyzed TEXT
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                last_analyzed TIMESTAMPTZ
             )
             "#,
         )
@@ -292,14 +293,14 @@ impl ChunkStore {
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS chunk_locations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id BIGSERIAL PRIMARY KEY,
                 content_hash TEXT NOT NULL,
                 repo_id TEXT NOT NULL,
                 file_path TEXT NOT NULL,
-                start_line INTEGER NOT NULL,
-                end_line INTEGER NOT NULL,
+                start_line BIGINT NOT NULL,
+                end_line BIGINT NOT NULL,
                 entity_name TEXT NOT NULL DEFAULT '',
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 FOREIGN KEY (content_hash) REFERENCES code_chunks(content_hash)
                     ON DELETE CASCADE,
                 UNIQUE(content_hash, repo_id, file_path, start_line)
@@ -314,18 +315,18 @@ impl ChunkStore {
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS scan_savings (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id BIGSERIAL PRIMARY KEY,
                 repo_id TEXT NOT NULL,
                 file_path TEXT NOT NULL,
                 recommendation TEXT NOT NULL,
                 skip_reason TEXT,
-                static_issue_count INTEGER NOT NULL DEFAULT 0,
-                estimated_llm_value REAL NOT NULL DEFAULT 0.0,
-                estimated_cost_saved_usd REAL NOT NULL DEFAULT 0.0,
-                llm_called BOOLEAN NOT NULL DEFAULT 0,
-                actual_cost_usd REAL NOT NULL DEFAULT 0.0,
+                static_issue_count BIGINT NOT NULL DEFAULT 0,
+                estimated_llm_value DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+                estimated_cost_saved_usd DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+                llm_called BOOLEAN NOT NULL DEFAULT FALSE,
+                actual_cost_usd DOUBLE PRECISION NOT NULL DEFAULT 0.0,
                 scan_session_id TEXT,
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
             "#,
         )
@@ -399,7 +400,7 @@ impl ChunkStore {
                 word_count, complexity_score, is_public, has_tests,
                 is_test_code, issue_count, embedding, last_analyzed
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, datetime('now'))
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
             ON CONFLICT(content_hash) DO UPDATE SET
                 entity_type = excluded.entity_type,
                 entity_name = excluded.entity_name,
@@ -411,8 +412,8 @@ impl ChunkStore {
                 is_test_code = excluded.is_test_code,
                 issue_count = excluded.issue_count,
                 embedding = COALESCE(excluded.embedding, code_chunks.embedding),
-                updated_at = datetime('now'),
-                last_analyzed = datetime('now')
+                updated_at = NOW(),
+                last_analyzed = NOW()
             "#,
         )
         .bind(&record.content_hash)
@@ -449,9 +450,9 @@ impl ChunkStore {
                 bool,
                 i64,
                 Option<String>,
-                String,
-                String,
-                Option<String>,
+                DateTime<Utc>,
+                DateTime<Utc>,
+                Option<DateTime<Utc>>,
             ),
         >(
             r#"
@@ -530,7 +531,7 @@ impl ChunkStore {
                     word_count, complexity_score, is_public, has_tests,
                     is_test_code, issue_count, embedding, last_analyzed
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, datetime('now'))
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
                 ON CONFLICT(content_hash) DO UPDATE SET
                     entity_type = excluded.entity_type,
                     entity_name = excluded.entity_name,
@@ -541,8 +542,8 @@ impl ChunkStore {
                     is_test_code = excluded.is_test_code,
                     issue_count = excluded.issue_count,
                     embedding = COALESCE(excluded.embedding, code_chunks.embedding),
-                    updated_at = datetime('now'),
-                    last_analyzed = datetime('now')
+                    updated_at = NOW(),
+                    last_analyzed = NOW()
                 "#,
             )
             .bind(&record.content_hash)
@@ -574,7 +575,7 @@ impl ChunkStore {
         let result = sqlx::query(
             r#"
             UPDATE code_chunks
-            SET embedding = $1, updated_at = datetime('now')
+            SET embedding = $1, updated_at = NOW()
             WHERE content_hash = $2
             "#,
         )
@@ -603,9 +604,9 @@ impl ChunkStore {
                 bool,
                 i64,
                 Option<String>,
-                String,
-                String,
-                Option<String>,
+                DateTime<Utc>,
+                DateTime<Utc>,
+                Option<DateTime<Utc>>,
             ),
         >(
             r#"
@@ -723,7 +724,7 @@ impl ChunkStore {
 
     /// Get all locations for a content hash
     pub async fn get_locations(&self, content_hash: &str) -> Result<Vec<StoredLocation>> {
-        let rows = sqlx::query_as::<_, (i64, String, String, String, i64, i64, String, String)>(
+        let rows = sqlx::query_as::<_, (i64, String, String, String, i64, i64, String, DateTime<Utc>)>(
             r#"
             SELECT id, content_hash, repo_id, file_path, start_line, end_line, entity_name, created_at
             FROM chunk_locations
@@ -757,7 +758,7 @@ impl ChunkStore {
         repo_id: &str,
         file_path: &str,
     ) -> Result<Vec<StoredLocation>> {
-        let rows = sqlx::query_as::<_, (i64, String, String, String, i64, i64, String, String)>(
+        let rows = sqlx::query_as::<_, (i64, String, String, String, i64, i64, String, DateTime<Utc>)>(
             r#"
             SELECT id, content_hash, repo_id, file_path, start_line, end_line, entity_name, created_at
             FROM chunk_locations
@@ -827,8 +828,8 @@ impl ChunkStore {
             JOIN code_chunks cc ON cc.content_hash = cl.content_hash
             WHERE cc.complexity_score >= $1
             GROUP BY cl.content_hash
-            HAVING repo_count > 1
-            ORDER BY repo_count DESC
+            HAVING COUNT(DISTINCT cl.repo_id) > 1
+            ORDER BY COUNT(DISTINCT cl.repo_id) DESC
             LIMIT 100
             "#,
         )
@@ -971,18 +972,19 @@ impl ChunkStore {
 
     /// Get savings summary for a scan session
     pub async fn get_session_savings(&self, scan_session_id: &str) -> Result<SavingsSummary> {
-        self.get_savings_summary_where("scan_session_id = ?", scan_session_id)
+        self.get_savings_summary_where("scan_session_id = $1", scan_session_id)
             .await
     }
 
     /// Get savings summary for a repository (all time)
     pub async fn get_repo_savings(&self, repo_id: &str) -> Result<SavingsSummary> {
-        self.get_savings_summary_where("repo_id = ?", repo_id).await
+        self.get_savings_summary_where("repo_id = $1", repo_id)
+            .await
     }
 
     /// Get savings summary for today
     pub async fn get_daily_savings(&self) -> Result<SavingsSummary> {
-        self.get_savings_summary_where("created_at >= date('now')", "")
+        self.get_savings_summary_where("created_at >= CURRENT_DATE", "")
             .await
     }
 
@@ -995,15 +997,15 @@ impl ChunkStore {
         let query = format!(
             r#"
             SELECT
-                COUNT(*) as total_files,
-                SUM(CASE WHEN recommendation = 'SKIP' THEN 1 ELSE 0 END) as files_skipped,
-                SUM(CASE WHEN recommendation = 'MINIMAL' THEN 1 ELSE 0 END) as files_minimal,
-                SUM(CASE WHEN recommendation = 'STANDARD' THEN 1 ELSE 0 END) as files_standard,
-                SUM(CASE WHEN recommendation = 'DEEP_DIVE' THEN 1 ELSE 0 END) as files_deep_dive,
-                COALESCE(SUM(estimated_cost_saved_usd), 0.0) as total_estimated_savings,
-                COALESCE(SUM(actual_cost_usd), 0.0) as total_actual_cost,
-                COALESCE(SUM(static_issue_count), 0) as total_static_issues,
-                SUM(CASE WHEN llm_called = 0 THEN 1 ELSE 0 END) as llm_calls_avoided
+                COUNT(*)::BIGINT as total_files,
+                COALESCE(SUM(CASE WHEN recommendation = 'SKIP' THEN 1 ELSE 0 END), 0)::BIGINT as files_skipped,
+                COALESCE(SUM(CASE WHEN recommendation = 'MINIMAL' THEN 1 ELSE 0 END), 0)::BIGINT as files_minimal,
+                COALESCE(SUM(CASE WHEN recommendation = 'STANDARD' THEN 1 ELSE 0 END), 0)::BIGINT as files_standard,
+                COALESCE(SUM(CASE WHEN recommendation = 'DEEP_DIVE' THEN 1 ELSE 0 END), 0)::BIGINT as files_deep_dive,
+                COALESCE(SUM(estimated_cost_saved_usd), 0.0)::DOUBLE PRECISION as total_estimated_savings,
+                COALESCE(SUM(actual_cost_usd), 0.0)::DOUBLE PRECISION as total_actual_cost,
+                COALESCE(SUM(static_issue_count), 0)::BIGINT as total_static_issues,
+                COALESCE(SUM(CASE WHEN llm_called = FALSE THEN 1 ELSE 0 END), 0)::BIGINT as llm_calls_avoided
             FROM scan_savings
             WHERE {}
             "#,
@@ -1095,7 +1097,7 @@ impl ChunkStore {
 
         // Average complexity
         let avg_complexity = sqlx::query_as::<_, (f64,)>(
-            "SELECT COALESCE(AVG(complexity_score), 0.0) FROM code_chunks",
+            "SELECT COALESCE(AVG(complexity_score)::DOUBLE PRECISION, 0.0) FROM code_chunks",
         )
         .fetch_one(&self.pool)
         .await
@@ -1191,7 +1193,7 @@ impl ChunkStore {
         let result = sqlx::query(
             r#"
             DELETE FROM scan_savings
-            WHERE created_at < datetime('now', $1 || ' days')
+            WHERE created_at < NOW() - ($1 || ' days')::INTERVAL
             "#,
         )
         .bind(format!("-{}", days))
@@ -1296,6 +1298,11 @@ mod tests {
         .expect("Failed to create test pool")
     }
 
+    /// Generate a short unique suffix to avoid hash/name collisions across test runs.
+    fn uid() -> String {
+        uuid::Uuid::new_v4().to_string()[..8].to_string()
+    }
+
     #[tokio::test]
     async fn test_schema_initialization() {
         let pool = create_test_pool().await;
@@ -1307,9 +1314,10 @@ mod tests {
     async fn test_upsert_and_get_chunk() {
         let pool = create_test_pool().await;
         let store = ChunkStore::new(pool).await.unwrap();
+        let h = format!("upsert-{}", uid());
 
         let record = ChunkRecord {
-            content_hash: "abc123".into(),
+            content_hash: h.clone(),
             entity_type: "function".into(),
             entity_name: "process_data".into(),
             language: "rust".into(),
@@ -1324,7 +1332,7 @@ mod tests {
 
         store.upsert_chunk(&record).await.unwrap();
 
-        let stored = store.get_chunk("abc123").await.unwrap();
+        let stored = store.get_chunk(&h).await.unwrap();
         assert!(stored.is_some());
         let stored = stored.unwrap();
         assert_eq!(stored.entity_name, "process_data");
@@ -1337,10 +1345,11 @@ mod tests {
     async fn test_upsert_preserves_embedding() {
         let pool = create_test_pool().await;
         let store = ChunkStore::new(pool).await.unwrap();
+        let h = format!("preserve-emb-{}", uid());
 
         // First insert with embedding
         let record = ChunkRecord {
-            content_hash: "hash1".into(),
+            content_hash: h.clone(),
             entity_type: "function".into(),
             entity_name: "foo".into(),
             language: "rust".into(),
@@ -1356,7 +1365,7 @@ mod tests {
 
         // Second upsert WITHOUT embedding — should preserve the original
         let record2 = ChunkRecord {
-            content_hash: "hash1".into(),
+            content_hash: h.clone(),
             entity_type: "function".into(),
             entity_name: "foo_updated".into(),
             language: "rust".into(),
@@ -1370,7 +1379,7 @@ mod tests {
         };
         store.upsert_chunk(&record2).await.unwrap();
 
-        let stored = store.get_chunk("hash1").await.unwrap().unwrap();
+        let stored = store.get_chunk(&h).await.unwrap().unwrap();
         assert_eq!(stored.entity_name, "foo_updated");
         assert_eq!(stored.complexity_score, 7);
         assert!(stored.is_public);
@@ -1382,11 +1391,13 @@ mod tests {
     async fn test_contains() {
         let pool = create_test_pool().await;
         let store = ChunkStore::new(pool).await.unwrap();
+        let h = format!("contains-{}", uid());
+        let nonexistent = format!("nonexistent-{}", uid());
 
-        assert!(!store.contains("nonexistent").await.unwrap());
+        assert!(!store.contains(&nonexistent).await.unwrap());
 
         let record = ChunkRecord {
-            content_hash: "exists".into(),
+            content_hash: h.clone(),
             entity_type: "struct".into(),
             entity_name: "Foo".into(),
             language: "rust".into(),
@@ -1400,17 +1411,20 @@ mod tests {
         };
         store.upsert_chunk(&record).await.unwrap();
 
-        assert!(store.contains("exists").await.unwrap());
+        assert!(store.contains(&h).await.unwrap());
     }
 
     #[tokio::test]
     async fn test_locations() {
         let pool = create_test_pool().await;
         let store = ChunkStore::new(pool).await.unwrap();
+        let h = format!("hash-loc-{}", uid());
+        let repo_a = format!("repo-a-{}", uid());
+        let repo_b = format!("repo-b-{}", uid());
 
         // Insert chunk first
         let chunk = ChunkRecord {
-            content_hash: "hash_loc".into(),
+            content_hash: h.clone(),
             entity_type: "function".into(),
             entity_name: "bar".into(),
             language: "rust".into(),
@@ -1426,16 +1440,16 @@ mod tests {
 
         // Add locations in two repos
         let loc1 = ChunkLocationRecord {
-            content_hash: "hash_loc".into(),
-            repo_id: "repo_a".into(),
+            content_hash: h.clone(),
+            repo_id: repo_a.clone(),
             file_path: "src/lib.rs".into(),
             start_line: 10,
             end_line: 30,
             entity_name: "bar".into(),
         };
         let loc2 = ChunkLocationRecord {
-            content_hash: "hash_loc".into(),
-            repo_id: "repo_b".into(),
+            content_hash: h.clone(),
+            repo_id: repo_b.clone(),
             file_path: "src/utils.rs".into(),
             start_line: 5,
             end_line: 25,
@@ -1445,11 +1459,11 @@ mod tests {
         store.upsert_location(&loc1).await.unwrap();
         store.upsert_location(&loc2).await.unwrap();
 
-        let locs = store.get_locations("hash_loc").await.unwrap();
+        let locs = store.get_locations(&h).await.unwrap();
         assert_eq!(locs.len(), 2);
 
         let file_locs = store
-            .get_file_locations("repo_a", "src/lib.rs")
+            .get_file_locations(&repo_a, "src/lib.rs")
             .await
             .unwrap();
         assert_eq!(file_locs.len(), 1);
@@ -1460,10 +1474,13 @@ mod tests {
     async fn test_cross_repo_duplicates() {
         let pool = create_test_pool().await;
         let store = ChunkStore::new(pool).await.unwrap();
+        let h = format!("dup-hash-{}", uid());
+        let rx = format!("repo-x-{}", uid());
+        let ry = format!("repo-y-{}", uid());
 
         // Insert a chunk
         let chunk = ChunkRecord {
-            content_hash: "dup_hash".into(),
+            content_hash: h.clone(),
             entity_type: "function".into(),
             entity_name: "shared_util".into(),
             language: "rust".into(),
@@ -1480,8 +1497,8 @@ mod tests {
         // Add in two different repos
         store
             .upsert_location(&ChunkLocationRecord {
-                content_hash: "dup_hash".into(),
-                repo_id: "repo_x".into(),
+                content_hash: h.clone(),
+                repo_id: rx.clone(),
                 file_path: "src/utils.rs".into(),
                 start_line: 1,
                 end_line: 20,
@@ -1492,8 +1509,8 @@ mod tests {
 
         store
             .upsert_location(&ChunkLocationRecord {
-                content_hash: "dup_hash".into(),
-                repo_id: "repo_y".into(),
+                content_hash: h.clone(),
+                repo_id: ry.clone(),
                 file_path: "src/helpers.rs".into(),
                 start_line: 1,
                 end_line: 20,
@@ -1502,17 +1519,21 @@ mod tests {
             .await
             .unwrap();
 
+        // find_cross_repo_duplicates returns ALL cross-repo dups in DB;
+        // assert our specific hash is among them.
         let dups = store.find_cross_repo_duplicates(0).await.unwrap();
-        assert_eq!(dups.len(), 1);
-        assert_eq!(dups[0].content_hash, "dup_hash");
-        assert_eq!(dups[0].repos.len(), 2);
-        assert_eq!(dups[0].location_count, 2);
+        let our_dup = dups.iter().find(|d| d.content_hash == h);
+        assert!(our_dup.is_some(), "Expected our dup hash to appear");
+        let our_dup = our_dup.unwrap();
+        assert_eq!(our_dup.repos.len(), 2);
+        assert_eq!(our_dup.location_count, 2);
     }
 
     #[tokio::test]
     async fn test_savings_recording() {
         let pool = create_test_pool().await;
         let store = ChunkStore::new(pool).await.unwrap();
+        let session = format!("session-rec-{}", uid());
 
         let savings = ScanSavingsRecord {
             repo_id: "test_repo".into(),
@@ -1524,7 +1545,7 @@ mod tests {
             estimated_cost_saved_usd: 0.005,
             llm_called: false,
             actual_cost_usd: 0.0,
-            scan_session_id: Some("session_1".into()),
+            scan_session_id: Some(session.clone()),
         };
         let id = store.record_savings(&savings).await.unwrap();
         assert!(id > 0);
@@ -1539,11 +1560,11 @@ mod tests {
             estimated_cost_saved_usd: 0.0,
             llm_called: true,
             actual_cost_usd: 0.01,
-            scan_session_id: Some("session_1".into()),
+            scan_session_id: Some(session.clone()),
         };
         store.record_savings(&savings2).await.unwrap();
 
-        let summary = store.get_session_savings("session_1").await.unwrap();
+        let summary = store.get_session_savings(&session).await.unwrap();
         assert_eq!(summary.total_files, 2);
         assert_eq!(summary.files_skipped, 1);
         assert_eq!(summary.files_standard, 1);
@@ -1555,10 +1576,12 @@ mod tests {
     async fn test_batch_operations() {
         let pool = create_test_pool().await;
         let store = ChunkStore::new(pool).await.unwrap();
+        let pfx = uid();
+        let repo = format!("batch-repo-{}", pfx);
 
         let chunks: Vec<ChunkRecord> = (0..5)
             .map(|i| ChunkRecord {
-                content_hash: format!("batch_hash_{}", i),
+                content_hash: format!("batch-{}-hash-{}", pfx, i),
                 entity_type: "function".into(),
                 entity_name: format!("func_{}", i),
                 language: "rust".into(),
@@ -1575,13 +1598,14 @@ mod tests {
         let count = store.upsert_chunks_batch(&chunks).await.unwrap();
         assert_eq!(count, 5);
 
+        // chunk_count() is global; assert we inserted at least 5
         let total = store.chunk_count().await.unwrap();
-        assert_eq!(total, 5);
+        assert!(total >= 5);
 
         let locations: Vec<ChunkLocationRecord> = (0..5)
             .map(|i| ChunkLocationRecord {
-                content_hash: format!("batch_hash_{}", i),
-                repo_id: "batch_repo".into(),
+                content_hash: format!("batch-{}-hash-{}", pfx, i),
+                repo_id: repo.clone(),
                 file_path: format!("src/file_{}.rs", i),
                 start_line: 1,
                 end_line: 20,
@@ -1592,20 +1616,22 @@ mod tests {
         let loc_count = store.upsert_locations_batch(&locations).await.unwrap();
         assert_eq!(loc_count, 5);
 
+        // location_count() is global; assert we inserted at least 5
         let total_locs = store.location_count().await.unwrap();
-        assert_eq!(total_locs, 5);
+        assert!(total_locs >= 5);
     }
 
     #[tokio::test]
     async fn test_dedup_stats() {
         let pool = create_test_pool().await;
         let store = ChunkStore::new(pool).await.unwrap();
+        let pfx = uid();
 
         // Insert chunks
         for i in 0..3 {
             store
                 .upsert_chunk(&ChunkRecord {
-                    content_hash: format!("stats_hash_{}", i),
+                    content_hash: format!("stats-{}-hash-{}", pfx, i),
                     entity_type: if i == 0 { "function" } else { "struct" }.into(),
                     entity_name: format!("item_{}", i),
                     language: if i < 2 { "rust" } else { "python" }.into(),
@@ -1621,9 +1647,10 @@ mod tests {
                 .unwrap();
         }
 
+        // get_dedup_stats() is global; assert our inserts are reflected
         let stats = store.get_dedup_stats().await.unwrap();
-        assert_eq!(stats.total_chunks, 3);
-        assert_eq!(stats.chunks_with_embeddings, 1);
+        assert!(stats.total_chunks >= 3);
+        assert!(stats.chunks_with_embeddings >= 1);
         assert!(stats.avg_complexity > 0.0);
         assert!(!stats.by_language.is_empty());
         assert!(!stats.by_entity_type.is_empty());
@@ -1633,11 +1660,15 @@ mod tests {
     async fn test_cleanup_orphaned_chunks() {
         let pool = create_test_pool().await;
         let store = ChunkStore::new(pool).await.unwrap();
+        let pfx = uid();
+        let orphan_h = format!("orphan-{}", pfx);
+        let linked_h = format!("linked-{}", pfx);
+        let repo = format!("repo-cleanup-{}", pfx);
 
         // Insert chunk without any location
         store
             .upsert_chunk(&ChunkRecord {
-                content_hash: "orphan".into(),
+                content_hash: orphan_h.clone(),
                 entity_type: "function".into(),
                 entity_name: "orphaned_fn".into(),
                 language: "rust".into(),
@@ -1655,7 +1686,7 @@ mod tests {
         // Insert chunk with a location
         store
             .upsert_chunk(&ChunkRecord {
-                content_hash: "linked".into(),
+                content_hash: linked_h.clone(),
                 entity_type: "function".into(),
                 entity_name: "linked_fn".into(),
                 language: "rust".into(),
@@ -1672,8 +1703,8 @@ mod tests {
 
         store
             .upsert_location(&ChunkLocationRecord {
-                content_hash: "linked".into(),
-                repo_id: "repo".into(),
+                content_hash: linked_h.clone(),
+                repo_id: repo.clone(),
                 file_path: "src/lib.rs".into(),
                 start_line: 1,
                 end_line: 10,
@@ -1682,21 +1713,24 @@ mod tests {
             .await
             .unwrap();
 
-        let deleted = store.cleanup_orphaned_chunks().await.unwrap();
-        assert_eq!(deleted, 1);
+        // cleanup_orphaned_chunks removes ALL orphans in the DB; our orphan
+        // must be gone and our linked chunk must still be present.
+        store.cleanup_orphaned_chunks().await.unwrap();
 
-        assert!(!store.contains("orphan").await.unwrap());
-        assert!(store.contains("linked").await.unwrap());
+        assert!(!store.contains(&orphan_h).await.unwrap());
+        assert!(store.contains(&linked_h).await.unwrap());
     }
 
     #[tokio::test]
     async fn test_delete_chunk_cascades() {
         let pool = create_test_pool().await;
         let store = ChunkStore::new(pool).await.unwrap();
+        let h = format!("cascade-{}", uid());
+        let repo = format!("repo-cascade-{}", uid());
 
         store
             .upsert_chunk(&ChunkRecord {
-                content_hash: "cascade_test".into(),
+                content_hash: h.clone(),
                 entity_type: "function".into(),
                 entity_name: "fn_cascade".into(),
                 language: "rust".into(),
@@ -1713,8 +1747,8 @@ mod tests {
 
         store
             .upsert_location(&ChunkLocationRecord {
-                content_hash: "cascade_test".into(),
-                repo_id: "repo".into(),
+                content_hash: h.clone(),
+                repo_id: repo.clone(),
                 file_path: "src/lib.rs".into(),
                 start_line: 1,
                 end_line: 10,
@@ -1723,11 +1757,11 @@ mod tests {
             .await
             .unwrap();
 
-        let deleted = store.delete_chunk("cascade_test").await.unwrap();
+        let deleted = store.delete_chunk(&h).await.unwrap();
         assert!(deleted);
 
         // Location should also be deleted (CASCADE)
-        let locs = store.get_locations("cascade_test").await.unwrap();
+        let locs = store.get_locations(&h).await.unwrap();
         assert!(locs.is_empty());
     }
 
@@ -1735,10 +1769,12 @@ mod tests {
     async fn test_clear_file_locations() {
         let pool = create_test_pool().await;
         let store = ChunkStore::new(pool).await.unwrap();
+        let h = format!("file-clear-{}", uid());
+        let repo = format!("repo-clear-{}", uid());
 
         store
             .upsert_chunk(&ChunkRecord {
-                content_hash: "file_clear".into(),
+                content_hash: h.clone(),
                 entity_type: "function".into(),
                 entity_name: "fn_clear".into(),
                 language: "rust".into(),
@@ -1755,8 +1791,8 @@ mod tests {
 
         store
             .upsert_location(&ChunkLocationRecord {
-                content_hash: "file_clear".into(),
-                repo_id: "repo".into(),
+                content_hash: h.clone(),
+                repo_id: repo.clone(),
                 file_path: "src/clear_me.rs".into(),
                 start_line: 1,
                 end_line: 10,
@@ -1767,8 +1803,8 @@ mod tests {
 
         store
             .upsert_location(&ChunkLocationRecord {
-                content_hash: "file_clear".into(),
-                repo_id: "repo".into(),
+                content_hash: h.clone(),
+                repo_id: repo.clone(),
                 file_path: "src/keep_me.rs".into(),
                 start_line: 1,
                 end_line: 10,
@@ -1778,12 +1814,12 @@ mod tests {
             .unwrap();
 
         let cleared = store
-            .clear_file_locations("repo", "src/clear_me.rs")
+            .clear_file_locations(&repo, "src/clear_me.rs")
             .await
             .unwrap();
         assert_eq!(cleared, 1);
 
-        let remaining = store.get_locations("file_clear").await.unwrap();
+        let remaining = store.get_locations(&h).await.unwrap();
         assert_eq!(remaining.len(), 1);
         assert_eq!(remaining[0].file_path, "src/keep_me.rs");
     }
@@ -1792,10 +1828,11 @@ mod tests {
     async fn test_update_embedding() {
         let pool = create_test_pool().await;
         let store = ChunkStore::new(pool).await.unwrap();
+        let h = format!("embed-test-{}", uid());
 
         store
             .upsert_chunk(&ChunkRecord {
-                content_hash: "embed_test".into(),
+                content_hash: h.clone(),
                 entity_type: "function".into(),
                 entity_name: "fn_embed".into(),
                 language: "rust".into(),
@@ -1811,12 +1848,12 @@ mod tests {
             .unwrap();
 
         let updated = store
-            .update_embedding("embed_test", "[0.1, 0.2, 0.3, 0.4]")
+            .update_embedding(&h, "[0.1, 0.2, 0.3, 0.4]")
             .await
             .unwrap();
         assert!(updated);
 
-        let chunk = store.get_chunk("embed_test").await.unwrap().unwrap();
+        let chunk = store.get_chunk(&h).await.unwrap().unwrap();
         assert_eq!(chunk.embedding, Some("[0.1, 0.2, 0.3, 0.4]".into()));
     }
 
@@ -1824,16 +1861,21 @@ mod tests {
     async fn test_chunks_without_embeddings() {
         let pool = create_test_pool().await;
         let store = ChunkStore::new(pool).await.unwrap();
+        let pfx = uid();
+        let with_h = format!("with-emb-{}", pfx);
+        let without_h = format!("without-emb-{}", pfx);
 
         // Insert one with embedding, one without
         store
             .upsert_chunk(&ChunkRecord {
-                content_hash: "with_embed".into(),
+                content_hash: with_h.clone(),
                 entity_type: "function".into(),
                 entity_name: "fn_with".into(),
                 language: "rust".into(),
                 word_count: 50,
-                complexity_score: 5,
+                // Use a very high complexity so this chunk sorts to the front
+                // of the `ORDER BY complexity_score DESC` query.
+                complexity_score: 9999,
                 is_public: false,
                 has_tests: false,
                 is_test_code: false,
@@ -1845,12 +1887,12 @@ mod tests {
 
         store
             .upsert_chunk(&ChunkRecord {
-                content_hash: "without_embed".into(),
+                content_hash: without_h.clone(),
                 entity_type: "function".into(),
                 entity_name: "fn_without".into(),
                 language: "rust".into(),
                 word_count: 50,
-                complexity_score: 10,
+                complexity_score: 9998,
                 is_public: false,
                 has_tests: false,
                 is_test_code: false,
@@ -1860,23 +1902,27 @@ mod tests {
             .await
             .unwrap();
 
-        let without = store.get_chunks_without_embeddings(10).await.unwrap();
+        // get_chunks_without_embeddings returns top-N by complexity DESC.
+        // Our without_h chunk has the highest complexity among un-embedded chunks.
+        let without = store.get_chunks_without_embeddings(1).await.unwrap();
         assert_eq!(without.len(), 1);
-        assert_eq!(without[0].content_hash, "without_embed");
+        assert_eq!(without[0].content_hash, without_h);
     }
 
     #[tokio::test]
     async fn test_is_already_analyzed() {
         let pool = create_test_pool().await;
         let store = ChunkStore::new(pool).await.unwrap();
+        let new_h = format!("new-hash-{}", uid());
+        let analyzed_h = format!("analyzed-hash-{}", uid());
 
         // Not yet inserted
-        assert!(!store.is_already_analyzed("new_hash").await.unwrap());
+        assert!(!store.is_already_analyzed(&new_h).await.unwrap());
 
-        // Insert with last_analyzed set (upsert_chunk sets it via datetime('now'))
+        // Insert with last_analyzed set (upsert_chunk sets it via NOW())
         store
             .upsert_chunk(&ChunkRecord {
-                content_hash: "analyzed_hash".into(),
+                content_hash: analyzed_h.clone(),
                 entity_type: "function".into(),
                 entity_name: "fn_analyzed".into(),
                 language: "rust".into(),
@@ -1891,7 +1937,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(store.is_already_analyzed("analyzed_hash").await.unwrap());
+        assert!(store.is_already_analyzed(&analyzed_h).await.unwrap());
     }
 
     #[tokio::test]
@@ -1910,6 +1956,7 @@ mod tests {
     async fn test_savings_batch() {
         let pool = create_test_pool().await;
         let store = ChunkStore::new(pool).await.unwrap();
+        let session = format!("batch-session-{}", uid());
 
         let records: Vec<ScanSavingsRecord> = (0..3)
             .map(|i| ScanSavingsRecord {
@@ -1922,14 +1969,14 @@ mod tests {
                 estimated_cost_saved_usd: if i == 0 { 0.005 } else { 0.0 },
                 llm_called: i != 0,
                 actual_cost_usd: if i != 0 { 0.01 } else { 0.0 },
-                scan_session_id: Some("batch_session".into()),
+                scan_session_id: Some(session.clone()),
             })
             .collect();
 
         let count = store.record_savings_batch(&records).await.unwrap();
         assert_eq!(count, 3);
 
-        let summary = store.get_session_savings("batch_session").await.unwrap();
+        let summary = store.get_session_savings(&session).await.unwrap();
         assert_eq!(summary.total_files, 3);
         assert_eq!(summary.files_skipped, 1);
         assert_eq!(summary.llm_calls_avoided, 1);

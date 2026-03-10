@@ -372,7 +372,7 @@ pub async fn docs_handler(
                 "snippet" => r#"<span class="badge badge-muted">Snippet</span>"#,
                 _ => r#"<span class="badge badge-muted">Other</span>"#,
             };
-            let pin_icon = ""; // TODO: Add pinned field to Document struct
+            let pin_icon = doc.pin_icon();
             let tags_html = doc.tags.as_deref().map(|t| {
                 t.split(',').map(|tag| format!(
                     r#"<span class="tag">{}</span>"#, tag.trim()
@@ -716,7 +716,7 @@ pub async fn view_doc_handler(
                 style = common_style(),
                 tz_selector = timezone_selector_html(),
                 title = html_escape(&doc.title),
-                pin = "", // TODO: Add pinned field to Document struct
+                pin = doc.pin_icon(),
                 doc_type = doc.doc_type,
                 tags_html = tags_html,
                 word_count = doc.word_count,

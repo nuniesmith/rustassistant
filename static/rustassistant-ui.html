@@ -986,6 +986,130 @@
             }
 
             /* ─── Repos pane ──────────────────────────────────────────── */
+
+            /* Detail panel that expands below a repo card */
+            .repo-detail-panel {
+                grid-column: 1 / -1;
+                background: var(--surface);
+                border: 1px solid var(--cyan);
+                border-radius: var(--radius);
+                padding: 0;
+                overflow: hidden;
+                animation: slideDown 0.18s ease;
+            }
+            @keyframes slideDown {
+                from {
+                    opacity: 0;
+                    transform: translateY(-6px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+            .detail-tabs {
+                display: flex;
+                gap: 0;
+                border-bottom: 1px solid var(--border);
+                background: var(--surface2);
+            }
+            .detail-tab {
+                padding: 7px 16px;
+                font-size: 11px;
+                font-weight: 600;
+                cursor: pointer;
+                border: none;
+                background: transparent;
+                color: var(--muted);
+                border-bottom: 2px solid transparent;
+                transition: all 0.12s;
+                font-family: var(--font-sans);
+            }
+            .detail-tab:hover {
+                color: var(--text);
+            }
+            .detail-tab.active {
+                color: var(--cyan);
+                border-bottom-color: var(--cyan);
+            }
+            .detail-body {
+                padding: 12px 14px;
+                max-height: 340px;
+                overflow-y: auto;
+                font-size: 12px;
+                font-family: var(--font-mono);
+                white-space: pre-wrap;
+                word-break: break-all;
+                color: var(--text);
+                line-height: 1.55;
+            }
+            .detail-body.loading {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                height: 80px;
+                color: var(--muted);
+                font-family: var(--font-sans);
+                font-style: italic;
+            }
+            .detail-body .todo-row {
+                display: flex;
+                gap: 8px;
+                padding: 3px 0;
+                border-bottom: 1px solid var(--border2);
+                font-family: var(--font-mono);
+                font-size: 11px;
+            }
+            .detail-body .todo-kind {
+                min-width: 48px;
+                font-weight: 700;
+                color: var(--amber);
+            }
+            .detail-body .todo-kind.FIXME {
+                color: var(--red);
+            }
+            .detail-body .todo-kind.STUB {
+                color: var(--cyan);
+            }
+            .detail-body .todo-kind.HACK {
+                color: #f97316;
+            }
+            .detail-body .sym-row {
+                display: flex;
+                gap: 8px;
+                padding: 2px 0;
+                font-size: 11px;
+                border-bottom: 1px solid var(--border2);
+            }
+            .detail-body .sym-kind {
+                min-width: 52px;
+                color: var(--cyan);
+                font-weight: 600;
+            }
+            .detail-body .sym-pub {
+                color: var(--green);
+            }
+            .detail-body .sym-name {
+                flex: 1;
+            }
+            .detail-body .sym-file {
+                color: var(--muted);
+                font-size: 10px;
+            }
+            .detail-close {
+                margin-left: auto;
+                background: transparent;
+                border: none;
+                color: var(--muted);
+                cursor: pointer;
+                font-size: 14px;
+                padding: 4px 10px;
+                line-height: 1;
+            }
+            .detail-close:hover {
+                color: var(--red);
+            }
+
             .repos-wrap {
                 display: flex;
                 flex-direction: column;
@@ -1967,12 +2091,10 @@
                             : `${API}/api/v1/chat`;
 
                         try {
-                            const history = messages
-                                .slice(-8)
-                                .map((m) => ({
-                                    role: m.role,
-                                    content: m.content,
-                                }));
+                            const history = messages.slice(-8).map((m) => ({
+                                role: m.role,
+                                content: m.content,
+                            }));
                             const body = {
                                 message: text,
                                 history,
@@ -2808,6 +2930,228 @@
                 );
             }
 
+            // ─── Repo Detail Panel ────────────────────────────────────────────────────
+            function RepoDetailPanel({ repo, onClose }) {
+                const DETAIL_TABS = ["tree", "todos", "symbols", "context"];
+                const [activeTab, setActiveTab] = useState("tree");
+                const [cache, setCache] = useState({});
+                const [loading, setLoading] = useState(false);
+
+                // Load data for a tab, cache results so switching tabs is instant
+                async function loadTab(tab) {
+                    if (cache[tab] !== undefined) return;
+                    setLoading(true);
+                    try {
+                        const url =
+                            tab === "context"
+                                ? `${API}/api/v1/repos/${repo.id}/context`
+                                : `${API}/api/v1/repos/${repo.id}/${tab}`;
+                        const res = await fetch(url);
+                        if (!res.ok)
+                            throw new Error(`${res.status} ${res.statusText}`);
+                        const text = await res.text();
+                        // Try to parse as JSON for structured rendering
+                        let parsed = null;
+                        try {
+                            parsed = JSON.parse(text);
+                        } catch (_) {}
+                        setCache((c) => ({
+                            ...c,
+                            [tab]: parsed !== null ? parsed : text,
+                        }));
+                    } catch (e) {
+                        setCache((c) => ({
+                            ...c,
+                            [tab]: `Error: ${e.message}`,
+                        }));
+                    } finally {
+                        setLoading(false);
+                    }
+                }
+
+                // Load the initial tab on mount and whenever the tab changes
+                useEffect(() => {
+                    loadTab(activeTab);
+                }, [activeTab, repo.id]);
+
+                function switchTab(tab) {
+                    setActiveTab(tab);
+                }
+
+                function renderContent() {
+                    if (loading && cache[activeTab] === undefined) {
+                        return React.createElement(
+                            "div",
+                            { className: "detail-body loading" },
+                            "⏳ Loading…",
+                        );
+                    }
+                    const data = cache[activeTab];
+                    if (data === undefined)
+                        return React.createElement(
+                            "div",
+                            { className: "detail-body loading" },
+                            "⏳ Loading…",
+                        );
+
+                    // Todos — array of { kind, message, file, line }
+                    if (activeTab === "todos" && Array.isArray(data)) {
+                        if (data.length === 0)
+                            return React.createElement(
+                                "div",
+                                { className: "detail-body" },
+                                "No TODOs found — run a sync first.",
+                            );
+                        return React.createElement(
+                            "div",
+                            {
+                                className: "detail-body",
+                                style: { fontFamily: "var(--font-mono)" },
+                            },
+                            data.map((t, i) =>
+                                React.createElement(
+                                    "div",
+                                    { key: i, className: "todo-row" },
+                                    React.createElement(
+                                        "span",
+                                        { className: `todo-kind ${t.kind}` },
+                                        t.kind || "TODO",
+                                    ),
+                                    React.createElement(
+                                        "span",
+                                        {
+                                            style: {
+                                                flex: 1,
+                                                overflow: "hidden",
+                                                textOverflow: "ellipsis",
+                                                whiteSpace: "nowrap",
+                                            },
+                                        },
+                                        t.message,
+                                    ),
+                                    React.createElement(
+                                        "span",
+                                        {
+                                            style: {
+                                                color: "var(--muted)",
+                                                fontSize: 10,
+                                                minWidth: 120,
+                                                textAlign: "right",
+                                            },
+                                        },
+                                        `${t.file}:${t.line}`,
+                                    ),
+                                ),
+                            ),
+                        );
+                    }
+
+                    // Symbols — array of { kind, name, file, line, is_pub, is_async }
+                    if (activeTab === "symbols" && Array.isArray(data)) {
+                        if (data.length === 0)
+                            return React.createElement(
+                                "div",
+                                { className: "detail-body" },
+                                "No symbols found — run a sync first.",
+                            );
+                        return React.createElement(
+                            "div",
+                            {
+                                className: "detail-body",
+                                style: { fontFamily: "var(--font-mono)" },
+                            },
+                            data.map((s, i) =>
+                                React.createElement(
+                                    "div",
+                                    { key: i, className: "sym-row" },
+                                    React.createElement(
+                                        "span",
+                                        { className: "sym-kind" },
+                                        s.kind || "fn",
+                                    ),
+                                    s.is_pub &&
+                                        React.createElement(
+                                            "span",
+                                            { className: "sym-pub" },
+                                            "pub ",
+                                        ),
+                                    s.is_async &&
+                                        React.createElement(
+                                            "span",
+                                            {
+                                                style: {
+                                                    color: "var(--amber)",
+                                                },
+                                            },
+                                            "async ",
+                                        ),
+                                    React.createElement(
+                                        "span",
+                                        { className: "sym-name" },
+                                        s.name,
+                                    ),
+                                    React.createElement(
+                                        "span",
+                                        { className: "sym-file" },
+                                        `${s.file}:${s.line}`,
+                                    ),
+                                ),
+                            ),
+                        );
+                    }
+
+                    // Tree / context / raw string fallback
+                    const text =
+                        typeof data === "string"
+                            ? data
+                            : JSON.stringify(data, null, 2);
+                    return React.createElement(
+                        "div",
+                        { className: "detail-body" },
+                        text,
+                    );
+                }
+
+                const tabLabels = {
+                    tree: "🌲 Tree",
+                    todos: "📋 TODOs",
+                    symbols: "⚙ Symbols",
+                    context: "📝 Context",
+                };
+
+                return React.createElement(
+                    "div",
+                    { className: "repo-detail-panel" },
+                    // Tab bar
+                    React.createElement(
+                        "div",
+                        { className: "detail-tabs" },
+                        DETAIL_TABS.map((t) =>
+                            React.createElement(
+                                "button",
+                                {
+                                    key: t,
+                                    className: `detail-tab ${activeTab === t ? "active" : ""}`,
+                                    onClick: () => switchTab(t),
+                                },
+                                tabLabels[t],
+                            ),
+                        ),
+                        React.createElement(
+                            "button",
+                            {
+                                className: "detail-close",
+                                onClick: onClose,
+                                title: "Close",
+                            },
+                            "✕",
+                        ),
+                    ),
+                    // Content
+                    renderContent(),
+                );
+            }
+
             // ─── Repos Pane ───────────────────────────────────────────────────────────
             function ReposPane({
                 repos,
@@ -2816,8 +3160,68 @@
                 setActiveRepoId,
                 onAdd,
                 toast,
+                setTab,
+                setQueuedTasks,
             }) {
                 const [syncing, setSyncing] = useState({});
+                const [pulling, setPulling] = useState({});
+                const [scanning, setScanning] = useState({});
+                // null = no panel open; string = repo.id whose panel is open
+                const [detailOpen, setDetailOpen] = useState(null);
+
+                function toggleDetail(repo) {
+                    setDetailOpen((prev) =>
+                        prev === repo.id ? null : repo.id,
+                    );
+                }
+
+                async function pullRepo(repo) {
+                    setPulling((s) => ({ ...s, [repo.id]: true }));
+                    try {
+                        const res = await fetch(
+                            `${API}/api/web/repos/${repo.id}/pull`,
+                            { method: "POST" },
+                        );
+                        if (!res.ok) throw new Error(await res.text());
+                        const data = await res.json();
+                        toast(
+                            `Pulled ${repo.name}: HEAD ${data.head.slice(0, 8)}`,
+                            "success",
+                        );
+                    } catch (e) {
+                        toast("Pull failed: " + e.message, "error");
+                    } finally {
+                        setPulling((s) => ({ ...s, [repo.id]: false }));
+                    }
+                }
+
+                async function scanRepo(repo) {
+                    setScanning((s) => ({ ...s, [repo.id]: true }));
+                    try {
+                        const res = await fetch(
+                            `${API}/api/web/repos/${repo.id}/scan`,
+                        );
+                        if (!res.ok) throw new Error(await res.text());
+                        const data = await res.json();
+                        const items = Array.isArray(data.items)
+                            ? data.items
+                            : [];
+                        // Surface scan results in the Tasks pane as queued items.
+                        if (setQueuedTasks) setQueuedTasks(items);
+                        // Make the active repo the scanned one so Tasks pane loads
+                        // the right todos, then auto-switch to Tasks.
+                        setActiveRepoId(repo.id);
+                        if (setTab) setTab("tasks");
+                        toast(
+                            `Scan complete: ${items.length} items found in ${repo.name}`,
+                            "success",
+                        );
+                    } catch (e) {
+                        toast("Scan failed: " + e.message, "error");
+                    } finally {
+                        setScanning((s) => ({ ...s, [repo.id]: false }));
+                    }
+                }
 
                 async function syncRepo(repo) {
                     setSyncing((s) => ({ ...s, [repo.id]: true }));
@@ -2903,125 +3307,179 @@
                                 </div>
                             )}
                             {repos.map((r, i) => (
-                                <div
-                                    key={r.id}
-                                    className={`repo-card ${r.id === activeRepoId ? "active-repo" : ""}`}
-                                    onClick={() => setActiveRepoId(r.id)}
-                                >
-                                    <div className="repo-card-top">
-                                        <div
-                                            className="repo-dot"
-                                            style={{
-                                                width: 10,
-                                                height: 10,
-                                                borderRadius: "50%",
-                                                background: colorFor(i),
-                                            }}
-                                        />
-                                        <div className="repo-card-name">
-                                            {r.name}
+                                <React.Fragment key={r.id}>
+                                    <div
+                                        className={`repo-card ${r.id === activeRepoId ? "active-repo" : ""}`}
+                                        onClick={() => setActiveRepoId(r.id)}
+                                    >
+                                        <div className="repo-card-top">
+                                            <div
+                                                className="repo-dot"
+                                                style={{
+                                                    width: 10,
+                                                    height: 10,
+                                                    borderRadius: "50%",
+                                                    background: colorFor(i),
+                                                }}
+                                            />
+                                            <div className="repo-card-name">
+                                                {r.name}
+                                            </div>
+                                            {r.branch && (
+                                                <span
+                                                    style={{
+                                                        fontSize: 10,
+                                                        color: "var(--muted)",
+                                                        fontFamily:
+                                                            "var(--font-mono)",
+                                                    }}
+                                                >
+                                                    {r.branch}
+                                                </span>
+                                            )}
                                         </div>
-                                        {r.branch && (
-                                            <span
+                                        <div className="repo-stats">
+                                            <div className="repo-stat">
+                                                <span className="val">
+                                                    {r.todos ?? "—"}
+                                                </span>{" "}
+                                                todos
+                                            </div>
+                                            <div className="repo-stat">
+                                                <span className="val">
+                                                    {r.symbols ?? "—"}
+                                                </span>{" "}
+                                                symbols
+                                            </div>
+                                            <div className="repo-stat">
+                                                <span className="val">
+                                                    {r.files ?? "—"}
+                                                </span>{" "}
+                                                files
+                                            </div>
+                                            <div
+                                                style={{
+                                                    marginLeft: "auto",
+                                                    fontSize: 10,
+                                                    color: "var(--muted)",
+                                                }}
+                                            >
+                                                synced {fmtAgo(r.last_synced)}
+                                            </div>
+                                        </div>
+                                        {r.local_path && (
+                                            <div
                                                 style={{
                                                     fontSize: 10,
                                                     color: "var(--muted)",
                                                     fontFamily:
                                                         "var(--font-mono)",
+                                                    marginBottom: 8,
+                                                    overflow: "hidden",
+                                                    textOverflow: "ellipsis",
+                                                    whiteSpace: "nowrap",
                                                 }}
                                             >
-                                                {r.branch}
-                                            </span>
+                                                {r.local_path}
+                                            </div>
+                                        )}
+                                        <div
+                                            className="repo-actions"
+                                            onClick={(e) => e.stopPropagation()}
+                                        >
+                                            <button
+                                                className="btn"
+                                                style={{ fontSize: 11 }}
+                                                onClick={() =>
+                                                    setActiveRepoId(r.id)
+                                                }
+                                            >
+                                                {r.id === activeRepoId
+                                                    ? "✓ Active"
+                                                    : "Set Active"}
+                                            </button>
+                                            <button
+                                                className="btn"
+                                                style={{ fontSize: 11 }}
+                                                onClick={() => scanRepo(r)}
+                                                disabled={
+                                                    scanning[r.id] ||
+                                                    syncing[r.id] ||
+                                                    pulling[r.id]
+                                                }
+                                                title="Run TODO scan and switch to Tasks"
+                                            >
+                                                {scanning[r.id]
+                                                    ? "⏳ Scanning…"
+                                                    : "🔍 Scan"}
+                                            </button>
+                                            <button
+                                                className={`btn ${detailOpen === r.id ? "primary" : ""}`}
+                                                style={{ fontSize: 11 }}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    toggleDetail(r);
+                                                }}
+                                                title="View tree / TODOs / symbols / context"
+                                            >
+                                                📂 Details
+                                            </button>
+                                            <button
+                                                className="btn"
+                                                style={{ fontSize: 11 }}
+                                                onClick={() => pullRepo(r)}
+                                                disabled={
+                                                    pulling[r.id] ||
+                                                    syncing[r.id]
+                                                }
+                                                title="Run git pull on this repo"
+                                            >
+                                                {pulling[r.id]
+                                                    ? "⏳ Pulling…"
+                                                    : "⬆ Pull"}
+                                            </button>
+                                            <button
+                                                className="btn"
+                                                style={{ fontSize: 11 }}
+                                                onClick={() => syncRepo(r)}
+                                                disabled={
+                                                    syncing[r.id] ||
+                                                    pulling[r.id] ||
+                                                    scanning[r.id]
+                                                }
+                                            >
+                                                {syncing[r.id]
+                                                    ? "⏳ Syncing…"
+                                                    : "🔄 Sync"}
+                                            </button>
+                                            <button
+                                                className="btn"
+                                                style={{
+                                                    fontSize: 11,
+                                                    color: "var(--red)",
+                                                    borderColor:
+                                                        "rgba(239,68,68,.3)",
+                                                }}
+                                                onClick={() => deleteRepo(r)}
+                                            >
+                                                🗑
+                                            </button>
+                                        </div>
+                                        {(syncing[r.id] ||
+                                            pulling[r.id] ||
+                                            scanning[r.id]) && (
+                                            <div className="repo-sync-bar">
+                                                <div className="repo-sync-bar-fill" />
+                                            </div>
                                         )}
                                     </div>
-                                    <div className="repo-stats">
-                                        <div className="repo-stat">
-                                            <span className="val">
-                                                {r.todos ?? "—"}
-                                            </span>{" "}
-                                            todos
-                                        </div>
-                                        <div className="repo-stat">
-                                            <span className="val">
-                                                {r.symbols ?? "—"}
-                                            </span>{" "}
-                                            symbols
-                                        </div>
-                                        <div className="repo-stat">
-                                            <span className="val">
-                                                {r.files ?? "—"}
-                                            </span>{" "}
-                                            files
-                                        </div>
-                                        <div
-                                            style={{
-                                                marginLeft: "auto",
-                                                fontSize: 10,
-                                                color: "var(--muted)",
-                                            }}
-                                        >
-                                            synced {fmtAgo(r.last_synced)}
-                                        </div>
-                                    </div>
-                                    {r.local_path && (
-                                        <div
-                                            style={{
-                                                fontSize: 10,
-                                                color: "var(--muted)",
-                                                fontFamily: "var(--font-mono)",
-                                                marginBottom: 8,
-                                                overflow: "hidden",
-                                                textOverflow: "ellipsis",
-                                                whiteSpace: "nowrap",
-                                            }}
-                                        >
-                                            {r.local_path}
-                                        </div>
+                                    {detailOpen === r.id && (
+                                        <RepoDetailPanel
+                                            repo={r}
+                                            onClose={() => setDetailOpen(null)}
+                                        />
                                     )}
-                                    <div
-                                        className="repo-actions"
-                                        onClick={(e) => e.stopPropagation()}
-                                    >
-                                        <button
-                                            className="btn"
-                                            style={{ fontSize: 11 }}
-                                            onClick={() =>
-                                                setActiveRepoId(r.id)
-                                            }
-                                        >
-                                            {r.id === activeRepoId
-                                                ? "✓ Active"
-                                                : "Set Active"}
-                                        </button>
-                                        <button
-                                            className="btn"
-                                            style={{ fontSize: 11 }}
-                                            onClick={() => syncRepo(r)}
-                                            disabled={syncing[r.id]}
-                                        >
-                                            {syncing[r.id]
-                                                ? "⏳ Syncing…"
-                                                : "🔄 Sync"}
-                                        </button>
-                                        <button
-                                            className="btn"
-                                            style={{
-                                                fontSize: 11,
-                                                color: "var(--red)",
-                                                borderColor:
-                                                    "rgba(239,68,68,.3)",
-                                            }}
-                                            onClick={() => deleteRepo(r)}
-                                        >
-                                            🗑
-                                        </button>
-                                    </div>
-                                    {syncing[r.id] && (
-                                        <div className="repo-sync-bar">
-                                            <div className="repo-sync-bar-fill" />
-                                        </div>
-                                    )}
-                                </div>
+                                </React.Fragment>
                             ))}
                         </div>
                     </div>
@@ -3279,6 +3737,8 @@
                                         setActiveRepoId={setActiveRepoId}
                                         onAdd={() => setShowAddRepo(true)}
                                         toast={toast}
+                                        setTab={setTab}
+                                        setQueuedTasks={setQueuedTasks}
                                     />
                                 )}
                             </div>

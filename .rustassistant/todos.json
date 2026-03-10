@@ -3,19 +3,19 @@
     "kind": "Todo",
     "message": "analyze (todo-analyze, todo-full, full)",
     "file": ".github/workflows/llm-audit.yml",
-    "line": 2143
+    "line": 2260
   },
   {
     "kind": "Todo",
     "message": "plan (todo-plan, todo-full, full)",
     "file": ".github/workflows/llm-audit.yml",
-    "line": 2152
+    "line": 2269
   },
   {
     "kind": "Todo",
     "message": "work (todo-work only)",
     "file": ".github/workflows/llm-audit.yml",
-    "line": 2161
+    "line": 2278
   },
   {
     "kind": "Todo",
@@ -37,12 +37,6 @@
   },
   {
     "kind": "Todo",
-    "message": "Additional tag refinement, linking to projects, etc.",
-    "file": "src/queue/processor.rs",
-    "line": 430
-  },
-  {
-    "kind": "Todo",
     "message": "item (written to .rustassistant/todos.json)",
     "file": "src/repo_sync.rs",
     "line": 91
@@ -51,13 +45,13 @@
     "kind": "Todo",
     "message": "extractor",
     "file": "src/repo_sync.rs",
-    "line": 529
+    "line": 601
   },
   {
     "kind": "Todo",
     "message": "replace with tokio::fs::ReadDir stream for better performance on large repos",
     "file": "src/repo_sync.rs",
-    "line": 809
+    "line": 881
   },
   {
     "kind": "Todo",
@@ -111,19 +105,13 @@
     "kind": "Todo",
     "message": "Scanner",
     "file": "src/scanner/github.rs",
-    "line": 186
+    "line": 187
   },
   {
     "kind": "Todo",
-    "message": "Item (Extracted from Code)",
+    "message": "Item (Extracted from Code) — DEPRECATED",
     "file": "src/db/queue.rs",
     "line": 207
-  },
-  {
-    "kind": "Todo",
-    "message": "items",
-    "file": "src/db/queue.rs",
-    "line": 368
   },
   {
     "kind": "Todo",

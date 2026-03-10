@@ -680,7 +680,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_cost_calculation() {
-        let db = Database::new(":memory:").await.unwrap();
+        let db = Database::new(&std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgresql://rustassistant:changeme@localhost:5432/rustassistant_test".to_string()
+        }))
+        .await
+        .unwrap();
         let client = GrokClient::new("test-key", db);
 
         let usage = Usage {

@@ -1,18 +1,35 @@
 # =============================================================================
-# RustAssistant - CI/CD Pipeline
+# RustAssistant — CI/CD Pipeline (Oryx Server / CUDA)
 # =============================================================================
-# Automated deployment of RustAssistant to Raspberry Pi via Tailscale
 #
-# Required Secrets:
-#   - TAILSCALE_OAUTH_CLIENT_ID: Tailscale OAuth Client ID
-#   - TAILSCALE_OAUTH_SECRET: Tailscale OAuth Secret
-#   - PROD_TAILSCALE_IP: Production server Tailscale IP
-#   - PROD_SSH_KEY: SSH private key for deployment
-#   - PROD_SSH_USER: SSH username (default: actions)
-#   - PROD_SSH_PORT: SSH port (default: 22)
-#   - DOCKER_USERNAME: Docker Hub username
-#   - DOCKER_TOKEN: Docker Hub access token
-#   - DISCORD_WEBHOOK_ACTIONS: Discord webhook for CI/CD notifications
+# Pipeline stages:
+#   1. Test & Lint — cargo fmt, clippy, test
+#   2. Build & Push — AMD64 Docker image to Docker Hub
+#   3. Deploy — SSH into oryx, generate .env from GitHub Secrets, docker compose up
+#
+# Required GitHub Secrets:
+#   ── Docker Hub ──
+#   DOCKER_USERNAME             Docker Hub username
+#   DOCKER_TOKEN                Docker Hub access token
+#
+#   ── Deployment (Oryx) ──
+#   ORYX_TAILSCALE_IP           Tailscale IP of the oryx server
+#   ORYX_SSH_KEY                SSH private key (ed25519) for the actions user
+#   ORYX_SSH_PORT               SSH port (default: 22)
+#   ORYX_SSH_USER               SSH username (default: actions)
+#
+#   ── Tailscale VPN ──
+#   TAILSCALE_OAUTH_CLIENT_ID   Tailscale OAuth client ID
+#   TAILSCALE_OAUTH_SECRET      Tailscale OAuth secret
+#
+#   ── Application Secrets (injected into .env on deploy) ──
+#   XAI_API_KEY                 xAI Grok API key
+#   GITHUB_TOKEN_DEPLOY         GitHub PAT for repo sync (not GITHUB_TOKEN to avoid conflicts)
+#   RA_POSTGRES_PASSWORD        (optional — generated if missing)
+#   RA_REDIS_PASSWORD           (optional — generated if missing)
+#
+#   ── Notifications (optional) ──
+#   DISCORD_WEBHOOK_ACTIONS     Discord webhook for CI/CD notifications
 # =============================================================================
 
 name: CI/CD Pipeline
@@ -34,10 +51,10 @@ concurrency:
 
 jobs:
     # =========================================================================
-    # Stage 1: Test and Lint (Fast - no coverage)
+    # Stage 1: Test and Lint
     # =========================================================================
     test-and-lint:
-        name: 🧪 Test and Lint
+        name: 🧪 Test & Lint
         runs-on: ubuntu-latest
         timeout-minutes: 30
         steps:
@@ -87,10 +104,10 @@ jobs:
                   fields: '[{"name": "Workflow", "value": "[View Logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})", "inline": false}]'
 
     # =========================================================================
-    # Stage 2a: Build and Push AMD64 Docker Image
+    # Stage 2: Build & Push AMD64 Docker Image
     # =========================================================================
-    build-and-push-amd64:
-        name: 🐳 Build AMD64 Image
+    build-and-push:
+        name: 🐳 Build & Push AMD64
         needs: test-and-lint
         runs-on: ubuntu-latest
         timeout-minutes: 30
@@ -114,10 +131,10 @@ jobs:
               with:
                   images: ${{ env.IMAGE_NAME }}
                   tags: |
-                      type=raw,value=latest-amd64,enable=${{ github.ref == 'refs/heads/main' }}
-                      type=sha,prefix={{branch}}-,suffix=-amd64
+                      type=raw,value=latest
+                      type=sha,prefix=sha-
 
-            - name: Build and push AMD64
+            - name: Build and push
               uses: docker/build-push-action@v5
               with:
                   context: .
@@ -126,151 +143,42 @@ jobs:
                   push: true
                   tags: ${{ steps.meta.outputs.tags }}
                   labels: ${{ steps.meta.outputs.labels }}
+                  build-args: |
+                      SERVICE_TYPE=web
+                      SERVICE_PORT=3500
                   cache-from: type=gha,scope=amd64
                   cache-to: type=gha,mode=max,scope=amd64
 
-            - name: ✅ Notify AMD64 build complete
+            - name: ✅ Notify build complete
               if: success()
               continue-on-error: true
               uses: nuniesmith/actions/.github/actions/discord-notify@main
               with:
                   webhook-url: ${{ secrets.DISCORD_WEBHOOK_ACTIONS }}
-                  title: "🐳 AMD64 Image Built"
-                  description: "AMD64 Docker image pushed to Docker Hub"
+                  title: "🐳 Docker Image Built"
+                  description: "AMD64 image pushed to Docker Hub"
                   status: success
-                  fields: '[{"name": "Image", "value": "${{ env.IMAGE_NAME }}:latest-amd64", "inline": true}, {"name": "Platform", "value": "amd64", "inline": true}]'
+                  fields: '[{"name": "Image", "value": "${{ env.IMAGE_NAME }}:latest", "inline": true}, {"name": "Target", "value": "oryx (CUDA)", "inline": true}]'
 
-            - name: ❌ Notify AMD64 build failed
+            - name: ❌ Notify build failed
               if: failure()
               continue-on-error: true
               uses: nuniesmith/actions/.github/actions/discord-notify@main
               with:
                   webhook-url: ${{ secrets.DISCORD_WEBHOOK_ACTIONS }}
-                  title: "❌ AMD64 Build Failed"
-                  description: "Failed to build or push AMD64 Docker image"
+                  title: "❌ Docker Build Failed"
+                  description: "Failed to build or push Docker image"
                   status: failure
 
     # =========================================================================
-    # Stage 2b: Build and Push ARM64 Docker Image
-    # =========================================================================
-    build-and-push-arm64:
-        name: 🐳 Build ARM64 Image (disabled)
-        needs: test-and-lint
-        runs-on: ubuntu-latest
-        timeout-minutes: 60
-        if: false # temporarily disabled — ARM build consistently times out at 60 min
-        steps:
-            - name: 📥 Checkout code
-              uses: actions/checkout@v4
-
-            - name: Set up QEMU
-              uses: docker/setup-qemu-action@v3
-
-            - name: Set up Docker Buildx
-              uses: docker/setup-buildx-action@v3
-
-            - name: Log in to Docker Hub
-              uses: docker/login-action@v3
-              with:
-                  username: ${{ secrets.DOCKER_USERNAME }}
-                  password: ${{ secrets.DOCKER_TOKEN }}
-
-            - name: Extract metadata
-              id: meta
-              uses: docker/metadata-action@v5
-              with:
-                  images: ${{ env.IMAGE_NAME }}
-                  tags: |
-                      type=raw,value=latest-arm64,enable=${{ github.ref == 'refs/heads/main' }}
-                      type=sha,prefix={{branch}}-,suffix=-arm64
-
-            - name: Build and push ARM64
-              uses: docker/build-push-action@v5
-              with:
-                  context: .
-                  file: docker/Dockerfile
-                  platforms: linux/arm64
-                  push: true
-                  tags: ${{ steps.meta.outputs.tags }}
-                  labels: ${{ steps.meta.outputs.labels }}
-                  cache-from: type=gha,scope=arm64
-                  cache-to: type=gha,mode=max,scope=arm64
-
-            - name: ✅ Notify ARM64 build complete
-              if: success()
-              continue-on-error: true
-              uses: nuniesmith/actions/.github/actions/discord-notify@main
-              with:
-                  webhook-url: ${{ secrets.DISCORD_WEBHOOK_ACTIONS }}
-                  title: "🐳 ARM64 Image Built"
-                  description: "ARM64 Docker image pushed to Docker Hub"
-                  status: success
-                  fields: '[{"name": "Image", "value": "${{ env.IMAGE_NAME }}:latest-arm64", "inline": true}, {"name": "Platform", "value": "arm64 (Raspberry Pi)", "inline": true}]'
-
-            - name: ❌ Notify ARM64 build failed
-              if: failure()
-              continue-on-error: true
-              uses: nuniesmith/actions/.github/actions/discord-notify@main
-              with:
-                  webhook-url: ${{ secrets.DISCORD_WEBHOOK_ACTIONS }}
-                  title: "❌ ARM64 Build Failed"
-                  description: "Failed to build or push ARM64 Docker image"
-                  status: failure
-
-    # =========================================================================
-    # Stage 2c: Create Multi-Arch Manifest
-    # =========================================================================
-    create-manifest:
-        name: 🐳 Create Multi-Arch Manifest
-        needs: [build-and-push-amd64]
-        runs-on: ubuntu-latest
-        timeout-minutes: 10
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        steps:
-            - name: Log in to Docker Hub
-              uses: docker/login-action@v3
-              with:
-                  username: ${{ secrets.DOCKER_USERNAME }}
-                  password: ${{ secrets.DOCKER_TOKEN }}
-
-            - name: Create and push manifest
-              run: |
-                  # ARM64 build is temporarily disabled; manifest points to amd64 only
-                  docker buildx imagetools create -t ${{ env.IMAGE_NAME }}:latest \
-                    ${{ env.IMAGE_NAME }}:latest-amd64
-
-            - name: ✅ Notify manifest creation complete
-              if: success()
-              continue-on-error: true
-              uses: nuniesmith/actions/.github/actions/discord-notify@main
-              with:
-                  webhook-url: ${{ secrets.DISCORD_WEBHOOK_ACTIONS }}
-                  title: "🐳 Multi-Arch Manifest Created"
-                  description: "Docker manifest created with AMD64 image (ARM64 temporarily disabled)"
-                  status: success
-                  fields: '[{"name": "Image", "value": "${{ env.IMAGE_NAME }}:latest", "inline": true}, {"name": "Platforms", "value": "amd64 only (ARM64 disabled)", "inline": true}]'
-
-            - name: ❌ Notify manifest creation failed
-              if: failure()
-              continue-on-error: true
-              uses: nuniesmith/actions/.github/actions/discord-notify@main
-              with:
-                  webhook-url: ${{ secrets.DISCORD_WEBHOOK_ACTIONS }}
-                  title: "❌ Manifest Creation Failed"
-                  description: "Failed to create multi-arch manifest"
-                  status: failure
-
-    # =========================================================================
-    # Stage 3: Deploy to Production (Raspberry Pi)
+    # Stage 3: Deploy to Oryx Server (CUDA)
     # =========================================================================
     deploy:
-        name: 🚀 Deploy to Raspberry Pi
-        needs: create-manifest
+        name: 🚀 Deploy to Oryx
+        needs: build-and-push
         runs-on: ubuntu-latest
         timeout-minutes: 15
-        # Deployment disabled — images are pulled by llm-audit workflow from Docker Hub.
-        # Re-enable when Raspberry Pi deployment is needed again.
-        if: false && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         steps:
             - name: 📥 Checkout code
               uses: actions/checkout@v4
@@ -280,154 +188,207 @@ jobs:
               with:
                   oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
                   oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
-                  target-ip: ${{ secrets.PROD_TAILSCALE_IP }}
-                  target-ssh-port: ${{ secrets.PROD_SSH_PORT || '22' }}
+                  target-ip: ${{ secrets.ORYX_TAILSCALE_IP }}
+                  target-ssh-port: ${{ secrets.ORYX_SSH_PORT || '22' }}
+
+            - name: 🔑 Setup SSH key
+              run: |
+                  mkdir -p ~/.ssh
+                  echo "${{ secrets.ORYX_SSH_KEY }}" > ~/.ssh/deploy_key
+                  chmod 600 ~/.ssh/deploy_key
+                  ssh-keyscan -p ${{ secrets.ORYX_SSH_PORT || '22' }} ${{ secrets.ORYX_TAILSCALE_IP }} >> ~/.ssh/known_hosts 2>/dev/null || true
 
             - name: 🚀 Deploy via SSH
-              id: deploy
-              uses: nuniesmith/actions/.github/actions/ssh-deploy@main
-              with:
-                  host: ${{ secrets.PROD_TAILSCALE_IP }}
-                  port: ${{ secrets.PROD_SSH_PORT || '22' }}
-                  username: ${{ secrets.PROD_SSH_USER || 'actions' }}
-                  ssh-key: ${{ secrets.PROD_SSH_KEY }} # Action saves to ~/.ssh/deploy_key
-                  project-path: ~/rustassistant
-                  git-pull: false
-                  git-branch: main
-                  docker-pull: false
-                  docker-prune: false
-                  pre-deploy-command: |
-                      echo "🤖 Deploying RustAssistant to Raspberry Pi..."
+              env:
+                  ORYX_HOST: ${{ secrets.ORYX_TAILSCALE_IP }}
+                  ORYX_PORT: ${{ secrets.ORYX_SSH_PORT || '22' }}
+                  ORYX_USER: ${{ secrets.ORYX_SSH_USER || 'actions' }}
+                  # Secrets to inject into .env
+                  SECRET_XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+                  SECRET_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN_DEPLOY }}
+                  SECRET_POSTGRES_PW: ${{ secrets.RA_POSTGRES_PASSWORD }}
+                  SECRET_REDIS_PW: ${{ secrets.RA_REDIS_PASSWORD }}
+                  SECRET_DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_ACTIONS }}
+                  SECRET_GITHUB_OWNER: ${{ secrets.GITHUB_OWNER || 'nuniesmith' }}
+              run: |
+                  set -euo pipefail
+                  SSH_CMD="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p ${ORYX_PORT} -i ~/.ssh/deploy_key ${ORYX_USER}@${ORYX_HOST}"
 
-                      # Handle git repository setup
-                      if [ ! -d "~/rustassistant/.git" ]; then
-                        if [ -d "~/rustassistant" ]; then
-                          echo "📁 Directory exists but is not a git repo - initializing..."
-                          cd ~/rustassistant
-                          git init
-                          git remote add origin https://github.com/${{ github.repository }}.git
-                          git fetch origin
-                          git checkout -f main
-                          git branch --set-upstream-to=origin/main main
-                        else
-                          echo "📥 First deployment - cloning repository..."
-                          mkdir -p ~
-                          git clone https://github.com/${{ github.repository }}.git ~/rustassistant
-                          cd ~/rustassistant
-                          git checkout main
-                        fi
-                      else
-                        cd ~/rustassistant
-                        echo "📥 Pulling latest changes..."
-                        git fetch origin
-                        git checkout main
-                        git pull origin main
-                      fi
+                  echo "═══════════════════════════════════════════════════"
+                  echo "  Deploying RustAssistant to oryx (CUDA server)"
+                  echo "═══════════════════════════════════════════════════"
 
-                      # Ensure run.sh is executable
-                      chmod +x ./run.sh 2>/dev/null || true
+                  # ── Step 1: Clone or pull the repository ───────────────
+                  echo ""
+                  echo "📥 Step 1: Sync repository..."
+                  $SSH_CMD bash -s <<'REMOTE_GIT'
+                  set -euo pipefail
+                  PROJECT_DIR=~/rustassistant
 
-                      # Create .env file from template if it exists
-                      if [ -f "deploy/env.template" ]; then
-                        echo "📝 Creating .env from template..."
-                        cp deploy/env.template .env
-                        chmod 600 .env
-                        echo "✅ Created .env file"
-                      elif [ ! -f ".env" ]; then
-                        echo "📝 Creating default .env..."
-                        cat > .env <<EOF
-                      # RustAssistant Environment Configuration
-                      RUST_LOG=info
-                      XAI_API_KEY=${{ secrets.XAI_API_KEY }}
-                      EOF
-                        chmod 600 .env
-                        echo "✅ Created default .env file"
-                      else
-                        echo "✅ Using existing .env file"
-                      fi
+                  if [ ! -d "$PROJECT_DIR/.git" ]; then
+                      echo "First deployment — cloning..."
+                      mkdir -p ~/
+                      git clone https://github.com/${{ github.repository }}.git "$PROJECT_DIR"
+                      cd "$PROJECT_DIR"
+                      git checkout main
+                  else
+                      echo "Pulling latest changes..."
+                      cd "$PROJECT_DIR"
+                      git fetch origin
+                      git checkout main
+                      git reset --hard origin/main
+                  fi
+                  echo "✅ Repository synced at $(git rev-parse --short HEAD)"
+                  REMOTE_GIT
 
-                      # Update XAI_API_KEY in .env if it exists
-                      if [ -f ".env" ]; then
-                        if grep -q "^XAI_API_KEY=" .env; then
-                          echo "📝 Updating XAI_API_KEY in .env..."
-                          sed -i 's|^XAI_API_KEY=.*|XAI_API_KEY=${{ secrets.XAI_API_KEY }}|' .env
-                        else
-                          echo "📝 Adding XAI_API_KEY to .env..."
-                          echo "XAI_API_KEY=${{ secrets.XAI_API_KEY }}" >> .env
-                        fi
-                        echo "✅ XAI_API_KEY configured"
-                      fi
+                  # ── Step 2: Generate .env from GitHub Secrets ──────────
+                  echo ""
+                  echo "🔑 Step 2: Injecting secrets into .env..."
 
-                      # Update GITHUB_TOKEN in .env if secret is set
-                      if [ -f ".env" ] && [ -n "${{ secrets.REPO_API_KEY }}" ]; then
-                        if grep -q "^GITHUB_TOKEN=" .env; then
-                          echo "📝 Updating GITHUB_TOKEN in .env..."
-                          sed -i 's|^GITHUB_TOKEN=.*|GITHUB_TOKEN=${{ secrets.REPO_API_KEY }}|' .env
-                        else
-                          echo "📝 Adding GITHUB_TOKEN to .env..."
-                          echo "GITHUB_TOKEN=${{ secrets.REPO_API_KEY }}" >> .env
-                        fi
-                        echo "✅ GITHUB_TOKEN configured"
-                      fi
+                  # Generate passwords on the fly if not provided via secrets
+                  PG_PW="${SECRET_POSTGRES_PW}"
+                  if [ -z "$PG_PW" ]; then
+                      PG_PW=$(openssl rand -base64 48 | tr -d '/+=\n' | head -c 32)
+                      echo "  → Generated random Postgres password"
+                  fi
 
-                      # Create required directories with proper permissions
-                      echo "📁 Creating data and config directories..."
-                      mkdir -p data config
-                      chmod 755 data config
-                      echo "✅ Directories ready"
+                  RD_PW="${SECRET_REDIS_PW}"
+                  if [ -z "$RD_PW" ]; then
+                      RD_PW=$(openssl rand -base64 48 | tr -d '/+=\n' | head -c 32)
+                      echo "  → Generated random Redis password"
+                  fi
 
-                  deploy-command: |
-                      cd ~/rustassistant
+                  SESSION_SECRET=$(openssl rand -hex 32)
+                  ENCRYPTION_KEY=$(openssl rand -hex 32)
 
-                      # Stop existing services
-                      echo "🐳 Stopping existing services..."
-                      docker compose -f docker-compose.prod.yml down 2>/dev/null || true
+                  # Write .env to the server
+                  $SSH_CMD bash -s <<REMOTE_ENV
+                  set -euo pipefail
+                  cat > ~/rustassistant/.env <<'ENVBLOCK'
+                  # =============================================================================
+                  # RustAssistant — .env (auto-generated by CI/CD)
+                  # Deployed: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+                  # Commit:   ${{ github.sha }}
+                  # =============================================================================
 
-                      # Pull latest ARM64 images from Docker Hub
-                      echo "🐳 Pulling latest ARM64 images from Docker Hub..."
-                      docker compose -f docker-compose.prod.yml pull
+                  # ── Ports (avoid FKS conflicts) ──
+                  RA_PORT=3500
+                  RA_POSTGRES_PORT=5433
+                  RA_REDIS_PORT=6380
+                  RA_OLLAMA_PORT=11434
 
-                      # Start services
-                      echo "🚀 Starting services..."
-                      docker compose -f docker-compose.prod.yml up -d --remove-orphans
+                  # ── Generated Secrets ──
+                  RA_POSTGRES_PASSWORD=${PG_PW}
+                  RA_REDIS_PASSWORD=${RD_PW}
+                  RA_SESSION_SECRET=${SESSION_SECRET}
+                  RA_ENCRYPTION_KEY=${ENCRYPTION_KEY}
 
-                  post-deploy-command: |
-                      cd ~/rustassistant
+                  # ── AI Providers ──
+                  XAI_API_KEY=${SECRET_XAI_API_KEY}
+                  XAI_BASE_URL=https://api.x.ai/v1
+                  REMOTE_MODEL=grok-2-latest
+                  LOCAL_MODEL=qwen2.5-coder:7b
+                  FORCE_REMOTE_MODEL=false
 
-                      echo ""
-                      echo "📊 Checking container health..."
-                      docker compose -f docker-compose.prod.yml ps 2>/dev/null || docker ps --format "table {{.Names}}\t{{.Status}}"
+                  # ── GitHub ──
+                  GITHUB_TOKEN=${SECRET_GITHUB_TOKEN}
+                  GITHUB_OWNER=${SECRET_GITHUB_OWNER:-nuniesmith}
 
-                      echo ""
-                      echo "📊 Storage usage:"
-                      df -h / | grep -v Filesystem
-                      docker system df
+                  # ── Repo Mount ──
+                  REPOS_BASE_PATH=/home/jordan/repos
 
-                      # Prune old images to save space on Raspberry Pi
-                      echo ""
-                      echo "🧹 Pruning unused Docker resources..."
-                      docker system prune -f --volumes 2>/dev/null || true
+                  # ── Scanner ──
+                  AUTO_SCAN_ENABLED=true
+                  AUTO_SCAN_INTERVAL=60
+                  AUTO_SCAN_MAX_CONCURRENT=3
+                  REPO_SYNC_INTERVAL_SECS=300
 
-                      echo ""
-                      echo "🎯 Architecture information:"
-                      uname -m
-                      docker info --format '{{.Architecture}}'
+                  # ── Logging ──
+                  RUST_LOG=info,rustassistant=debug
+                  ENVBLOCK
 
-                      echo ""
-                      echo "✅ RustAssistant deployment complete!"
+                  chmod 600 ~/rustassistant/.env
+                  echo "✅ .env written (mode 600)"
+                  REMOTE_ENV
+
+                  # ── Step 3: Docker pull and compose up ─────────────────
+                  echo ""
+                  echo "🐳 Step 3: Pulling images and starting services..."
+                  $SSH_CMD bash -s <<'REMOTE_DEPLOY'
+                  set -euo pipefail
+                  cd ~/rustassistant
+
+                  echo "Pulling latest images..."
+                  docker compose pull rustassistant || true
+
+                  echo "Stopping existing services..."
+                  docker compose down --remove-orphans 2>/dev/null || true
+
+                  echo "Starting services..."
+                  docker compose up -d --remove-orphans
+
+                  echo ""
+                  echo "Waiting for services to become healthy..."
+                  sleep 10
+
+                  echo ""
+                  echo "═══════════════════════════════════════════════════"
+                  echo "  Container Status"
+                  echo "═══════════════════════════════════════════════════"
+                  docker compose ps
+
+                  echo ""
+                  echo "═══════════════════════════════════════════════════"
+                  echo "  Port Bindings"
+                  echo "═══════════════════════════════════════════════════"
+                  docker compose ps --format '{{.Name}}\t{{.Ports}}' 2>/dev/null || docker ps --filter "name=ra-" --format "table {{.Names}}\t{{.Ports}}"
+
+                  echo ""
+                  echo "═══════════════════════════════════════════════════"
+                  echo "  GPU Status"
+                  echo "═══════════════════════════════════════════════════"
+                  nvidia-smi --query-gpu=name,memory.total,memory.used,utilization.gpu --format=csv,noheader 2>/dev/null || echo "(nvidia-smi not available on host)"
+                  docker compose exec -T ra-ollama nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || echo "(GPU not visible inside Ollama container — check nvidia-container-toolkit)"
+
+                  echo ""
+                  echo "═══════════════════════════════════════════════════"
+                  echo "  Disk & Docker Usage"
+                  echo "═══════════════════════════════════════════════════"
+                  df -h / | tail -1
+                  docker system df 2>/dev/null || true
+
+                  # Prune dangling images to reclaim space
+                  docker image prune -f 2>/dev/null || true
+
+                  echo ""
+                  echo "✅ RustAssistant deployed successfully!"
+                  echo "   Web UI: http://$(hostname -I | awk '{print $1}'):3500/dashboard"
+                  REMOTE_DEPLOY
 
             - name: 🔍 Verify deployment
               env:
-                  PROD_SSH_USER: ${{ secrets.PROD_SSH_USER || 'actions' }}
-                  PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT || '22' }}
-                  PI_HOST: ${{ secrets.PROD_TAILSCALE_IP }}
+                  ORYX_HOST: ${{ secrets.ORYX_TAILSCALE_IP }}
+                  ORYX_PORT: ${{ secrets.ORYX_SSH_PORT || '22' }}
+                  ORYX_USER: ${{ secrets.ORYX_SSH_USER || 'actions' }}
               run: |
-                  echo "📋 Checking container logs..."
+                  SSH_CMD="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p ${ORYX_PORT} -i ~/.ssh/deploy_key ${ORYX_USER}@${ORYX_HOST}"
 
-                  ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-                      -p ${PROD_SSH_PORT} -i ~/.ssh/deploy_key \
-                      ${PROD_SSH_USER}@${PI_HOST} \
-                      "cd ~/rustassistant && docker compose -f docker-compose.prod.yml logs --tail=20" || true
+                  echo "🩺 Health check..."
+                  for i in 1 2 3 4 5; do
+                      STATUS=$($SSH_CMD "curl -sf http://localhost:3500/health 2>/dev/null" || echo "")
+                      if [ -n "$STATUS" ]; then
+                          echo "✅ Health check passed (attempt $i)"
+                          echo "   Response: $STATUS"
+                          exit 0
+                      fi
+                      echo "   Attempt $i/5 — waiting 10s..."
+                      sleep 10
+                  done
+
+                  echo "⚠️  Health check did not pass after 5 attempts"
+                  echo "   Fetching recent logs for diagnosis..."
+                  $SSH_CMD "cd ~/rustassistant && docker compose logs --tail=30 rustassistant" || true
+                  exit 1
 
             - name: ✅ Notify deployment success
               if: success()
@@ -435,10 +396,10 @@ jobs:
               uses: nuniesmith/actions/.github/actions/discord-notify@main
               with:
                   webhook-url: ${{ secrets.DISCORD_WEBHOOK_ACTIONS }}
-                  title: "🚀 Deployment Successful"
-                  description: "RustAssistant deployed to Raspberry Pi"
+                  title: "🚀 Deployed to Oryx"
+                  description: "RustAssistant is live on the oryx CUDA server"
                   status: success
-                  fields: '[{"name": "Platform", "value": "🥧 Raspberry Pi (ARM64)", "inline": true}, {"name": "Branch", "value": "${{ github.ref_name }}", "inline": true}, {"name": "Network", "value": "🔒 Tailscale VPN", "inline": true}]'
+                  fields: '[{"name": "Server", "value": "🖥️ Oryx (CUDA)", "inline": true}, {"name": "Port", "value": "3500", "inline": true}, {"name": "Commit", "value": "${{ github.sha }}", "inline": true}]'
 
             - name: ❌ Notify deployment failed
               if: failure()
@@ -447,6 +408,6 @@ jobs:
               with:
                   webhook-url: ${{ secrets.DISCORD_WEBHOOK_ACTIONS }}
                   title: "❌ Deployment Failed"
-                  description: "Failed to deploy to Raspberry Pi"
+                  description: "Failed to deploy to oryx server"
                   status: failure
-                  fields: '[{"name": "Error", "value": "Check SSH connection and Tailscale setup", "inline": false}, {"name": "Logs", "value": "[View Workflow](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})", "inline": false}]'
+                  fields: '[{"name": "Error", "value": "Check SSH, Tailscale, and container logs", "inline": false}, {"name": "Logs", "value": "[View Workflow](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})", "inline": false}]'

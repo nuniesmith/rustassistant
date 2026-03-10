@@ -13,7 +13,9 @@
 //! `capture_note`, and `capture_todo`. Consider migrating these to write
 //! to the `tasks` table as well, then retiring `queue_items` entirely.
 
+use crate::db::core::create_task;
 use crate::db::queue::{QueueItem, QueuePriority, QueueSource, QueueStage};
+use crate::tag_schema::{CodeStatus, TagCategory};
 use anyhow::Result;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -41,11 +43,12 @@ pub async fn enqueue(
     let content_hash = format!("{:x}", md5::compute(content.as_bytes()));
 
     // Check for duplicate
-    let existing: Option<(String,)> =
-        sqlx::query_as("SELECT id FROM queue_items WHERE content_hash = $1 AND stage != 'archived'")
-            .bind(&content_hash)
-            .fetch_optional(pool)
-            .await?;
+    let existing: Option<(String,)> = sqlx::query_as(
+        "SELECT id FROM queue_items WHERE content_hash = $1 AND stage != 'archived'",
+    )
+    .bind(&content_hash)
+    .fetch_optional(pool)
+    .await?;
 
     if let Some((existing_id,)) = existing {
         warn!(
@@ -417,7 +420,20 @@ impl QueueProcessor {
         Ok(())
     }
 
-    /// Finalize tagging and move to ready
+    /// Finalize tagging, refine tags via schema, link to projects, write to
+    /// `tasks` table, then advance the item to `Ready`.
+    ///
+    /// # What this does
+    /// 1. Parse LLM-produced tags from `item.tags` (comma-separated).
+    /// 2. Normalise / validate tags against `TagSchema` (canonical aliases,
+    ///    deduplication, sort).
+    /// 3. Infer a [`CodeStatus`] from the item source and LLM score.
+    /// 4. Derive a task priority from the tag category + status.
+    /// 5. Attempt to resolve the queue item's `repo_id` (or fall back to a
+    ///    `registered_repos` lookup by `file_path`) so the new task is linked
+    ///    to the correct repo.
+    /// 6. Write a new row to the `tasks` table via `db::core::create_task`.
+    /// 7. Advance the queue item to `Ready`.
     async fn process_tagging(&self) -> Result<()> {
         let items = get_pending_items(
             &self.pool,
@@ -427,10 +443,98 @@ impl QueueProcessor {
         .await?;
 
         for item in items {
-            // TODO: Additional tag refinement, linking to projects, etc.
-            // For now, just advance to ready
+            // ── 1. Parse raw tags from LLM analysis ──────────────────────
+            let raw_tags: Vec<String> = item
+                .tags
+                .as_deref()
+                .unwrap_or("")
+                .split(',')
+                .map(|t| t.trim().to_lowercase())
+                .filter(|t| !t.is_empty())
+                .collect();
+
+            // ── 2. Normalise and validate tags ────────────────────────────
+            let refined_tags = refine_tags(&raw_tags);
+
+            // ── 3. Infer code status ──────────────────────────────────────
+            let status = infer_status_from_item(&item);
+
+            // ── 4. Infer tag category from the LLM-assigned category field
+            //       or fall back to the first tag, or Organisation as default.
+            let category = item
+                .category
+                .as_deref()
+                .and_then(TagCategory::from_str)
+                .unwrap_or_else(|| {
+                    refined_tags
+                        .first()
+                        .and_then(|t| TagCategory::from_str(t))
+                        .unwrap_or(TagCategory::Organization)
+                });
+
+            // ── 5. Derive numeric priority ────────────────────────────────
+            let priority = derive_priority(category, status, item.score);
+
+            // ── 6. Resolve repo_id: prefer explicit field, then path lookup.
+            let resolved_repo_id = if item.repo_id.is_some() {
+                item.repo_id.clone()
+            } else {
+                resolve_repo_from_path(&self.pool, item.file_path.as_deref()).await
+            };
+
+            // ── 7. Build a human-readable title ───────────────────────────
+            let title = build_task_title(&item, &refined_tags);
+
+            // ── 8. Build description from analysis JSON (best-effort) ─────
+            let description: Option<String> = item.analysis.as_deref().and_then(|json| {
+                serde_json::from_str::<serde_json::Value>(json)
+                    .ok()
+                    .and_then(|v| {
+                        v.get("summary")
+                            .and_then(|s| s.as_str())
+                            .map(|s| s.to_string())
+                    })
+            });
+
+            // ── 9. Write to tasks table ───────────────────────────────────
+            match create_task(
+                &self.pool,
+                &title,
+                description.as_deref(),
+                priority,
+                "queue_processor",      // source
+                Some(item.id.as_str()), // source_id — back-link to queue_items
+                resolved_repo_id.as_deref(),
+                item.file_path.as_deref(),
+                item.line_number,
+            )
+            .await
+            {
+                Ok(task) => {
+                    info!(
+                        queue_id = %item.id,
+                        task_id  = %task.id,
+                        priority,
+                        tags     = %refined_tags.join(","),
+                        repo_id  = ?resolved_repo_id,
+                        "Tagged queue item — task created"
+                    );
+                }
+                Err(e) => {
+                    // Non-fatal: log and continue so the item still advances
+                    // to Ready. A missing tasks row is preferable to a stuck
+                    // queue item that blocks the whole pipeline.
+                    warn!(
+                        queue_id = %item.id,
+                        error    = %e,
+                        "Failed to create task for queue item — advancing anyway"
+                    );
+                }
+            }
+
+            // ── 10. Advance queue item to Ready ───────────────────────────
             advance_stage(&self.pool, &item.id).await?;
-            info!("Item {} is now ready", item.id);
+            info!(queue_id = %item.id, "Item is now ready");
         }
 
         Ok(())
@@ -456,6 +560,127 @@ impl QueueProcessor {
 // ============================================================================
 // Helper Functions
 // ============================================================================
+
+// ============================================================================
+// Tag Refinement Helpers
+// ============================================================================
+
+/// Normalise a raw tag list: validate against `TagSchema`, deduplicate, sort.
+///
+/// Unknown tags are kept as-is (lowercased) so we don't silently drop
+/// user-supplied context. Known schema tags are normalised to their canonical
+/// form (e.g. "tech-debt" → "technical-debt").
+fn refine_tags(raw: &[String]) -> Vec<String> {
+    use crate::tag_schema::validate_tag;
+
+    let mut out: Vec<String> = raw
+        .iter()
+        .map(|t| {
+            // Normalise common aliases to canonical schema values
+            match t.as_str() {
+                "tech-debt" | "debt" => "technical-debt".to_string(),
+                "perf" => "performance".to_string(),
+                "sec" | "security" => "security".to_string(),
+                "docs" | "documentation" => "documentation".to_string(),
+                "tests" | "testing" => "testing".to_string(),
+                "config" | "configuration" => "configuration".to_string(),
+                "exp" | "experimental" => "experimental".to_string(),
+                other => other.to_string(),
+            }
+        })
+        .collect();
+
+    // Validate and log unknown tags (keep them — they carry intent).
+    for tag in &out {
+        let v = validate_tag(tag);
+        if !v.is_valid {
+            tracing::debug!(tag = %tag, "Tag did not pass schema validation — keeping as freeform");
+        }
+    }
+
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// Infer a [`CodeStatus`] from the queue item's source type and LLM score.
+fn infer_status_from_item(item: &QueueItem) -> CodeStatus {
+    match item.source.as_str() {
+        "todo_comment" => CodeStatus::NeedsReview,
+        "repo_file" => match item.score {
+            Some(s) if s >= 8 => CodeStatus::Stable,
+            Some(s) if s >= 5 => CodeStatus::Active,
+            Some(_) => CodeStatus::NeedsReview,
+            None => CodeStatus::Unknown,
+        },
+        "raw_thought" | "note" => CodeStatus::New,
+        "research" | "document" => CodeStatus::Active,
+        _ => CodeStatus::Unknown,
+    }
+}
+
+/// Derive a numeric task priority (1 = Critical, 2 = High, 3 = Medium, 4 = Low)
+/// from the combined tag category and status.
+fn derive_priority(category: TagCategory, status: CodeStatus, score: Option<i32>) -> i32 {
+    use crate::tag_schema::Priority;
+    let schema_priority = Priority::from_status_and_category(status, category);
+    let base = match schema_priority {
+        Priority::Critical => 1,
+        Priority::High => 2,
+        Priority::Medium => 3,
+        Priority::Low => 4,
+    };
+
+    // Boost priority if the LLM gave a high importance score (8–10)
+    if let Some(s) = score {
+        if s >= 9 && base > 1 {
+            return base - 1;
+        }
+    }
+    base
+}
+
+/// Try to find a `registered_repos` row whose `local_path` is a prefix of
+/// the given file path. Returns `None` when no match is found or when the
+/// path argument is `None`.
+async fn resolve_repo_from_path(pool: &PgPool, file_path: Option<&str>) -> Option<String> {
+    let path = file_path?;
+
+    // Walk up the path segments looking for a registered repo root.
+    // We query with a LIKE pattern so we don't need to know the exact depth.
+    let row: Option<(String,)> = sqlx::query_as(
+        "SELECT id FROM registered_repos \
+         WHERE active = TRUE AND $1 LIKE (local_path || '%') \
+         ORDER BY length(local_path) DESC \
+         LIMIT 1",
+    )
+    .bind(path)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+
+    row.map(|(id,)| id)
+}
+
+/// Build a short task title from the queue item's content and refined tags.
+fn build_task_title(item: &QueueItem, tags: &[String]) -> String {
+    // Use the first 120 chars of content as the title, stripping newlines.
+    let snippet: String = item
+        .content
+        .lines()
+        .next()
+        .unwrap_or(&item.content)
+        .chars()
+        .take(120)
+        .collect();
+
+    if tags.is_empty() {
+        snippet
+    } else {
+        format!("[{}] {}", tags[0], snippet)
+    }
+}
 
 fn parse_stage(s: &str) -> QueueStage {
     match s {
@@ -489,11 +714,7 @@ pub async fn capture_thought(pool: &PgPool, text: &str) -> Result<QueueItem> {
 }
 
 /// Quick capture for notes
-pub async fn capture_note(
-    pool: &PgPool,
-    text: &str,
-    project: Option<&str>,
-) -> Result<QueueItem> {
+pub async fn capture_note(pool: &PgPool, text: &str, project: Option<&str>) -> Result<QueueItem> {
     // If project specified, try to find matching repo
     let repo_id = if let Some(p) = project {
         sqlx::query_as::<_, (String,)>("SELECT id FROM repositories WHERE name = $1")

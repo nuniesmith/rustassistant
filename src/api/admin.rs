@@ -230,7 +230,7 @@ async fn create_api_key(
     sqlx::query(
         "INSERT INTO api_keys \
          (id, name, description, key_hash, key_prefix, created_at, request_count) \
-         VALUES (?, ?, ?, ?, ?, ?, 0)",
+         VALUES ($1, $2, $3, $4, $5, $6, 0)",
     )
     .bind(&id)
     .bind(&req.name)
@@ -258,7 +258,7 @@ async fn revoke_api_key(
     State(state): State<Arc<ApiState>>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    let rows_affected = sqlx::query("DELETE FROM api_keys WHERE id = ?")
+    let rows_affected = sqlx::query("DELETE FROM api_keys WHERE id = $1")
         .bind(&id)
         .execute(&state.db_pool)
         .await
@@ -296,9 +296,9 @@ async fn list_jobs(
             "SELECT id, document_id, status, progress, \
              started_at, completed_at, error, chunks_processed \
              FROM indexing_jobs \
-             WHERE status = ? \
+             WHERE status = $1 \
              ORDER BY created_at DESC \
-             LIMIT ?",
+             LIMIT $2",
         )
         .bind(status)
         .bind(limit)
@@ -311,7 +311,7 @@ async fn list_jobs(
              started_at, completed_at, error, chunks_processed \
              FROM indexing_jobs \
              ORDER BY created_at DESC \
-             LIMIT ?",
+             LIMIT $1",
         )
         .bind(limit)
         .fetch_all(&state.db_pool)
@@ -353,7 +353,7 @@ async fn retry_job(
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let rows_affected =
-        sqlx::query("UPDATE indexing_jobs SET status = 'pending', error = NULL WHERE id = ?")
+        sqlx::query("UPDATE indexing_jobs SET status = 'pending', error = NULL WHERE id = $1")
             .bind(&id)
             .execute(&state.db_pool)
             .await

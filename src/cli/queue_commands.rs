@@ -536,34 +536,50 @@ pub async fn handle_scan_command(pool: &PgPool, cmd: ScanCommands) -> Result<()>
 pub async fn handle_report_command(pool: &PgPool, cmd: ReportCommands) -> Result<()> {
     match cmd {
         ReportCommands::Todos { priority, repo } => {
-            let mut query = String::from(
-                "SELECT t.*, r.name as repo_name FROM todo_items t
-                 JOIN repositories r ON t.repo_id = r.id
-                 WHERE t.is_active = 1",
-            );
+            // Read from the canonical `tasks` table (todo_items was dropped in
+            // migration 017). Filter by source = 'github_scanner' or
+            // source = 'queue_processor' to get TODO-derived tasks.
+            let mut conditions = vec![
+                "t.status != 'done'".to_string(),
+                "(t.source = 'github_scanner' OR t.source = 'queue_processor')".to_string(),
+            ];
+            let mut param_idx = 1usize;
 
             if priority.is_some() {
-                query.push_str(" AND t.priority <= ?");
+                conditions.push(format!("t.priority <= ${}", param_idx));
+                param_idx += 1;
             }
             if repo.is_some() {
-                query.push_str(" AND r.name = ?");
+                conditions.push(format!("r.name = ${}", param_idx));
+                param_idx += 1;
             }
+            let _ = param_idx; // silence unused warning after last branch
 
-            query.push_str(" ORDER BY t.priority ASC, t.created_at DESC LIMIT 50");
+            let where_sql = format!("WHERE {}", conditions.join(" AND "));
+            let query = format!(
+                "SELECT t.id, t.title, t.priority, t.file_path, t.line_number,
+                        t.source, COALESCE(r.name, 'unknown') AS repo_name
+                 FROM tasks t
+                 LEFT JOIN repositories r ON t.repo_id = r.id
+                 {}
+                 ORDER BY t.priority ASC, t.created_at DESC
+                 LIMIT 50",
+                where_sql
+            );
 
             #[derive(sqlx::FromRow)]
-            struct TodoWithRepo {
+            struct TaskRow {
                 #[allow(dead_code)]
                 id: String,
-                file_path: String,
-                line_number: i32,
-                content: String,
-                todo_type: String,
-                priority: Option<i32>,
+                title: String,
+                priority: i32,
+                file_path: Option<String>,
+                line_number: Option<i32>,
+                source: String,
                 repo_name: String,
             }
 
-            let mut q = sqlx::query_as::<_, TodoWithRepo>(&query);
+            let mut q = sqlx::query_as::<_, TaskRow>(&query);
             if let Some(p) = priority {
                 q = q.bind(p);
             }
@@ -571,33 +587,37 @@ pub async fn handle_report_command(pool: &PgPool, cmd: ReportCommands) -> Result
                 q = q.bind(r);
             }
 
-            let todos: Vec<TodoWithRepo> = q.fetch_all(pool).await?;
+            let tasks: Vec<TaskRow> = q.fetch_all(pool).await?;
 
-            if todos.is_empty() {
+            if tasks.is_empty() {
                 println!("{} No TODOs found", "✓".green());
             } else {
-                println!("📋 TODOs ({}):\n", todos.len());
+                println!("📋 TODOs ({}):\n", tasks.len());
 
-                for todo in todos {
-                    let priority_icon = match todo.priority {
-                        Some(1) => "🔴",
-                        Some(2) => "🟠",
-                        Some(3) => "🟡",
+                for task in tasks {
+                    let priority_icon = match task.priority {
+                        1 => "🔴",
+                        2 => "🟠",
+                        3 => "🟡",
                         _ => "🟢",
                     };
 
                     println!(
                         "  {} [{}] {}",
                         priority_icon,
-                        todo.todo_type.cyan(),
-                        todo.content
+                        task.source.cyan(),
+                        task.title
                     );
-                    println!(
-                        "     {} {}:{}",
-                        todo.repo_name.dimmed(),
-                        todo.file_path,
-                        todo.line_number
-                    );
+                    if let Some(fp) = &task.file_path {
+                        println!(
+                            "     {} {}{}",
+                            task.repo_name.dimmed(),
+                            fp,
+                            task.line_number
+                                .map(|l| format!(":{}", l))
+                                .unwrap_or_default()
+                        );
+                    }
                     println!();
                 }
             }

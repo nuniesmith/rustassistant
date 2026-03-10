@@ -1,0 +1,51 @@
+# ============================================================================
+# Custom Ollama image — ollama/ollama:latest + curl + wget + health utilities
+#
+# Builds on the official Ollama image (Ubuntu 24.04) and adds the tools
+# the healthcheck and ollama-init service need (curl, wget).
+#
+# Build:
+#   docker build -f docker/Dockerfile.ollama -t rustassistant-ollama .
+#
+# Or via compose — see docker-compose.yml ollama.build stanza.
+# ============================================================================
+FROM ollama/ollama:latest
+
+# Install curl + wget so healthchecks and init scripts work.
+# The base image is Ubuntu 24.04 (Noble) and ships apt-get.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        curl \
+        wget \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# ---------------------------------------------------------------------------
+# WSL2 NVIDIA / CUDA setup
+#
+# On WSL2, the Windows NVIDIA driver is exposed inside the container via a
+# bind-mount of /usr/lib/wsl from the host (see docker-compose.yml).
+# The mount is present at *runtime*, not at build time, so we cannot run
+# ldconfig here.  Instead we:
+#
+#   1. Drop a ld.so.conf.d fragment that points at /usr/lib/wsl/lib so that
+#      any call to ldconfig at runtime picks it up immediately.
+#   2. Create a small entrypoint wrapper that runs ldconfig (to refresh the
+#      cache from the mounted libs) and then hands off to the real Ollama
+#      entrypoint, ensuring CUDA is discoverable before Ollama probes for GPUs.
+#
+# If the host is NOT WSL2 the /usr/lib/wsl mount simply won't be present,
+# ldconfig will find nothing extra in that path, and the wrapper exits
+# cleanly — so this is a safe no-op on bare-metal Linux.
+# ---------------------------------------------------------------------------
+
+# Register /usr/lib/wsl/lib in the dynamic linker search path.
+RUN echo "/usr/lib/wsl/lib" > /etc/ld.so.conf.d/wsl-nvidia.conf
+
+# Entrypoint wrapper: refresh ldconfig, create any missing libcuda symlinks,
+# then exec the real Ollama binary.
+COPY docker/wsl2-entrypoint.sh /usr/local/bin/wsl2-entrypoint.sh
+RUN chmod +x /usr/local/bin/wsl2-entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/wsl2-entrypoint.sh"]
+CMD ["serve"]

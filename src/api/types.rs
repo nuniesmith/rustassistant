@@ -1,7 +1,109 @@
 //! API request and response types for RAG endpoints
 
+use axum::{
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    Json,
+};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+
+// ============================================================================
+// Shared Error Type
+// ============================================================================
+
+/// Standard API error response body.
+///
+/// Implements [`IntoResponse`] so handlers can return `Result<_, ApiError>`
+/// and Axum will serialise the error automatically.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// async fn my_handler() -> Result<Json<Foo>, ApiError> {
+///     let row = db_call().await.map_err(ApiError::internal)?;
+///     Ok(Json(row))
+/// }
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiError {
+    pub error: String,
+    pub code: String,
+}
+
+impl ApiError {
+    pub fn not_found(msg: impl Into<String>) -> Self {
+        Self {
+            error: msg.into(),
+            code: "NOT_FOUND".to_string(),
+        }
+    }
+
+    pub fn internal(msg: impl Into<String>) -> Self {
+        Self {
+            error: msg.into(),
+            code: "INTERNAL_ERROR".to_string(),
+        }
+    }
+
+    pub fn bad_request(msg: impl Into<String>) -> Self {
+        Self {
+            error: msg.into(),
+            code: "BAD_REQUEST".to_string(),
+        }
+    }
+
+    pub fn unauthorized(msg: impl Into<String>) -> Self {
+        Self {
+            error: msg.into(),
+            code: "UNAUTHORIZED".to_string(),
+        }
+    }
+
+    /// Convenience constructor: map any `Display` error into an internal error.
+    pub fn from_error(e: impl std::fmt::Display) -> Self {
+        Self::internal(e.to_string())
+    }
+
+    fn status_code(&self) -> StatusCode {
+        match self.code.as_str() {
+            "NOT_FOUND" => StatusCode::NOT_FOUND,
+            "BAD_REQUEST" => StatusCode::BAD_REQUEST,
+            "UNAUTHORIZED" => StatusCode::UNAUTHORIZED,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        let status = self.status_code();
+        (status, Json(self)).into_response()
+    }
+}
+
+impl std::fmt::Display for ApiError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[{}] {}", self.code, self.error)
+    }
+}
+
+impl std::error::Error for ApiError {}
+
+// Automatically convert sqlx errors into internal API errors.
+impl From<sqlx::Error> for ApiError {
+    fn from(e: sqlx::Error) -> Self {
+        tracing::error!(error = %e, "Database error in API handler");
+        Self::internal(e.to_string())
+    }
+}
+
+// Automatically convert anyhow errors.
+impl From<anyhow::Error> for ApiError {
+    fn from(e: anyhow::Error) -> Self {
+        Self::internal(e.to_string())
+    }
+}
 
 // ============================================================================
 // Common Types

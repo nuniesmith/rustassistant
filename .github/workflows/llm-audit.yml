@@ -63,9 +63,11 @@
 # XAI_API_KEY       : xAI / Grok  (primary provider for all modes)
 # ANTHROPIC_API_KEY : Anthropic / Claude (regular + full modes, optional)
 # GOOGLE_API_KEY    : Google / Gemini    (regular + full modes, optional)
-# GH_PAT            : Personal Access Token with repo + pull_requests scope
-#                     Required for cloning private repos, pushing branches,
-#                     and opening pull requests via the GitHub API
+# GITHUB_TOKEN       : GitHub token with repo + pull_requests scope
+#                      Required for cloning private repos, pushing branches,
+#                      and opening pull requests via the GitHub API.
+#                      Use the auto-generated ${{ secrets.GITHUB_TOKEN }} or
+#                      a fine-grained PAT stored as secrets.GITHUB_TOKEN.
 # ============================================================================
 
 name: 🤖 LLM Audit
@@ -264,7 +266,7 @@ jobs:
             # ================================================================
             - name: 📦 Clone target repo — ${{ inputs.target_repo }}
               env:
-                  GH_PAT: ${{ secrets.GH_PAT }}
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               run: |
                   TARGET="${{ inputs.target_repo }}"
                   BRANCH="${{ inputs.target_branch }}"
@@ -279,12 +281,12 @@ jobs:
                   export GIT_LFS_SKIP_SMUDGE=1
                   git lfs install --skip-repo 2>/dev/null || true
 
-                  if [ -n "$GH_PAT" ]; then
-                      CLONE_URL="https://x-access-token:${GH_PAT}@github.com/${TARGET}.git"
-                      echo "🔐 Using PAT authentication" >> $GITHUB_STEP_SUMMARY
+                  if [ -n "$GITHUB_TOKEN" ]; then
+                      CLONE_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${TARGET}.git"
+                      echo "🔐 Using GITHUB_TOKEN authentication" >> $GITHUB_STEP_SUMMARY
                   else
                       CLONE_URL="https://github.com/${TARGET}.git"
-                      echo "🌐 No PAT — public repo only" >> $GITHUB_STEP_SUMMARY
+                      echo "🌐 No token — public repo only" >> $GITHUB_STEP_SUMMARY
                   fi
 
                   # Full depth needed so we can branch and push from the clone
@@ -739,6 +741,30 @@ jobs:
                   echo "## 📋 TODO Batch Analysis (Grok)" >> $GITHUB_STEP_SUMMARY
                   echo "" >> $GITHUB_STEP_SUMMARY
 
+                  REPO="${{ env.REPO_DIR }}"
+                  CACHE="${{ env.CACHE_DIR }}"
+
+                  # ── Prefer the Rust binary when it was successfully extracted ──
+                  if [ -x ./rustassistant-bin ] && [ "${{ steps.pull_image.outputs.ra_available }}" = "true" ]; then
+                      echo "🦀 Using rustassistant-bin for TODO analysis" >> $GITHUB_STEP_SUMMARY
+
+                      ./rustassistant-bin todo scan "$REPO" \
+                          --json \
+                          --output audit-workspace/todo-analysis-report.json \
+                          2>&1 | tee /tmp/todo_output.txt || true
+
+                      ANALYZED=$(python3 -c 'import json,sys; d=json.load(open("audit-workspace/todo-analysis-report.json")); print(d.get("analyzed_count", len(d.get("results", []))))' 2>/dev/null || echo "0")
+                      TOTAL=$(python3 -c 'import json,sys; d=json.load(open("audit-workspace/todo-analysis-report.json")); print(d.get("total_todos_found", d.get("total_items", 0)))' 2>/dev/null || echo "0")
+
+                      echo "- Runner   : \`rustassistant-bin todo scan\`" >> $GITHUB_STEP_SUMMARY
+                      echo "analyzed_count=$ANALYZED" >> $GITHUB_OUTPUT
+                      echo "total_todos=$TOTAL"        >> $GITHUB_OUTPUT
+                      echo "| TODOs found    | $TOTAL    |" >> $GITHUB_STEP_SUMMARY
+                      echo "| TODOs analysed | $ANALYZED |" >> $GITHUB_STEP_SUMMARY
+                      echo "" >> $GITHUB_STEP_SUMMARY
+                  else
+                      echo "🐍 rustassistant-bin unavailable — using Python fallback" >> $GITHUB_STEP_SUMMARY
+
                   cat > audit-workspace/todo_analyze.py << 'PYEOF'
                   import os, json, re, requests, textwrap
 
@@ -870,9 +896,11 @@ jobs:
                   echo "analyzed_count=$ANALYZED" >> $GITHUB_OUTPUT
                   echo "total_todos=$TOTAL"        >> $GITHUB_OUTPUT
 
-                  echo "| TODOs found | $TOTAL |"     >> $GITHUB_STEP_SUMMARY
-                  echo "| TODOs analysed | $ANALYZED |" >> $GITHUB_STEP_SUMMARY
+                  echo "- Runner   : \`Python fallback\`"        >> $GITHUB_STEP_SUMMARY
+                  echo "| TODOs found    | $TOTAL    |"          >> $GITHUB_STEP_SUMMARY
+                  echo "| TODOs analysed | $ANALYZED |"          >> $GITHUB_STEP_SUMMARY
                   echo "" >> $GITHUB_STEP_SUMMARY
+                  fi  # end binary/python branch
 
             # ================================================================
             # 7-C  TODO-PLAN — read todo.md, generate batched gameplan
@@ -892,11 +920,44 @@ jobs:
 
                   REPO="${{ env.REPO_DIR }}"
                   CACHE="${{ env.CACHE_DIR }}"
+                  BATCH_COUNT="${{ inputs.todo_plan_batch_count }}"
                   TODO_FILE="$REPO/todo.md"
 
                   if [ ! -f "$TODO_FILE" ]; then
                       TODO_FILE=$(find "$REPO" -maxdepth 2 -iname "todo.md" | head -1 || true)
                   fi
+
+                  # ── Prefer the Rust binary when it was successfully extracted ──
+                  if [ -x ./rustassistant-bin ] && [ "${{ steps.pull_image.outputs.ra_available }}" = "true" ]; then
+                      echo "🦀 Using rustassistant-bin for TODO plan" >> $GITHUB_STEP_SUMMARY
+
+                      ./rustassistant-bin todo plan "$TODO_FILE" \
+                          --context "$REPO" \
+                          --output "$CACHE/todo-plan.json" \
+                          2>&1 | tee /tmp/plan_output.txt || true
+
+                      # Copy to audit-workspace for artifact upload
+                      cp "$CACHE/todo-plan.json" audit-workspace/todo-plan.json 2>/dev/null || true
+
+                      # Extract gameplan markdown and stats using jq (always available on ubuntu-latest)
+                      if command -v jq >/dev/null 2>&1 && [ -f "$CACHE/todo-plan.json" ]; then
+                          jq -r '.gameplan_markdown // ""' "$CACHE/todo-plan.json" > audit-workspace/GAMEPLAN.md 2>/dev/null || true
+                          cp audit-workspace/GAMEPLAN.md "$CACHE/GAMEPLAN.md" 2>/dev/null || true
+                          ITEMS=$(jq '(.total_items // ([.batches[]?.items[]?] | length))' "$CACHE/todo-plan.json" 2>/dev/null || echo "0")
+                          BATCHES=$(jq '.batches | length' "$CACHE/todo-plan.json" 2>/dev/null || echo "0")
+                      else
+                          ITEMS="0"
+                          BATCHES="0"
+                      fi
+
+                      echo "- Runner   : \`rustassistant-bin todo plan\`" >> $GITHUB_STEP_SUMMARY
+                      echo "total_items=$ITEMS"   >> $GITHUB_OUTPUT
+                      echo "batch_count=$BATCHES" >> $GITHUB_OUTPUT
+                      echo "| Items   | $ITEMS   |" >> $GITHUB_STEP_SUMMARY
+                      echo "| Batches | $BATCHES |" >> $GITHUB_STEP_SUMMARY
+                      echo "" >> $GITHUB_STEP_SUMMARY
+                  else
+                      echo "🐍 rustassistant-bin unavailable — using Python fallback" >> $GITHUB_STEP_SUMMARY
 
                   if [ -z "$TODO_FILE" ] || [ ! -f "$TODO_FILE" ]; then
                       echo "❌ No todo.md found in ${{ inputs.target_repo }}" >> $GITHUB_STEP_SUMMARY
@@ -1017,11 +1078,14 @@ jobs:
                   cp audit-workspace/todo-plan.json "$CACHE/todo-plan.json" 2>/dev/null || true
                   cp audit-workspace/GAMEPLAN.md    "$CACHE/GAMEPLAN.md"    2>/dev/null || true
 
-                  echo "| Items   | $ITEMS |"   >> $GITHUB_STEP_SUMMARY
-                  echo "| Batches | $BATCHES |" >> $GITHUB_STEP_SUMMARY
+                  echo "- Runner   : \`Python fallback\`"  >> $GITHUB_STEP_SUMMARY
+                  echo "| Items   | $ITEMS   |"            >> $GITHUB_STEP_SUMMARY
+                  echo "| Batches | $BATCHES |"            >> $GITHUB_STEP_SUMMARY
                   echo "" >> $GITHUB_STEP_SUMMARY
+                  fi  # end binary/python branch
 
             # ================================================================
+            # 7-D-pre  TODO-REWRITE
             # 7-D-pre  TODO-REWRITE — regenerate todo.md in canonical format
             #       • Reads current todo.md + gameplan + cache state
             #       • Asks Grok to rewrite into clean rustassistant format
@@ -1240,7 +1304,7 @@ jobs:
               id: todo_work
               env:
                   XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
-                  GH_PAT: ${{ secrets.GH_PAT }}
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               run: |
                   echo "## 🔨 TODO Work" >> $GITHUB_STEP_SUMMARY
                   echo "" >> $GITHUB_STEP_SUMMARY
@@ -1251,6 +1315,55 @@ jobs:
                   BASE_BRANCH="${{ inputs.target_branch }}"
                   DRY_RUN="${{ inputs.work_dry_run }}"
                   REQUESTED_BATCH="${{ inputs.work_batch_number }}"
+
+                  # ── Prefer the Rust binary when it was successfully extracted ──
+                  if [ -x ./rustassistant-bin ] && [ "${{ steps.pull_image.outputs.ra_available }}" = "true" ]; then
+                      echo "🦀 Using rustassistant-bin for TODO work" >> $GITHUB_STEP_SUMMARY
+
+                      PLAN_FILE="$CACHE/todo-plan.json"
+                      if [ ! -f "$PLAN_FILE" ]; then
+                          PLAN_FILE="$REPO/docs/audit/todo-plan.json"
+                      fi
+                      if [ ! -f "$PLAN_FILE" ]; then
+                          echo "❌ No todo-plan.json found. Run todo-plan mode first." >> $GITHUB_STEP_SUMMARY
+                          echo "::error::No gameplan found. Run todo-plan mode first."
+                          exit 1
+                      fi
+
+                      TODO_MD="$REPO/todo.md"
+                      DRY_RUN_FLAG=""
+                      [ "$DRY_RUN" = "true" ] && DRY_RUN_FLAG="--dry-run"
+
+                      BATCH_ARG=""
+                      [ -n "$REQUESTED_BATCH" ] && [ "$REQUESTED_BATCH" != "auto" ] && \
+                          BATCH_ARG="--batch $REQUESTED_BATCH"
+
+                      ./rustassistant-bin todo work "$PLAN_FILE" \
+                          --context "$REPO" \
+                          --todo-md "$TODO_MD" \
+                          --auto-sync \
+                          $BATCH_ARG \
+                          $DRY_RUN_FLAG \
+                          2>&1 | tee /tmp/work_output.txt || true
+
+                      APPLIED=$(grep -c "^applied:" /tmp/work_output.txt 2>/dev/null || echo "0")
+                      FAILED=$(grep -c "^failed:"  /tmp/work_output.txt 2>/dev/null || echo "0")
+
+                      echo "- Runner     : \`rustassistant-bin todo work\`" >> $GITHUB_STEP_SUMMARY
+                      echo "- Dry-run    : $DRY_RUN"                        >> $GITHUB_STEP_SUMMARY
+                      echo "| Hunks applied | $APPLIED |"                   >> $GITHUB_STEP_SUMMARY
+                      echo "| Hunks failed  | $FAILED  |"                   >> $GITHUB_STEP_SUMMARY
+                      echo "" >> $GITHUB_STEP_SUMMARY
+
+                      # Skip the Python work block entirely
+                      echo "binary_ran=true" >> /tmp/work_ran.txt
+                  else
+                      echo "🐍 rustassistant-bin unavailable — using Python fallback" >> $GITHUB_STEP_SUMMARY
+                      echo "binary_ran=false" >> /tmp/work_ran.txt
+                  fi
+
+                  # ── Python fallback (skipped when binary ran successfully) ──
+                  if grep -q "binary_ran=false" /tmp/work_ran.txt 2>/dev/null; then
 
                   # ── Load gameplan from cache ──────────────────────────────
                   PLAN_FILE="$CACHE/todo-plan.json"
@@ -1664,7 +1777,7 @@ jobs:
                   cat > audit-workspace/create_pr.py << 'PYEOF'
                   import os, json, requests
 
-                  gh_pat      = os.environ["GH_PAT"]
+                  gh_pat      = os.environ["GITHUB_TOKEN"]
                   target      = os.environ["TARGET_REPO"]
                   branch_name = os.environ["BRANCH_NAME"]
                   base_branch = os.environ["BASE_BRANCH"]
@@ -1727,7 +1840,7 @@ jobs:
                   PYEOF
 
                   cd "$GITHUB_WORKSPACE"
-                  GH_PAT="$GH_PAT" \
+                  GITHUB_TOKEN="$GITHUB_TOKEN" \
                   TARGET_REPO="$TARGET" \
                   BRANCH_NAME="$BRANCH_NAME" \
                   BASE_BRANCH="$BASE_BRANCH" \
@@ -1771,6 +1884,8 @@ jobs:
                   echo "- Branch: \`$BRANCH_NAME\`"              >> $GITHUB_STEP_SUMMARY
                   echo "" >> $GITHUB_STEP_SUMMARY
                   cd "$GITHUB_WORKSPACE"
+
+                  fi  # end Python fallback (binary/python branch for todo-work)
 
             # ================================================================
             # 8. Generate Markdown reports
@@ -2004,9 +2119,11 @@ jobs:
               # which includes the rewritten todo.md written back by todo_rewrite.py.
               continue-on-error: true
               env:
-                  GH_PAT: ${{ secrets.GH_PAT }}
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               run: |
                   # todo-work already committed + pushed on its own branch — skip
+                  # The remote URL embedded at clone time already carries the token,
+                  # so git push works without any additional credential setup here.
                   MODE="${{ inputs.audit_mode }}"
                   REPO="${{ env.REPO_DIR }}"
                   CACHE="${{ env.CACHE_DIR }}"

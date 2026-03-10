@@ -82,7 +82,8 @@ pub async fn create_document(
 pub async fn get_document(pool: &PgPool, id: &str) -> DbResult<Document> {
     let row = sqlx::query(
         "SELECT id, title, content, content_type, source_type, source_url, doc_type, tags,
-                repo_id, file_path, word_count, char_count, created_at, updated_at, indexed_at
+                repo_id, file_path, word_count, char_count, created_at, updated_at, indexed_at,
+                COALESCE(pinned, FALSE) AS pinned
          FROM documents WHERE id = $1",
     )
     .bind(id)
@@ -115,6 +116,7 @@ pub async fn get_document(pool: &PgPool, id: &str) -> DbResult<Document> {
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
         indexed_at: row.get("indexed_at"),
+        pinned: row.get::<Option<bool>, _>("pinned").unwrap_or(false),
     })
 }
 
@@ -229,10 +231,11 @@ pub async fn list_documents(
 
     let sql = format!(
         "SELECT id, title, content, content_type, source_type, source_url, doc_type, tags,
-                repo_id, file_path, word_count, char_count, created_at, updated_at, indexed_at
+                repo_id, file_path, word_count, char_count, created_at, updated_at, indexed_at,
+                COALESCE(pinned, FALSE) AS pinned
          FROM documents
          {}
-         ORDER BY created_at DESC
+         ORDER BY pinned DESC, created_at DESC
          LIMIT ${} OFFSET ${}",
         where_clause,
         param_idx,
@@ -275,6 +278,7 @@ pub async fn list_documents(
             created_at: row.get("created_at"),
             updated_at: row.get("updated_at"),
             indexed_at: row.get("indexed_at"),
+            pinned: row.get::<Option<bool>, _>("pinned").unwrap_or(false),
         })
         .collect())
 }
@@ -302,7 +306,8 @@ pub async fn count_documents_by_type(pool: &PgPool, doc_type: &str) -> DbResult<
 pub async fn get_unindexed_documents(pool: &PgPool, limit: i64) -> DbResult<Vec<Document>> {
     let rows = sqlx::query(
         "SELECT id, title, content, content_type, source_type, source_url, doc_type, tags,
-                repo_id, file_path, word_count, char_count, created_at, updated_at, indexed_at
+                repo_id, file_path, word_count, char_count, created_at, updated_at, indexed_at,
+                COALESCE(pinned, FALSE) AS pinned
          FROM documents
          WHERE indexed_at IS NULL OR updated_at > indexed_at
          ORDER BY updated_at DESC
@@ -337,8 +342,29 @@ pub async fn get_unindexed_documents(pool: &PgPool, limit: i64) -> DbResult<Vec<
             created_at: row.get("created_at"),
             updated_at: row.get("updated_at"),
             indexed_at: row.get("indexed_at"),
+            pinned: row.get::<Option<bool>, _>("pinned").unwrap_or(false),
         })
         .collect())
+}
+
+/// Toggle the `pinned` state of a document.
+///
+/// Returns the new pinned value (`true` = now pinned, `false` = now unpinned).
+pub async fn set_document_pinned(pool: &PgPool, id: &str, pinned: bool) -> DbResult<bool> {
+    let rows_affected =
+        sqlx::query("UPDATE documents SET pinned = $1, updated_at = $2 WHERE id = $3")
+            .bind(pinned)
+            .bind(chrono::Utc::now().timestamp())
+            .bind(id)
+            .execute(pool)
+            .await
+            .map_err(DbError::Sqlx)?
+            .rows_affected();
+
+    if rows_affected == 0 {
+        return Err(DbError::NotFound(format!("Document {} not found", id)));
+    }
+    Ok(pinned)
 }
 
 /// Mark a document as indexed at the current time
@@ -378,7 +404,8 @@ pub async fn search_documents_by_title(
 
     let rows = sqlx::query(
         "SELECT id, title, content, content_type, source_type, source_url, doc_type, tags,
-                repo_id, file_path, word_count, char_count, created_at, updated_at, indexed_at
+                repo_id, file_path, word_count, char_count, created_at, updated_at, indexed_at,
+                COALESCE(pinned, FALSE) AS pinned
          FROM documents
          WHERE title ILIKE $1
          ORDER BY created_at DESC
@@ -414,6 +441,7 @@ pub async fn search_documents_by_title(
             created_at: row.get("created_at"),
             updated_at: row.get("updated_at"),
             indexed_at: row.get("indexed_at"),
+            pinned: row.get::<Option<bool>, _>("pinned").unwrap_or(false),
         })
         .collect())
 }
@@ -429,7 +457,8 @@ pub async fn search_documents_by_tags(
     let rows = sqlx::query(
         "SELECT DISTINCT d.id, d.title, d.content, d.content_type, d.source_type, d.source_url,
                 d.doc_type, d.tags, d.repo_id, d.file_path, d.word_count, d.char_count,
-                d.created_at, d.updated_at, d.indexed_at
+                d.created_at, d.updated_at, d.indexed_at,
+                COALESCE(d.pinned, FALSE) AS pinned
          FROM documents d
          JOIN document_tags dt ON d.id = dt.document_id
          WHERE dt.tag = $1
@@ -466,6 +495,7 @@ pub async fn search_documents_by_tags(
             created_at: row.get("created_at"),
             updated_at: row.get("updated_at"),
             indexed_at: row.get("indexed_at"),
+            pinned: row.get::<Option<bool>, _>("pinned").unwrap_or(false),
         })
         .collect())
 }
@@ -861,10 +891,11 @@ pub async fn search_documents(pool: &PgPool, query: &str) -> DbResult<Vec<Docume
     // GIN index is created in migrations.
     let rows = sqlx::query(
         "SELECT id, title, content, content_type, source_type, source_url, doc_type, tags,
-                repo_id, file_path, word_count, char_count, created_at, updated_at, indexed_at
+                repo_id, file_path, word_count, char_count, created_at, updated_at, indexed_at,
+                COALESCE(pinned, FALSE) AS pinned
          FROM documents
          WHERE title ILIKE $1 OR content ILIKE $1
-         ORDER BY created_at DESC
+         ORDER BY pinned DESC, created_at DESC
          LIMIT 50",
     )
     .bind(&pattern)
@@ -892,6 +923,7 @@ pub async fn search_documents(pool: &PgPool, query: &str) -> DbResult<Vec<Docume
             repo_id: row.get("repo_id"),
             file_path: row.get("file_path"),
             word_count: row.get::<Option<i64>, _>("word_count").unwrap_or(0),
+            pinned: row.get::<Option<bool>, _>("pinned").unwrap_or(false),
             char_count: row.get::<Option<i64>, _>("char_count").unwrap_or(0),
             created_at: row.get("created_at"),
             updated_at: row.get("updated_at"),

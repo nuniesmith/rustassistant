@@ -194,14 +194,14 @@ impl CostTracker {
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS llm_costs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+                id BIGSERIAL PRIMARY KEY,
+                timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 operation TEXT NOT NULL,
                 model TEXT NOT NULL,
                 input_tokens INTEGER NOT NULL,
                 output_tokens INTEGER NOT NULL,
                 cached_tokens INTEGER DEFAULT 0,
-                cost_usd REAL NOT NULL,
+                cost_usd DOUBLE PRECISION NOT NULL,
                 query_hash TEXT,
                 cache_hit BOOLEAN DEFAULT FALSE,
                 user_query TEXT,
@@ -217,17 +217,17 @@ impl CostTracker {
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS static_decisions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+                id BIGSERIAL PRIMARY KEY,
+                timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 file_path TEXT NOT NULL,
                 repo_id TEXT NOT NULL,
                 recommendation TEXT NOT NULL,
                 skip_reason TEXT,
                 static_issue_count INTEGER NOT NULL DEFAULT 0,
-                estimated_llm_value REAL NOT NULL DEFAULT 0.0,
-                llm_called BOOLEAN NOT NULL DEFAULT 0,
-                estimated_cost_saved_usd REAL NOT NULL DEFAULT 0.0,
-                actual_cost_usd REAL NOT NULL DEFAULT 0.0,
+                estimated_llm_value DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+                llm_called BOOLEAN NOT NULL DEFAULT FALSE,
+                estimated_cost_saved_usd DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+                actual_cost_usd DOUBLE PRECISION NOT NULL DEFAULT 0.0,
                 prompt_tier TEXT
             )
             "#,
@@ -383,21 +383,19 @@ impl CostTracker {
 
     /// Get savings report for today
     pub async fn get_daily_savings_report(&self) -> Result<SavingsReport> {
-        self.get_savings_report_for_period("date(timestamp) = date('now')", "today")
+        self.get_savings_report_for_period("timestamp::date = CURRENT_DATE", "today")
             .await
     }
 
     /// Get savings report for the last 7 days
     pub async fn get_weekly_savings_report(&self) -> Result<SavingsReport> {
-        self.get_savings_report_for_period("timestamp >= datetime('now', '-7 days')", "last 7 days")
+        self.get_savings_report_for_period("timestamp >= NOW() - INTERVAL '7 days'", "last 7 days")
             .await
     }
 
     /// Get savings report for the current month
     pub async fn get_monthly_savings_report(&self) -> Result<SavingsReport> {
-        let now = Utc::now();
-        let month_start = format!("{}-{:02}-01", now.year(), now.month());
-        self.get_savings_report_for_period(&format!("timestamp >= '{}'", month_start), "this month")
+        self.get_savings_report_for_period("timestamp >= DATE_TRUNC('month', NOW())", "this month")
             .await
     }
 
@@ -417,15 +415,15 @@ impl CostTracker {
         let query = format!(
             r#"
             SELECT
-                COUNT(*) as total_files,
-                COALESCE(SUM(CASE WHEN recommendation = 'SKIP' THEN 1 ELSE 0 END), 0) as files_skipped,
-                COALESCE(SUM(CASE WHEN recommendation = 'MINIMAL' THEN 1 ELSE 0 END), 0) as files_minimal,
-                COALESCE(SUM(CASE WHEN recommendation = 'STANDARD' THEN 1 ELSE 0 END), 0) as files_standard,
-                COALESCE(SUM(CASE WHEN recommendation = 'DEEP_DIVE' THEN 1 ELSE 0 END), 0) as files_deep_dive,
-                COALESCE(SUM(estimated_cost_saved_usd), 0.0) as total_savings,
-                COALESCE(SUM(actual_cost_usd), 0.0) as total_actual,
-                COALESCE(SUM(CASE WHEN llm_called = 0 THEN 1 ELSE 0 END), 0) as llm_avoided,
-                COALESCE(SUM(static_issue_count), 0) as total_static_issues
+                COUNT(*)::BIGINT as total_files,
+                COALESCE(SUM(CASE WHEN recommendation = 'SKIP' THEN 1 ELSE 0 END), 0)::BIGINT as files_skipped,
+                COALESCE(SUM(CASE WHEN recommendation = 'MINIMAL' THEN 1 ELSE 0 END), 0)::BIGINT as files_minimal,
+                COALESCE(SUM(CASE WHEN recommendation = 'STANDARD' THEN 1 ELSE 0 END), 0)::BIGINT as files_standard,
+                COALESCE(SUM(CASE WHEN recommendation = 'DEEP_DIVE' THEN 1 ELSE 0 END), 0)::BIGINT as files_deep_dive,
+                COALESCE(SUM(estimated_cost_saved_usd), 0.0)::DOUBLE PRECISION as total_savings,
+                COALESCE(SUM(actual_cost_usd), 0.0)::DOUBLE PRECISION as total_actual,
+                COALESCE(SUM(CASE WHEN llm_called = FALSE THEN 1 ELSE 0 END), 0)::BIGINT as llm_avoided,
+                COALESCE(SUM(static_issue_count), 0)::BIGINT as total_static_issues
             FROM static_decisions
             WHERE {}
             "#,
@@ -528,7 +526,7 @@ impl CostTracker {
                 COALESCE(SUM(cached_tokens), 0),
                 COALESCE(SUM(cost_usd), 0.0)
             FROM llm_costs
-            WHERE timestamp >= $1 AND timestamp <= $2
+            WHERE timestamp >= $1::TIMESTAMPTZ AND timestamp <= $2::TIMESTAMPTZ
             "#,
         )
         .bind(start)
@@ -541,7 +539,7 @@ impl CostTracker {
             r#"
             SELECT COUNT(*)
             FROM llm_costs
-            WHERE timestamp >= $1 AND timestamp <= $2
+            WHERE timestamp >= $1::TIMESTAMPTZ AND timestamp <= $2::TIMESTAMPTZ
             AND cache_hit = TRUE
             "#,
         )

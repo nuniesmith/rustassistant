@@ -1,5 +1,5 @@
 # Project tree: rustassistant
-# Generated: 1773069770
+# Generated: 1773129256
 
 .fastembed_cache/models--Xenova--bge-small-en-v1.5/snapshots/ea104dacec62c0de699686887e3f920caeb4f3e3/config.json
 .fastembed_cache/models--Xenova--bge-small-en-v1.5/snapshots/ea104dacec62c0de699686887e3f920caeb4f3e3/special_tokens_map.json
@@ -32,6 +32,8 @@ docker-compose.yml
 docker/DEPLOYMENT_CHECKLIST.md
 docker/QUICKREF.md
 docker/README.md
+docker/fix-wsl2-nvidia.sh
+docker/wsl2-entrypoint.sh
 docs/ADVANCED_FEATURES_COMPLETE.md
 docs/ADVANCED_FEATURES_GUIDE.md
 docs/ALL_FIXES_COMPLETE.md
@@ -127,6 +129,9 @@ migrations/012_add_review_requested.sql
 migrations/013_add_task_core_columns.sql
 migrations/014_add_cache_hash.sql
 migrations/015_registered_repos.sql
+migrations/016_add_document_pinned.sql
+migrations/017_drop_todo_items.sql
+migrations/018_chunks_integer_to_bigint.sql
 run.sh
 scripts/README_REPO_MANAGEMENT.md
 scripts/add-api-key.sh

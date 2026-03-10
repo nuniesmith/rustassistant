@@ -427,6 +427,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    #[ignore = "ResponseCache uses SQLite internally; not available in postgres-only build"]
     async fn test_cache_operations() -> Result<()> {
         let cache = ResponseCache::new(":memory:").await?;
 
@@ -447,6 +448,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "ResponseCache uses SQLite internally; not available in postgres-only build"]
     async fn test_cache_stats() -> Result<()> {
         let cache = ResponseCache::new(":memory:").await?;
 
