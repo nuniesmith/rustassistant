@@ -56,7 +56,29 @@ jobs:
     test-and-lint:
         name: 🧪 Test & Lint
         runs-on: ubuntu-latest
-        timeout-minutes: 30
+        timeout-minutes: 45
+
+        services:
+            postgres:
+                image: postgres:16-alpine
+                env:
+                    POSTGRES_USER: rustassistant
+                    POSTGRES_PASSWORD: changeme
+                    POSTGRES_DB: rustassistant_test
+                ports:
+                    - 5432:5432
+                options: >-
+                    --health-cmd pg_isready
+                    --health-interval 10s
+                    --health-timeout 5s
+                    --health-retries 5
+
+        env:
+            DATABASE_URL: postgresql://rustassistant:changeme@localhost:5432/rustassistant_test
+            SQLX_OFFLINE: "true"
+            CARGO_HOME: /home/runner/.cargo
+            CARGO_INCREMENTAL: "0"
+
         steps:
             - name: 📥 Checkout code
               uses: actions/checkout@v4
@@ -71,16 +93,40 @@ jobs:
                   status: started
                   include-repo-info: "true"
 
-            - name: 🦀 Rust CI
+            - name: 🦀 Rust CI (fmt + clippy + build)
               uses: nuniesmith/actions/.github/actions/rust-ci@main
               with:
                   toolchain: stable
                   run-fmt: "true"
                   run-clippy: "true"
-                  run-tests: "true"
+                  run-tests: "false"
                   run-build: "true"
                   build-release: "false"
                   coverage: "false"
+
+            - name: 🗄️ Install sqlx-cli and run migrations
+              run: |
+                  echo "📦 Installing sqlx-cli..."
+                  cargo install sqlx-cli --no-default-features --features postgres --locked --quiet || true
+
+                  echo "⏳ Waiting for Postgres to be ready..."
+                  until pg_isready -h localhost -p 5432 -U rustassistant; do
+                      sleep 1
+                  done
+
+                  echo "🗄️ Running migrations against test DB..."
+                  DATABASE_URL=postgresql://rustassistant:changeme@localhost:5432/rustassistant_test \
+                      sqlx migrate run --source migrations
+
+                  echo "✅ Migrations complete"
+
+            - name: 🧪 Run all tests (Postgres available)
+              run: |
+                  echo "🧪 Running full test suite with live Postgres..."
+                  DATABASE_URL=postgresql://rustassistant:changeme@localhost:5432/rustassistant_test \
+                  SQLX_OFFLINE=false \
+                  cargo test --verbose
+                  echo "✅ All tests passed"
 
             - name: ✅ Notify tests passed
               if: success()
