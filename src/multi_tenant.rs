@@ -670,17 +670,32 @@ mod tests {
         .unwrap()
     }
 
+    /// Generate a unique slug for each test run so parallel tests don't collide
+    /// on the `organizations_slug_key` unique constraint.
+    fn unique_slug(base: &str) -> String {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .subsec_nanos();
+        // Include the thread id for extra uniqueness when many tests run at once.
+        let tid = format!("{:?}", std::thread::current().id());
+        let tid_hash: u32 = tid.bytes().fold(0u32, |acc, b| acc.wrapping_add(b as u32));
+        format!("{}-{}-{}", base, nanos, tid_hash)
+    }
+
     #[tokio::test]
     async fn test_create_tenant() {
         let pool = setup_test_db().await;
         let manager = TenantManager::new(pool).await.unwrap();
 
+        let slug = unique_slug("test-org");
         let tenant = manager
-            .create_tenant("test-org", "Test Organization", TenantQuota::standard())
+            .create_tenant(&slug, "Test Organization", TenantQuota::standard())
             .await
             .unwrap();
 
-        assert_eq!(tenant.slug, "test-org");
+        assert_eq!(tenant.slug, slug);
         assert_eq!(tenant.name, "Test Organization");
         assert!(tenant.enabled);
     }
@@ -690,8 +705,9 @@ mod tests {
         let pool = setup_test_db().await;
         let manager = TenantManager::new(pool).await.unwrap();
 
+        let slug = unique_slug("quota-org");
         let tenant = manager
-            .create_tenant("test-org", "Test Org", TenantQuota::free())
+            .create_tenant(&slug, "Test Org", TenantQuota::free())
             .await
             .unwrap();
 
@@ -719,8 +735,9 @@ mod tests {
         let pool = setup_test_db().await;
         let manager = TenantManager::new(pool).await.unwrap();
 
+        let slug = unique_slug("usage-org");
         let tenant = manager
-            .create_tenant("test-org", "Test Org", TenantQuota::standard())
+            .create_tenant(&slug, "Test Org", TenantQuota::standard())
             .await
             .unwrap();
 

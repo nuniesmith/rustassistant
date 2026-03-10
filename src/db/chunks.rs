@@ -1903,10 +1903,24 @@ mod tests {
             .unwrap();
 
         // get_chunks_without_embeddings returns top-N by complexity DESC.
-        // Our without_h chunk has the highest complexity among un-embedded chunks.
-        let without = store.get_chunks_without_embeddings(1).await.unwrap();
-        assert_eq!(without.len(), 1);
-        assert_eq!(without[0].content_hash, without_h);
+        // Fetch a larger batch so that chunks inserted by other parallel tests
+        // with equal or higher complexity scores don't push our entry out of
+        // the result set.
+        let without = store.get_chunks_without_embeddings(100).await.unwrap();
+        assert!(
+            !without.is_empty(),
+            "Expected at least one chunk without embeddings"
+        );
+        assert!(
+            without.iter().any(|c| c.content_hash == without_h),
+            "Expected to find '{}' in chunks-without-embeddings result",
+            without_h
+        );
+        assert!(
+            without.iter().all(|c| c.content_hash != with_h),
+            "Chunk with embedding '{}' must NOT appear in the no-embedding list",
+            with_h
+        );
     }
 
     #[tokio::test]

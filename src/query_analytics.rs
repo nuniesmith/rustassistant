@@ -189,6 +189,26 @@ impl QueryAnalytics {
 
     /// Initialize analytics tables
     async fn init_tables(pool: &PgPool) -> Result<()> {
+        // Acquire a session-level advisory lock so that concurrent test threads
+        // don't race on `CREATE TABLE IF NOT EXISTS` + `BIGSERIAL` sequence
+        // creation, which would trigger a `pg_type_typname_nsp_index` unique-
+        // constraint violation inside Postgres.
+        sqlx::query("SELECT pg_advisory_lock(7483920)")
+            .execute(pool)
+            .await
+            .context("Failed to acquire analytics init lock")?;
+
+        let result = Self::init_tables_inner(pool).await;
+
+        // Always release the advisory lock, even if init failed.
+        let _ = sqlx::query("SELECT pg_advisory_unlock(7483920)")
+            .execute(pool)
+            .await;
+
+        result
+    }
+
+    async fn init_tables_inner(pool: &PgPool) -> Result<()> {
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS search_analytics (
@@ -264,7 +284,7 @@ impl QueryAnalytics {
         .bind(result_count)
         .bind(execution_time_ms)
         .bind(user_id)
-        .bind(Utc::now().timestamp())
+        .bind(Utc::now())
         .fetch_one(&self.db_pool)
         .await
         .context("Failed to track search")?;
@@ -311,7 +331,7 @@ impl QueryAnalytics {
         .bind(execution_time_ms)
         .bind(user_id)
         .bind(filters_json)
-        .bind(Utc::now().timestamp())
+        .bind(Utc::now())
         .fetch_one(&self.db_pool)
         .await
         .context("Failed to track search with filters")?;
@@ -321,7 +341,7 @@ impl QueryAnalytics {
 
     /// Get popular queries
     pub async fn get_popular_queries(&self, limit: i64) -> Result<Vec<QueryPattern>> {
-        let patterns = sqlx::query_as::<_, (String, i64, f64, f64, i64, i64)>(
+        let patterns = sqlx::query_as::<_, (String, i64, f64, f64, DateTime<Utc>, DateTime<Utc>)>(
             r#"
             SELECT
                 query,
@@ -331,7 +351,7 @@ impl QueryAnalytics {
                 MIN(timestamp) as first_seen,
                 MAX(timestamp) as last_seen
             FROM search_analytics
-            WHERE timestamp > unixepoch('now', '-30 days')
+            WHERE timestamp > NOW() - INTERVAL '30 days'
             GROUP BY query
             ORDER BY count DESC
             LIMIT $1
@@ -361,8 +381,8 @@ impl QueryAnalytics {
                 count,
                 avg_execution_time_ms: avg_time,
                 avg_results,
-                first_seen: DateTime::from_timestamp(first_seen, 0).unwrap_or(Utc::now()),
-                last_seen: DateTime::from_timestamp(last_seen, 0).unwrap_or(Utc::now()),
+                first_seen,
+                last_seen,
                 search_types,
             });
         }
@@ -372,18 +392,19 @@ impl QueryAnalytics {
 
     /// Get trending queries (increasing in popularity)
     pub async fn get_trending_queries(&self, limit: i64) -> Result<Vec<QueryPattern>> {
-        let patterns = sqlx::query_as::<_, (String, i64, i64, f64, f64, i64, i64)>(
-            r#"
+        let patterns =
+            sqlx::query_as::<_, (String, i64, i64, f64, f64, DateTime<Utc>, DateTime<Utc>)>(
+                r#"
             WITH recent AS (
                 SELECT query, COUNT(*) as recent_count
                 FROM search_analytics
-                WHERE timestamp > unixepoch('now', '-7 days')
+                WHERE timestamp > NOW() - INTERVAL '7 days'
                 GROUP BY query
             ),
             older AS (
                 SELECT query, COUNT(*) as older_count
                 FROM search_analytics
-                WHERE timestamp BETWEEN unixepoch('now', '-14 days') AND unixepoch('now', '-7 days')
+                WHERE timestamp BETWEEN NOW() - INTERVAL '14 days' AND NOW() - INTERVAL '7 days'
                 GROUP BY query
             )
             SELECT
@@ -397,17 +418,17 @@ impl QueryAnalytics {
             FROM search_analytics sa
             LEFT JOIN recent ON sa.query = recent.query
             LEFT JOIN older ON sa.query = older.query
-            WHERE sa.timestamp > unixepoch('now', '-30 days')
+            WHERE sa.timestamp > NOW() - INTERVAL '30 days'
             GROUP BY sa.query
-            HAVING trend > 0
+            HAVING COALESCE(recent.recent_count, 0) - COALESCE(older.older_count, 0) > 0
             ORDER BY trend DESC
             LIMIT $1
             "#,
-        )
-        .bind(limit)
-        .fetch_all(&self.db_pool)
-        .await
-        .context("Failed to fetch trending queries")?;
+            )
+            .bind(limit)
+            .fetch_all(&self.db_pool)
+            .await
+            .context("Failed to fetch trending queries")?;
 
         let mut results = Vec::new();
         for (query, _total, _trend, avg_time, avg_results, first_seen, last_seen) in patterns {
@@ -427,8 +448,8 @@ impl QueryAnalytics {
                 count: _total,
                 avg_execution_time_ms: avg_time,
                 avg_results,
-                first_seen: DateTime::from_timestamp(first_seen, 0).unwrap_or(Utc::now()),
-                last_seen: DateTime::from_timestamp(last_seen, 0).unwrap_or(Utc::now()),
+                first_seen,
+                last_seen,
                 search_types,
             });
         }
@@ -545,8 +566,8 @@ impl QueryAnalytics {
 
     /// Get overall analytics statistics
     pub async fn get_stats(&self, days: i64) -> Result<AnalyticsStats> {
-        let start = (Utc::now() - Duration::days(days)).timestamp();
-        let end = Utc::now().timestamp();
+        let start = Utc::now() - Duration::days(days);
+        let end = Utc::now();
 
         let row = sqlx::query_as::<_, (i64, i64, i64, f64, f64)>(
             r#"
@@ -593,14 +614,14 @@ impl QueryAnalytics {
             avg_execution_time_ms: avg_time,
             avg_results_per_query: avg_results,
             search_type_distribution: distribution,
-            period_start: start,
-            period_end: end,
+            period_start: start.timestamp(),
+            period_end: end.timestamp(),
         })
     }
 
     /// Cleanup old analytics data
     pub async fn cleanup_old_data(&self) -> Result<u64> {
-        let cutoff = (Utc::now() - Duration::days(self.config.retention_days)).timestamp();
+        let cutoff = Utc::now() - Duration::days(self.config.retention_days);
 
         let result = sqlx::query(
             r#"
@@ -625,7 +646,7 @@ impl QueryAnalytics {
             loop {
                 interval.tick().await;
 
-                let cutoff = (Utc::now() - Duration::days(retention_days)).timestamp();
+                let cutoff = Utc::now() - Duration::days(retention_days);
                 let _ = sqlx::query(
                     r#"
                     DELETE FROM search_analytics
@@ -645,7 +666,7 @@ impl QueryAnalytics {
         start: DateTime<Utc>,
         end: DateTime<Utc>,
     ) -> Result<Vec<SearchAnalytics>> {
-        let records = sqlx::query_as::<_, (i64, String, String, i32, i64, Option<String>, Option<String>, String)>(
+        let records = sqlx::query_as::<_, (i64, String, String, i32, i64, Option<String>, Option<String>, DateTime<Utc>)>(
             r#"
             SELECT id, query, search_type, result_count, execution_time_ms, user_id, filters, timestamp
             FROM search_analytics
@@ -653,8 +674,8 @@ impl QueryAnalytics {
             ORDER BY timestamp
             "#,
         )
-        .bind(start.timestamp())
-        .bind(end.timestamp())
+        .bind(start)
+        .bind(end)
         .fetch_all(&self.db_pool)
         .await?;
 
@@ -678,7 +699,7 @@ impl QueryAnalytics {
                 execution_time_ms,
                 user_id,
                 filters,
-                timestamp: DateTime::parse_from_rfc3339(&timestamp)?.with_timezone(&Utc),
+                timestamp,
             });
         }
 
