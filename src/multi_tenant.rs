@@ -233,26 +233,42 @@ impl TenantManager {
         .await
         .context("Failed to create tenant_usage table")?;
 
-        // ALTER existing INTEGER columns to BIGINT in case the table was
-        // created by an older version of this code that used INTEGER (INT4).
-        // `CREATE TABLE IF NOT EXISTS` is a no-op on an existing table, so
-        // without these ALTERs a pre-existing table retains INT4 columns and
-        // the sqlx decoder would fail with "INT8 is not compatible with INT4".
-        for col in &[
-            "document_count",
-            "storage_mb",
-            "searches_today",
-            "api_key_count",
-            "webhook_count",
-        ] {
-            sqlx::query(&format!(
-                "ALTER TABLE tenant_usage ALTER COLUMN {} TYPE BIGINT",
-                col
-            ))
-            .execute(&self.db_pool)
-            .await
-            .context(format!("Failed to migrate tenant_usage.{} to BIGINT", col))?;
-        }
+        // Migrate any INTEGER (INT4) counter columns to BIGINT so they match
+        // the i64 Rust fields in TenantUsage.  We guard each ALTER with a
+        // check against information_schema so the statement is a no-op when
+        // the column is already BIGINT, making this safe to run on every
+        // startup regardless of whether the table is new or pre-existing.
+        sqlx::query(
+            r#"
+            DO $$
+            DECLARE
+                col TEXT;
+            BEGIN
+                FOREACH col IN ARRAY ARRAY[
+                    'document_count','storage_mb','searches_today',
+                    'api_key_count','webhook_count'
+                ]
+                LOOP
+                    IF EXISTS (
+                        SELECT 1
+                        FROM information_schema.columns
+                        WHERE table_name  = 'tenant_usage'
+                          AND column_name = col
+                          AND data_type   = 'integer'
+                    ) THEN
+                        EXECUTE format(
+                            'ALTER TABLE tenant_usage ALTER COLUMN %I TYPE BIGINT',
+                            col
+                        );
+                    END IF;
+                END LOOP;
+            END
+            $$
+            "#,
+        )
+        .execute(&self.db_pool)
+        .await
+        .context("Failed to migrate tenant_usage counter columns to BIGINT")?;
 
         // Daily usage history — BIGINT for consistency with TenantUsage fields
         sqlx::query(

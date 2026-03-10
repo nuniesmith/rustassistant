@@ -839,6 +839,12 @@ impl ChatReply {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    /// Env-var tests mutate the process-global environment.  Rust runs tests
+    /// in parallel threads, so two tests that call `set_var`/`remove_var` on
+    /// the same keys will race.  Serialise all such tests with this mutex.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn default_config() -> ProxyClientConfig {
         ProxyClientConfig {
@@ -858,6 +864,8 @@ mod tests {
 
     #[test]
     fn config_from_env_uses_defaults() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
         // Clear relevant env vars so we get defaults.
         std::env::remove_var("RA_BASE_URL");
         std::env::remove_var("RA_TIMEOUT_SECS");
@@ -873,6 +881,8 @@ mod tests {
 
     #[test]
     fn config_from_env_reads_overrides() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
         std::env::set_var("RA_BASE_URL", "http://oryx:3500");
         std::env::set_var("RA_TIMEOUT_SECS", "30");
         std::env::set_var("RA_MODEL", "remote");
@@ -884,7 +894,7 @@ mod tests {
         assert_eq!(cfg.ra_model, "remote");
         assert!(cfg.disable_ra);
 
-        // Clean up.
+        // Clean up — always runs because _guard is still in scope.
         std::env::remove_var("RA_BASE_URL");
         std::env::remove_var("RA_TIMEOUT_SECS");
         std::env::remove_var("RA_MODEL");
