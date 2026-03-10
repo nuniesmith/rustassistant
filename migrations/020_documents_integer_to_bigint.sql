@@ -9,168 +9,164 @@
 -- which sqlx rejects at runtime with:
 --   "mismatched types; Rust type i64 (INT8) is not compatible with SQL type INT4"
 --
--- All ALTER statements use USING col::BIGINT so the cast is explicit and safe.
--- The IF EXISTS guard on each column means the migration is fully idempotent —
--- running it on a database that already has BIGINT columns is a no-op.
+-- PostgreSQL refuses to ALTER a column type while views reference it, so we
+-- must DROP all dependent views first, run the ALTERs, then recreate the views
+-- verbatim from migration 006.
+--
+-- The ALTER statements use USING col::BIGINT for explicit, safe casting.
+-- scan_checkpoints columns are also promoted here because auto_scanner.rs
+-- decodes them as i64 but migration 010 defined them as INTEGER.
 
 -- ============================================================================
--- documents
+-- Step 1 — Drop all views that reference the columns we are altering.
+--           CASCADE drops anything that depends on these views too.
 -- ============================================================================
 
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name   = 'documents'
-          AND column_name  = 'word_count'
-          AND data_type    = 'integer'
-    ) THEN
-        ALTER TABLE documents
-            ALTER COLUMN word_count TYPE BIGINT USING word_count::BIGINT;
-    END IF;
-
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name   = 'documents'
-          AND column_name  = 'char_count'
-          AND data_type    = 'integer'
-    ) THEN
-        ALTER TABLE documents
-            ALTER COLUMN char_count TYPE BIGINT USING char_count::BIGINT;
-    END IF;
-END
-$$;
+DROP VIEW IF EXISTS document_repo_summary   CASCADE;
+DROP VIEW IF EXISTS recent_documents        CASCADE;
+DROP VIEW IF EXISTS unindexed_documents     CASCADE;
+DROP VIEW IF EXISTS indexed_documents       CASCADE;
+DROP VIEW IF EXISTS document_stats          CASCADE;
+DROP VIEW IF EXISTS documents_with_tags     CASCADE;
 
 -- ============================================================================
--- document_chunks
+-- Step 2 — Promote documents columns
 -- ============================================================================
 
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name   = 'document_chunks'
-          AND column_name  = 'chunk_index'
-          AND data_type    = 'integer'
-    ) THEN
-        ALTER TABLE document_chunks
-            ALTER COLUMN chunk_index TYPE BIGINT USING chunk_index::BIGINT;
-    END IF;
-
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name   = 'document_chunks'
-          AND column_name  = 'char_start'
-          AND data_type    = 'integer'
-    ) THEN
-        ALTER TABLE document_chunks
-            ALTER COLUMN char_start TYPE BIGINT USING char_start::BIGINT;
-    END IF;
-
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name   = 'document_chunks'
-          AND column_name  = 'char_end'
-          AND data_type    = 'integer'
-    ) THEN
-        ALTER TABLE document_chunks
-            ALTER COLUMN char_end TYPE BIGINT USING char_end::BIGINT;
-    END IF;
-
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name   = 'document_chunks'
-          AND column_name  = 'word_count'
-          AND data_type    = 'integer'
-    ) THEN
-        ALTER TABLE document_chunks
-            ALTER COLUMN word_count TYPE BIGINT USING word_count::BIGINT;
-    END IF;
-END
-$$;
+ALTER TABLE documents
+    ALTER COLUMN word_count TYPE BIGINT USING word_count::BIGINT,
+    ALTER COLUMN char_count TYPE BIGINT USING char_count::BIGINT;
 
 -- ============================================================================
--- document_embeddings
+-- Step 3 — Promote document_chunks columns
 -- ============================================================================
 
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name   = 'document_embeddings'
-          AND column_name  = 'dimension'
-          AND data_type    = 'integer'
-    ) THEN
-        ALTER TABLE document_embeddings
-            ALTER COLUMN dimension TYPE BIGINT USING dimension::BIGINT;
-    END IF;
-END
-$$;
+ALTER TABLE document_chunks
+    ALTER COLUMN chunk_index TYPE BIGINT USING chunk_index::BIGINT,
+    ALTER COLUMN char_start  TYPE BIGINT USING char_start::BIGINT,
+    ALTER COLUMN char_end    TYPE BIGINT USING char_end::BIGINT,
+    ALTER COLUMN word_count  TYPE BIGINT USING word_count::BIGINT;
 
 -- ============================================================================
--- scan_checkpoints  (created by auto_scanner.rs / migration 010)
+-- Step 4 — Promote document_embeddings columns
 -- ============================================================================
--- auto_scanner.rs decodes last_completed_index, files_analyzed, files_cached,
--- and total_files as i64, but migration 010 defined them as INTEGER (INT4).
 
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name   = 'scan_checkpoints'
-          AND column_name  = 'last_completed_index'
-          AND data_type    = 'integer'
-    ) THEN
-        ALTER TABLE scan_checkpoints
-            ALTER COLUMN last_completed_index TYPE BIGINT
-                USING last_completed_index::BIGINT;
-    END IF;
+ALTER TABLE document_embeddings
+    ALTER COLUMN dimension TYPE BIGINT USING dimension::BIGINT;
 
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name   = 'scan_checkpoints'
-          AND column_name  = 'files_analyzed'
-          AND data_type    = 'integer'
-    ) THEN
-        ALTER TABLE scan_checkpoints
-            ALTER COLUMN files_analyzed TYPE BIGINT
-                USING files_analyzed::BIGINT;
-    END IF;
+-- ============================================================================
+-- Step 5 — Promote scan_checkpoints columns
+-- ============================================================================
 
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name   = 'scan_checkpoints'
-          AND column_name  = 'files_cached'
-          AND data_type    = 'integer'
-    ) THEN
-        ALTER TABLE scan_checkpoints
-            ALTER COLUMN files_cached TYPE BIGINT
-                USING files_cached::BIGINT;
-    END IF;
+ALTER TABLE IF EXISTS scan_checkpoints
+    ALTER COLUMN last_completed_index TYPE BIGINT USING last_completed_index::BIGINT,
+    ALTER COLUMN files_analyzed       TYPE BIGINT USING files_analyzed::BIGINT,
+    ALTER COLUMN files_cached         TYPE BIGINT USING files_cached::BIGINT,
+    ALTER COLUMN total_files          TYPE BIGINT USING total_files::BIGINT;
 
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name   = 'scan_checkpoints'
-          AND column_name  = 'total_files'
-          AND data_type    = 'integer'
-    ) THEN
-        ALTER TABLE scan_checkpoints
-            ALTER COLUMN total_files TYPE BIGINT
-                USING total_files::BIGINT;
-    END IF;
-END
-$$;
+-- ============================================================================
+-- Step 6 — Recreate views verbatim from migration 006_documents.sql
+-- ============================================================================
+
+CREATE OR REPLACE VIEW documents_with_tags AS
+SELECT
+    d.id,
+    d.title,
+    d.content,
+    d.content_type,
+    d.source_type,
+    d.source_url,
+    d.doc_type,
+    d.repo_id,
+    d.word_count,
+    d.char_count,
+    d.created_at,
+    d.updated_at,
+    d.indexed_at,
+    STRING_AGG(DISTINCT dt.tag, ',' ORDER BY dt.tag) AS tag_list,
+    COUNT(DISTINCT dc.id)                            AS chunk_count,
+    COUNT(DISTINCT de.id)                            AS embedding_count
+FROM documents d
+LEFT JOIN document_tags       dt ON d.id = dt.document_id
+LEFT JOIN document_chunks     dc ON d.id = dc.document_id
+LEFT JOIN document_embeddings de ON dc.id = de.chunk_id
+GROUP BY d.id;
+
+CREATE OR REPLACE VIEW document_stats AS
+SELECT
+    doc_type,
+    COUNT(*)        AS count,
+    SUM(word_count) AS total_words,
+    AVG(word_count) AS avg_words,
+    MAX(word_count) AS max_words,
+    MIN(word_count) AS min_words
+FROM documents
+GROUP BY doc_type;
+
+CREATE OR REPLACE VIEW indexed_documents AS
+SELECT
+    d.id,
+    d.title,
+    d.doc_type,
+    d.word_count,
+    COUNT(DISTINCT dc.id) AS chunk_count,
+    COUNT(DISTINCT de.id) AS embedding_count,
+    d.updated_at,
+    d.indexed_at,
+    CASE
+        WHEN d.indexed_at IS NULL          THEN 'not_indexed'
+        WHEN d.updated_at > d.indexed_at   THEN 'needs_reindex'
+        ELSE 'indexed'
+    END AS index_status,
+    TO_CHAR(TO_TIMESTAMP(d.updated_at), 'YYYY-MM-DD HH24:MI:SS') AS updated_time,
+    TO_CHAR(TO_TIMESTAMP(d.indexed_at), 'YYYY-MM-DD HH24:MI:SS') AS indexed_time
+FROM documents d
+LEFT JOIN document_chunks     dc ON d.id = dc.document_id
+LEFT JOIN document_embeddings de ON dc.id = de.chunk_id
+GROUP BY d.id;
+
+CREATE OR REPLACE VIEW unindexed_documents AS
+SELECT
+    id,
+    title,
+    doc_type,
+    word_count,
+    updated_at,
+    indexed_at
+FROM documents
+WHERE indexed_at IS NULL OR updated_at > indexed_at
+ORDER BY updated_at DESC;
+
+CREATE OR REPLACE VIEW recent_documents AS
+SELECT
+    d.id,
+    d.title,
+    d.doc_type,
+    d.word_count,
+    d.created_at,
+    d.updated_at,
+    STRING_AGG(DISTINCT dt.tag, ',' ORDER BY dt.tag) AS tags,
+    CASE
+        WHEN d.created_at = d.updated_at THEN 'created'
+        ELSE 'updated'
+    END AS activity_type,
+    TO_CHAR(TO_TIMESTAMP(d.updated_at), 'YYYY-MM-DD HH24:MI:SS') AS activity_time
+FROM documents d
+LEFT JOIN document_tags dt ON d.id = dt.document_id
+GROUP BY d.id
+ORDER BY d.updated_at DESC
+LIMIT 50;
+
+CREATE OR REPLACE VIEW document_repo_summary AS
+SELECT
+    r.id                AS repo_id,
+    r.name              AS repo_name,
+    COUNT(d.id)         AS document_count,
+    SUM(d.word_count)   AS total_words,
+    MAX(d.updated_at)   AS last_updated
+FROM repositories r
+LEFT JOIN documents d ON r.id = d.repo_id
+GROUP BY r.id, r.name;
 
 -- ============================================================================
 -- Migration complete
