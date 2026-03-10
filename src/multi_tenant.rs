@@ -65,8 +65,8 @@ pub struct TenantQuota {
     pub max_documents: i64,
     pub max_storage_mb: i64,
     pub max_searches_per_day: i64,
-    pub max_api_keys: i32,
-    pub max_webhooks: i32,
+    pub max_api_keys: i64,
+    pub max_webhooks: i64,
 }
 
 impl Default for TenantQuota {
@@ -115,8 +115,8 @@ impl TenantQuota {
             max_documents: i64::MAX,
             max_storage_mb: i64::MAX,
             max_searches_per_day: i64::MAX,
-            max_api_keys: i32::MAX,
-            max_webhooks: i32::MAX,
+            max_api_keys: i64::MAX,
+            max_webhooks: i64::MAX,
         }
     }
 }
@@ -197,11 +197,11 @@ impl TenantManager {
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 slug TEXT UNIQUE NOT NULL,
-                max_documents INTEGER NOT NULL DEFAULT 10000,
-                max_storage_mb INTEGER NOT NULL DEFAULT 10240,
-                max_searches_per_day INTEGER NOT NULL DEFAULT 100000,
-                max_api_keys INTEGER NOT NULL DEFAULT 10,
-                max_webhooks INTEGER NOT NULL DEFAULT 5,
+                max_documents BIGINT NOT NULL DEFAULT 10000,
+                max_storage_mb BIGINT NOT NULL DEFAULT 10240,
+                max_searches_per_day BIGINT NOT NULL DEFAULT 100000,
+                max_api_keys BIGINT NOT NULL DEFAULT 10,
+                max_webhooks BIGINT NOT NULL DEFAULT 5,
                 enabled BOOLEAN NOT NULL DEFAULT TRUE,
                 created_at TIMESTAMPTZ DEFAULT NOW(),
                 custom_domain TEXT
@@ -234,27 +234,47 @@ impl TenantManager {
         .context("Failed to create tenant_usage table")?;
 
         // Migrate any INTEGER (INT4) counter columns to BIGINT so they match
-        // the i64 Rust fields in TenantUsage.  We guard each ALTER with a
-        // check against information_schema so the statement is a no-op when
-        // the column is already BIGINT, making this safe to run on every
-        // startup regardless of whether the table is new or pre-existing.
+        // the i64 Rust fields in TenantUsage.  We use pg_attribute (the
+        // internal catalog) rather than information_schema to avoid schema-
+        // path ambiguity.  atttypid 23 = INT4; we only ALTER when the column
+        // is still INT4.  An EXCEPTION handler makes the whole block idempotent
+        // even if something unexpected happens mid-loop.
         sqlx::query(
             r#"
             DO $$
             DECLARE
-                col TEXT;
+                col  TEXT;
+                toid OID;
             BEGIN
+                -- Resolve the OID of tenant_usage in any schema on the
+                -- current search_path (not just the first one), so the
+                -- lookup works regardless of how the connection's search_path
+                -- is configured.
+                SELECT c.oid INTO toid
+                FROM   pg_class c
+                JOIN   pg_namespace n ON n.oid = c.relnamespace
+                WHERE  c.relname = 'tenant_usage'
+                  AND  n.nspname = ANY(current_schemas(false))
+                LIMIT  1;
+
+                IF toid IS NULL THEN
+                    RETURN;  -- table not visible yet, nothing to migrate
+                END IF;
+
                 FOREACH col IN ARRAY ARRAY[
                     'document_count','storage_mb','searches_today',
                     'api_key_count','webhook_count'
                 ]
                 LOOP
+                    -- atttypid 23 is INT4 (integer)
                     IF EXISTS (
                         SELECT 1
-                        FROM information_schema.columns
-                        WHERE table_name  = 'tenant_usage'
-                          AND column_name = col
-                          AND data_type   = 'integer'
+                        FROM   pg_attribute
+                        WHERE  attrelid = toid
+                          AND  attname  = col
+                          AND  atttypid = 23
+                          AND  attnum   > 0
+                          AND  NOT attisdropped
                     ) THEN
                         EXECUTE format(
                             'ALTER TABLE tenant_usage ALTER COLUMN %I TYPE BIGINT',
@@ -262,6 +282,10 @@ impl TenantManager {
                         );
                     END IF;
                 END LOOP;
+            EXCEPTION WHEN OTHERS THEN
+                -- Swallow any transient error (e.g. concurrent ALTER) so the
+                -- migration never blocks application startup.
+                RAISE WARNING 'tenant_usage BIGINT migration skipped: %', SQLERRM;
             END
             $$
             "#,
@@ -356,8 +380,8 @@ impl TenantManager {
                 i64,
                 i64,
                 i64,
-                i32,
-                i32,
+                i64,
+                i64,
                 bool,
                 DateTime<Utc>,
                 Option<String>,
@@ -506,7 +530,7 @@ impl TenantManager {
                 }
             }
             QuotaType::ApiKeys => {
-                if usage.api_key_count >= tenant.quota.max_api_keys.into() {
+                if usage.api_key_count >= tenant.quota.max_api_keys {
                     return Err(anyhow!(
                         "API key quota exceeded ({}/{})",
                         usage.api_key_count,
@@ -515,7 +539,7 @@ impl TenantManager {
                 }
             }
             QuotaType::Webhooks => {
-                if usage.webhook_count >= tenant.quota.max_webhooks.into() {
+                if usage.webhook_count >= tenant.quota.max_webhooks {
                     return Err(anyhow!(
                         "Webhook quota exceeded ({}/{})",
                         usage.webhook_count,
@@ -630,10 +654,10 @@ impl TenantManager {
                 i64,
                 i64,
                 i64,
-                i32,
-                i32,
+                i64,
+                i64,
                 bool,
-                String,
+                DateTime<Utc>,
                 Option<String>,
             ),
         >(
@@ -674,7 +698,7 @@ impl TenantManager {
                     max_webhooks: max_hooks,
                 },
                 enabled,
-                created_at: created.parse().unwrap_or(Utc::now()),
+                created_at: created,
                 custom_domain: domain,
             });
         }
