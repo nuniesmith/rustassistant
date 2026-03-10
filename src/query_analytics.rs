@@ -755,28 +755,53 @@ mod tests {
 
         let analytics = QueryAnalytics::new(config).await.unwrap();
 
-        // Track multiple searches
+        // Use unique query strings per test run so that rows inserted by
+        // other parallel tests (e.g. test_track_search) don't inflate our
+        // counts or push our expected top entry off the leaderboard.
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .subsec_nanos();
+        let top_query = format!("rust async unique {}", nanos);
+        let other_query = format!("python flask unique {}", nanos);
+
         analytics
-            .track_search("rust async", "semantic", 10, 45, Some("user-1"))
+            .track_search(&top_query, "semantic", 10, 45, Some("user-1"))
             .await
             .unwrap();
         analytics
-            .track_search("rust async", "semantic", 12, 50, Some("user-2"))
+            .track_search(&top_query, "semantic", 12, 50, Some("user-2"))
             .await
             .unwrap();
         analytics
-            .track_search("python flask", "keyword", 8, 30, Some("user-1"))
+            .track_search(&other_query, "keyword", 8, 30, Some("user-1"))
             .await
             .unwrap();
 
         let popular = analytics.get_popular_queries(10).await.unwrap();
         assert!(!popular.is_empty());
-        assert_eq!(popular[0].query, "rust async");
-        assert_eq!(popular[0].count, 2);
+
+        // Find our top_query entry — it must exist and have count >= 2.
+        let entry = popular
+            .iter()
+            .find(|p| p.query == top_query)
+            .expect("top unique query should appear in popular queries");
+        assert!(
+            entry.count >= 2,
+            "expected count >= 2 for '{}', got {}",
+            top_query,
+            entry.count
+        );
+
+        // other_query should appear too, with count >= 1.
+        let other = popular.iter().find(|p| p.query == other_query);
+        assert!(other.is_some(), "secondary unique query should also appear");
     }
 
     #[tokio::test]
     async fn test_analytics_stats() {
+        use std::time::{SystemTime, UNIX_EPOCH};
         let pool = setup_test_db().await;
         let config = AnalyticsConfig {
             enabled: true,
@@ -786,14 +811,41 @@ mod tests {
 
         let analytics = QueryAnalytics::new(config).await.unwrap();
 
+        // Use a unique user_id so we can verify this test's row was inserted
+        // even when other parallel tests have also written to search_analytics.
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .subsec_nanos();
+        let unique_user = format!("stats-test-user-{}", nanos);
+
         analytics
-            .track_search("test query", "semantic", 5, 40, Some("user-1"))
+            .track_search("test query", "semantic", 5, 40, Some(&unique_user))
             .await
             .unwrap();
 
+        // get_stats counts ALL rows in the window, so other parallel tests may
+        // have added rows too — use >= 1 for global counters.
         let stats = analytics.get_stats(30).await.unwrap();
-        assert_eq!(stats.total_searches, 1);
-        assert_eq!(stats.unique_queries, 1);
-        assert_eq!(stats.unique_users, 1);
+        assert!(
+            stats.total_searches >= 1,
+            "expected at least 1 total search, got {}",
+            stats.total_searches
+        );
+        assert!(
+            stats.unique_queries >= 1,
+            "expected at least 1 unique query, got {}",
+            stats.unique_queries
+        );
+
+        // Confirm our specific unique user appears in the per-user behaviour,
+        // which gives an exact row count for just this test's inserts.
+        let behavior = analytics
+            .get_user_behavior(&unique_user)
+            .await
+            .unwrap()
+            .expect("user behaviour should exist after tracking");
+        assert_eq!(behavior.total_searches, 1);
+        assert_eq!(behavior.unique_queries, 1);
     }
 }

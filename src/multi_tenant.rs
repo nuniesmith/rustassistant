@@ -233,6 +233,27 @@ impl TenantManager {
         .await
         .context("Failed to create tenant_usage table")?;
 
+        // ALTER existing INTEGER columns to BIGINT in case the table was
+        // created by an older version of this code that used INTEGER (INT4).
+        // `CREATE TABLE IF NOT EXISTS` is a no-op on an existing table, so
+        // without these ALTERs a pre-existing table retains INT4 columns and
+        // the sqlx decoder would fail with "INT8 is not compatible with INT4".
+        for col in &[
+            "document_count",
+            "storage_mb",
+            "searches_today",
+            "api_key_count",
+            "webhook_count",
+        ] {
+            sqlx::query(&format!(
+                "ALTER TABLE tenant_usage ALTER COLUMN {} TYPE BIGINT",
+                col
+            ))
+            .execute(&self.db_pool)
+            .await
+            .context(format!("Failed to migrate tenant_usage.{} to BIGINT", col))?;
+        }
+
         // Daily usage history — BIGINT for consistency with TenantUsage fields
         sqlx::query(
             r#"
