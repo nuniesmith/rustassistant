@@ -50,16 +50,36 @@ async fn setup_test_env() -> (PgPool, String) {
     (pool, api_key)
 }
 
-/// Create test server and return its base URL
+/// Create test server with a permissive rate limit (1 000 req / 60 s).
+///
+/// Most tests only make a handful of requests; this limit is high enough that
+/// normal test traffic never triggers a 429.  Tests that specifically need to
+/// exercise rate-limiting should call `create_test_server_strict` instead.
 async fn create_test_server(pool: PgPool, api_key: String) -> String {
+    create_test_server_with_rate_limit(pool, api_key, 1000, 60).await
+}
+
+/// Create test server with a tight rate limit (20 req / 60 s) for use by
+/// `test_rate_limiting` only.
+async fn create_test_server_strict(pool: PgPool, api_key: String) -> String {
+    create_test_server_with_rate_limit(pool, api_key, 20, 60).await
+}
+
+/// Internal helper — spins up an Axum server with the given rate-limit
+/// parameters and returns its base URL.
+async fn create_test_server_with_rate_limit(
+    pool: PgPool,
+    api_key: String,
+    max_requests: u32,
+    window_seconds: u64,
+) -> String {
     use std::net::TcpListener;
     use tokio::net::TcpListener as TokioTcpListener;
 
-    // Use strict rate limit (20 req/min) so 150 rapid requests will be throttled.
     // allow_anonymous_read so unauthenticated GETs to /health etc. return 200.
     let config = ApiConfig::development()
         .with_api_key(api_key)
-        .with_rate_limit(20, 60)
+        .with_rate_limit(max_requests, window_seconds)
         .allow_anonymous_read();
     let api_router = config.build_router(pool).await;
 
@@ -431,7 +451,8 @@ async fn test_auth_anonymous_read() {
 #[tokio::test]
 async fn test_rate_limiting() {
     let (pool, api_key) = setup_test_env().await;
-    let base_url = create_test_server(pool, api_key.clone()).await;
+    // Use a tight rate-limit server so 150 rapid requests will be throttled.
+    let base_url = create_test_server_strict(pool, api_key.clone()).await;
 
     let client = reqwest::Client::new();
 
