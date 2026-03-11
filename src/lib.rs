@@ -92,6 +92,7 @@ pub mod types;
 pub mod vector_index;
 pub mod web_api;
 pub mod web_ui;
+pub mod web_ui_api_keys;
 pub mod web_ui_audit;
 pub mod web_ui_cache_viewer;
 pub mod web_ui_chat;

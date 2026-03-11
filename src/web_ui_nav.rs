@@ -111,11 +111,18 @@ const NAV_GROUPS: &[NavGroup] = &[
     },
     NavGroup {
         label: "System",
-        items: &[NavItem {
-            label: "Settings",
-            href: "/settings",
-            icon: "⚙️",
-        }],
+        items: &[
+            NavItem {
+                label: "API Keys",
+                href: "/api-keys",
+                icon: "🔑",
+            },
+            NavItem {
+                label: "Settings",
+                href: "/settings",
+                icon: "⚙️",
+            },
+        ],
     },
 ];
 

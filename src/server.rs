@@ -17,6 +17,7 @@ use crate::research::worker::refresh_rag_index;
 use crate::scanner::github::sync_repos_to_db;
 use crate::sync_scheduler::{SyncScheduler, SyncSchedulerConfig};
 use crate::web_api::{web_api_router, WebState};
+use crate::web_ui_api_keys::{create_api_keys_router, ApiKeysState};
 use crate::web_ui_audit::{create_audit_router, AuditWebState};
 // Neuromorphic mapper removed - feature not currently implemented
 
@@ -281,7 +282,7 @@ pub async fn run_server(config: Config) -> Result<()> {
         .route("/api/github/prs", get(github_prs))
         .route("/api/github/search", get(github_search))
         .route("/api/github/sync", post(github_sync))
-        .with_state(state)
+        .with_state(state.clone())
         // New audit pipeline (AuditState) — replaces the legacy /api/audit routes
         .merge(audit_router(audit_state))
         // GitHub push-event webhook → repo sync trigger
@@ -297,6 +298,10 @@ pub async fn run_server(config: Config) -> Result<()> {
         .nest("/api/v1", repo_router(repo_app_state.clone()))
         // OpenAI-compatible proxy at /v1  (for external apps e.g. futures trading bot)
         .nest("/v1", proxy_router(ProxyState::new(repo_app_state)))
+        // API key management WebUI at /api-keys
+        .merge(create_api_keys_router(Arc::new(ApiKeysState::new(
+            state.db_pool.clone(),
+        ))))
         // Serve static files (dashboard HTML/CSS/JS) at /static and /
         .nest_service("/static", serve_static.clone())
         .fallback_service(serve_static)
@@ -312,6 +317,11 @@ pub async fn run_server(config: Config) -> Result<()> {
     info!(
         "OpenAI-compatible proxy http://{}/v1/chat/completions",
         socket_addr
+    );
+    info!("API key management      http://{}/api-keys", socket_addr);
+    info!(
+        "Tailscale proxy URL     http://100.113.72.63:{}/v1",
+        config.server.port
     );
     info!("Security: Restrictive CORS enabled, Git URL whitelist active");
 
@@ -341,6 +351,8 @@ fn build_cors_layer() -> CorsLayer {
                 "http://localhost:8080".to_string(),
                 "http://127.0.0.1:3000".to_string(),
                 "http://127.0.0.1:8080".to_string(),
+                // Tailscale IP — allows Zed and other local-network clients on oryx
+                "http://100.113.72.63:8080".to_string(),
             ]
         });
 

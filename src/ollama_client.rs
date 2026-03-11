@@ -21,6 +21,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
 // ---------------------------------------------------------------------------
@@ -43,6 +44,21 @@ struct OllamaChatRequest {
     messages: Vec<OllamaMessage>,
     stream: bool,
     options: OllamaOptions,
+}
+
+/// A single chunk from Ollama's streaming `/api/chat` NDJSON response.
+#[derive(Debug, Deserialize)]
+struct OllamaStreamChunk {
+    message: Option<OllamaMessage>,
+    /// `true` on the final chunk (contains token counts, no new content).
+    #[serde(default)]
+    done: bool,
+    /// Tokens in the generated response — present only on the final chunk.
+    #[serde(default)]
+    eval_count: Option<u32>,
+    /// Tokens in the prompt — present only on the final chunk.
+    #[serde(default)]
+    prompt_eval_count: Option<u32>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -90,6 +106,23 @@ pub struct OllamaCompletionResponse {
     pub used_fallback: bool,
     pub prompt_tokens: Option<u32>,
     pub completion_tokens: Option<u32>,
+}
+
+/// A token/text delta sent through the streaming channel.
+#[derive(Debug, Clone)]
+pub enum StreamChunk {
+    /// A text delta to forward to the client.
+    Delta(String),
+    /// The stream has finished; carries final token counts (may be `None`
+    /// when served from a Grok fallback that doesn't report them).
+    Done {
+        model_used: String,
+        used_fallback: bool,
+        prompt_tokens: Option<u32>,
+        completion_tokens: Option<u32>,
+    },
+    /// A fatal error terminated the stream.
+    Error(String),
 }
 
 // ---------------------------------------------------------------------------
@@ -168,6 +201,224 @@ impl OllamaClient {
     // -----------------------------------------------------------------------
     // Public API
     // -----------------------------------------------------------------------
+
+    /// Send a streaming completion request.
+    ///
+    /// Returns a `tokio::sync::mpsc::Receiver` that yields [`StreamChunk`]
+    /// values as the model generates tokens.  The final message is always
+    /// `StreamChunk::Done` (on success) or `StreamChunk::Error` (on failure).
+    ///
+    /// Falls back to the blocking [`complete`] path (then re-emits the full
+    /// response as a single delta) when Ollama streaming fails or a Grok
+    /// fallback is active.
+    pub async fn complete_streaming(
+        &self,
+        system_prompt: Option<&str>,
+        user_prompt: &str,
+        temperature: f32,
+        max_tokens: u32,
+    ) -> mpsc::Receiver<StreamChunk> {
+        self.complete_streaming_with_ctx(system_prompt, user_prompt, temperature, max_tokens, 16384)
+            .await
+    }
+
+    /// Like [`complete_streaming`] but with an explicit context-window size.
+    pub async fn complete_streaming_with_ctx(
+        &self,
+        system_prompt: Option<&str>,
+        user_prompt: &str,
+        temperature: f32,
+        max_tokens: u32,
+        num_ctx: u32,
+    ) -> mpsc::Receiver<StreamChunk> {
+        // Channel with a generous buffer so a slow reader doesn't stall Ollama.
+        let (tx, rx) = mpsc::channel::<StreamChunk>(256);
+
+        let url = format!("{}/api/chat", self.config.base_url);
+        let model = self.config.model.clone();
+
+        // Build the message list.
+        let mut messages: Vec<OllamaMessage> = Vec::new();
+        if let Some(sys) = system_prompt {
+            messages.push(OllamaMessage {
+                role: "system".to_string(),
+                content: sys.to_string(),
+            });
+        }
+        messages.push(OllamaMessage {
+            role: "user".to_string(),
+            content: user_prompt.to_string(),
+        });
+
+        let request = OllamaChatRequest {
+            model: model.clone(),
+            messages,
+            stream: true, // request NDJSON streaming
+            options: OllamaOptions {
+                temperature,
+                num_predict: max_tokens,
+                num_ctx,
+            },
+        };
+
+        let http = self.http.clone();
+        let fallback = self.fallback.clone();
+        let system_owned = system_prompt.map(str::to_owned);
+        let user_owned = user_prompt.to_owned();
+
+        tokio::spawn(async move {
+            // ── Try Ollama streaming ─────────────────────────────────────────
+            let http_result = http.post(&url).json(&request).send().await;
+
+            match http_result {
+                Err(e) => {
+                    warn!(error = %e, "Ollama stream: connection failed");
+                    // Try Grok fallback (non-streaming, then emit as one delta).
+                    Self::streaming_grok_fallback(
+                        fallback.as_deref(),
+                        system_owned.as_deref(),
+                        &user_owned,
+                        &model,
+                        tx,
+                    )
+                    .await;
+                }
+                Ok(resp) if !resp.status().is_success() => {
+                    let status = resp.status();
+                    let body = resp.text().await.unwrap_or_default();
+                    warn!(status = %status, body = %body, "Ollama stream: non-success status");
+                    Self::streaming_grok_fallback(
+                        fallback.as_deref(),
+                        system_owned.as_deref(),
+                        &user_owned,
+                        &model,
+                        tx,
+                    )
+                    .await;
+                }
+                Ok(mut resp) => {
+                    // Consume the NDJSON response chunk by chunk.
+                    // Each HTTP chunk may contain one or more newline-delimited
+                    // JSON objects; we buffer across chunks to handle splits.
+                    let mut buf = String::new();
+                    let mut prompt_tokens: Option<u32> = None;
+                    let mut completion_tokens: Option<u32> = None;
+
+                    'outer: loop {
+                        match resp.chunk().await {
+                            Err(e) => {
+                                warn!(error = %e, "Ollama stream: chunk read error");
+                                let _ = tx.send(StreamChunk::Error(e.to_string())).await;
+                                return;
+                            }
+                            Ok(None) => {
+                                // HTTP body fully consumed without a `done: true`
+                                // chunk — treat as a normal end.
+                                break 'outer;
+                            }
+                            Ok(Some(bytes)) => {
+                                buf.push_str(&String::from_utf8_lossy(&bytes));
+
+                                // Ollama sends one JSON object per line.
+                                while let Some(newline_pos) = buf.find('\n') {
+                                    let line: String = buf.drain(..=newline_pos).collect();
+                                    let line = line.trim();
+                                    if line.is_empty() {
+                                        continue;
+                                    }
+
+                                    match serde_json::from_str::<OllamaStreamChunk>(line) {
+                                        Err(e) => {
+                                            warn!(
+                                                error = %e,
+                                                raw = %line,
+                                                "Ollama stream: failed to parse chunk"
+                                            );
+                                        }
+                                        Ok(chunk) => {
+                                            if chunk.done {
+                                                prompt_tokens = chunk.prompt_eval_count;
+                                                completion_tokens = chunk.eval_count;
+                                                break 'outer;
+                                            }
+                                            if let Some(msg) = chunk.message {
+                                                if !msg.content.is_empty() {
+                                                    if tx
+                                                        .send(StreamChunk::Delta(msg.content))
+                                                        .await
+                                                        .is_err()
+                                                    {
+                                                        // Receiver dropped — client disconnected.
+                                                        return;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    let _ = tx
+                        .send(StreamChunk::Done {
+                            model_used: model.clone(),
+                            used_fallback: false,
+                            prompt_tokens,
+                            completion_tokens,
+                        })
+                        .await;
+                }
+            }
+        });
+
+        rx
+    }
+
+    /// Emit the entire Grok (or error) response as a single `Delta` followed
+    /// by `Done`.  Used when Ollama is unreachable during a streaming call.
+    async fn streaming_grok_fallback(
+        fallback: Option<&crate::grok_client::GrokClient>,
+        system_prompt: Option<&str>,
+        user_prompt: &str,
+        ollama_model: &str,
+        tx: mpsc::Sender<StreamChunk>,
+    ) {
+        match fallback {
+            None => {
+                let _ = tx
+                    .send(StreamChunk::Error(
+                        "Ollama unavailable and no Grok fallback configured.".to_string(),
+                    ))
+                    .await;
+            }
+            Some(grok) => {
+                let prompt = match system_prompt {
+                    Some(sys) => format!("{}\n\n{}", sys, user_prompt),
+                    None => user_prompt.to_owned(),
+                };
+                match grok
+                    .ask_tracked(&prompt, None, "ollama_stream_fallback")
+                    .await
+                {
+                    Err(e) => {
+                        let _ = tx.send(StreamChunk::Error(e.to_string())).await;
+                    }
+                    Ok(resp) => {
+                        let _ = tx.send(StreamChunk::Delta(resp.content)).await;
+                        let _ = tx
+                            .send(StreamChunk::Done {
+                                model_used: format!("grok-fallback/{}", ollama_model),
+                                used_fallback: true,
+                                prompt_tokens: Some(resp.prompt_tokens as u32),
+                                completion_tokens: Some(resp.completion_tokens as u32),
+                            })
+                            .await;
+                    }
+                }
+            }
+        }
+    }
 
     /// Send a completion request.
     ///

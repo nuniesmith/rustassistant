@@ -1,8 +1,8 @@
 //! OpenAI-compatible `/v1/chat/completions` proxy endpoint.
 //!
 //! This module lets any OpenAI-SDK-compatible client (Python `openai`, JS `openai`,
-//! Rust `async-openai`, curl, the futures trading app, etc.) point its `base_url` at
-//! RustAssistant and get responses routed through:
+//! Rust `async-openai`, curl, the futures trading app, Zed IDE, etc.) point its
+//! `base_url` at RustAssistant and get responses routed through:
 //!
 //!   request → API-key auth → rate-limit → model routing (local/remote)
 //!           → RAG context injection → repo context injection
@@ -24,7 +24,7 @@
 //!   ],
 //!   "temperature": 0.2,          // optional, default 0.2
 //!   "max_tokens":  2048,         // optional
-//!   "stream":      false,        // streaming not yet supported — always false
+//!   "stream":      true,         // SSE streaming supported (set false for JSON)
 //!
 //!   // RustAssistant extensions (all optional, ignored by stock OpenAI clients)
 //!   "x_repo_id":    "futures-bot",  // inject registered-repo RAG context
@@ -32,6 +32,29 @@
 //!   "x_force_remote": false         // skip local model regardless of task kind
 //! }
 //! ```
+//!
+//! # Streaming response  (`stream: true`)
+//!
+//! When `stream` is `true` the endpoint returns `Content-Type: text/event-stream`
+//! (SSE).  Each event carries a JSON delta in the standard OpenAI chunk shape:
+//!
+//! ```text
+//! data: {"id":"chatcmpl-ra-…","object":"chat.completion.chunk","created":…,
+//!        "model":"qwen2.5-coder:7b","choices":[{"index":0,"delta":{"role":"assistant","content":"Hello"},"finish_reason":null}]}
+//!
+//! data: {"id":"…","object":"chat.completion.chunk","created":…,"model":"…",
+//!        "choices":[{"index":0,"delta":{"content":" world"},"finish_reason":null}]}
+//!
+//! data: {"id":"…","object":"chat.completion.chunk","created":…,"model":"…",
+//!        "choices":[{"index":0,"delta":{},"finish_reason":"stop"}],
+//!        "usage":{"prompt_tokens":42,"completion_tokens":7,"total_tokens":49}}
+//!
+//! data: [DONE]
+//! ```
+//!
+//! # Non-streaming response  (`stream: false`, default)
+//!
+//! Returns `Content-Type: application/json`.
 //!
 //! # Response  (OpenAI `ChatCompletion` shape)
 //!
@@ -91,17 +114,23 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
+    response::{
+        sse::{Event, KeepAlive, Sse},
+        IntoResponse, Response,
+    },
     routing::post,
     Json, Router,
 };
+use futures::stream::{self, StreamExt};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::api::repos::RepoAppState;
 use crate::model_router::{CompletionRequest, ModelTarget, TaskKind};
+use crate::ollama_client::StreamChunk;
 use crate::research::worker::{enhance_prompt_with_rag, search_rag_context};
 
 // ---------------------------------------------------------------------------
@@ -204,7 +233,7 @@ fn default_temperature() -> f32 {
     0.2
 }
 
-/// OpenAI `ChatCompletion` response.
+/// OpenAI `ChatCompletion` response (non-streaming).
 #[derive(Debug, Serialize)]
 pub struct OaiChatResponse {
     pub id: String,
@@ -222,6 +251,41 @@ pub struct OaiChoice {
     pub index: u32,
     pub message: OaiMessage,
     pub finish_reason: String,
+}
+
+// ---------------------------------------------------------------------------
+// SSE / streaming shapes  (OpenAI `chat.completion.chunk`)
+// ---------------------------------------------------------------------------
+
+/// A single SSE data frame for streaming responses.
+#[derive(Debug, Serialize)]
+struct OaiChunkResponse {
+    id: String,
+    object: &'static str,
+    created: u64,
+    model: String,
+    choices: Vec<OaiChunkChoice>,
+    /// Only present on the final chunk (finish_reason = "stop").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    usage: Option<OaiUsage>,
+}
+
+#[derive(Debug, Serialize)]
+struct OaiChunkChoice {
+    index: u32,
+    delta: OaiDelta,
+    finish_reason: Option<String>,
+}
+
+/// The delta payload inside a streaming chunk.
+#[derive(Debug, Serialize)]
+struct OaiDelta {
+    /// Only set on the very first chunk to establish the role.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    role: Option<String>,
+    /// The incremental text content (empty string on the final chunk).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -341,12 +405,6 @@ async fn handle_chat_completions(
     if req.messages.is_empty() {
         return OaiError::bad_request("messages array must not be empty").into_response();
     }
-    if req.stream {
-        return OaiError::bad_request(
-            "Streaming is not yet supported by RustAssistant proxy. Set stream=false.",
-        )
-        .into_response();
-    }
 
     // ── 3. Extract the effective user prompt for routing/RAG ─────────────────
     // We use the last user message as the "active" prompt for classification
@@ -359,11 +417,11 @@ async fn handle_chat_completions(
         .map(|m| m.content.as_str())
         .unwrap_or("");
 
-    let system_prompt: Option<&str> = req
+    let system_prompt: Option<String> = req
         .messages
         .iter()
         .find(|m| m.role == "system")
-        .map(|m| m.content.as_str());
+        .map(|m| m.content.clone());
 
     // ── 4. Model routing ──────────────────────────────────────────────────────
     let (task_kind, mut target) =
@@ -401,6 +459,22 @@ async fn handle_chat_completions(
     // ── 8. Cache key & lookup ─────────────────────────────────────────────────
     let cache_key = build_proxy_cache_key(&target, &full_prompt, req.x_repo_id.as_deref());
 
+    // ── 9. Stream or non-stream branch ───────────────────────────────────────
+    if req.stream {
+        return handle_streaming(
+            state,
+            req,
+            full_prompt,
+            target,
+            task_kind,
+            rag_chunks_used,
+            repo_context_injected,
+            cache_key,
+            system_prompt.clone(),
+        )
+        .await;
+    }
+
     if !req.x_no_cache {
         match state
             .repo_state
@@ -429,9 +503,9 @@ async fn handle_chat_completions(
         }
     }
 
-    // ── 9. Dispatch to model ──────────────────────────────────────────────────
+    // ── 10. Dispatch to model ─────────────────────────────────────────────────
     let comp_req = CompletionRequest {
-        system_prompt: system_prompt.map(str::to_owned),
+        system_prompt: system_prompt.clone(),
         user_prompt: full_prompt.clone(),
         max_tokens: req.max_tokens.unwrap_or(2048),
         temperature: req.temperature,
@@ -443,7 +517,7 @@ async fn handle_chat_completions(
 
     let (prompt_tok, completion_tok) = split_tokens(tokens_used, &full_prompt, &reply);
 
-    // ── 10. Cache (fire-and-forget) ───────────────────────────────────────────
+    // ── 11. Cache (fire-and-forget) ───────────────────────────────────────────
     let cached_val = CachedProxyResponse {
         content: reply.clone(),
         model_used: model_used.clone(),
@@ -467,7 +541,7 @@ async fn handle_chat_completions(
         });
     }
 
-    // ── 11. Build OpenAI-compatible response ──────────────────────────────────
+    // ── 12. Build OpenAI-compatible response ──────────────────────────────────
     build_oai_response(
         reply,
         model_used,
@@ -484,8 +558,262 @@ async fn handle_chat_completions(
 }
 
 // ---------------------------------------------------------------------------
-// Handler — GET /v1/models  (minimal — enough to satisfy SDK clients)
+// SSE streaming handler
 // ---------------------------------------------------------------------------
+
+/// Handle a streaming (`stream: true`) chat completion request.
+///
+/// Drives `OllamaClient::complete_streaming` and translates each
+/// [`StreamChunk`] into an OpenAI-compatible SSE `data:` frame.
+/// On completion the full assembled reply is written to the cache.
+#[allow(clippy::too_many_arguments)]
+async fn handle_streaming(
+    state: ProxyState,
+    req: OaiChatRequest,
+    full_prompt: String,
+    target: ModelTarget,
+    task_kind: TaskKind,
+    rag_chunks_used: usize,
+    repo_context_injected: bool,
+    cache_key: String,
+    system_prompt: Option<String>,
+) -> Response {
+    let completion_id = format!("chatcmpl-ra-{}", Uuid::new_v4());
+    let created = unix_now();
+    let max_tokens = req.max_tokens.unwrap_or(2048);
+    let temperature = req.temperature;
+
+    // For remote (Grok) targets we don't have a native streaming path yet —
+    // fall back to the blocking dispatch and emit all tokens in one burst.
+    // Ollama supports native NDJSON streaming.
+    let chunk_rx = match &target {
+        ModelTarget::Local { .. } => {
+            state
+                .repo_state
+                .ollama_client
+                .complete_streaming(
+                    system_prompt.as_deref(),
+                    &full_prompt,
+                    temperature,
+                    max_tokens,
+                )
+                .await
+        }
+        ModelTarget::Remote { model, api_key } => {
+            // Synthesise a single-delta stream from the blocking Grok call.
+            let (tx, rx) = tokio::sync::mpsc::channel::<StreamChunk>(4);
+            let model = model.clone();
+            let api_key = api_key.clone();
+            let grok_client = state.repo_state.grok_client.clone();
+            let prompt = full_prompt.clone();
+
+            tokio::spawn(async move {
+                let result = if let Some(ref grok) = grok_client {
+                    grok.ask_tracked(&prompt, None, "proxy-stream").await
+                } else {
+                    use crate::db::Database;
+                    match Database::new("data/rustassistant.db").await {
+                        Ok(db) => {
+                            let client = crate::grok_client::GrokClient::new(api_key.clone(), db);
+                            client.ask_tracked(&prompt, None, "proxy-stream").await
+                        }
+                        Err(e) => Err(anyhow::anyhow!("DB init failed: {}", e)),
+                    }
+                };
+
+                match result {
+                    Ok(resp) => {
+                        let _ = tx.send(StreamChunk::Delta(resp.content)).await;
+                        let _ = tx
+                            .send(StreamChunk::Done {
+                                model_used: model.clone(),
+                                used_fallback: false,
+                                prompt_tokens: Some(resp.prompt_tokens as u32),
+                                completion_tokens: Some(resp.completion_tokens as u32),
+                            })
+                            .await;
+                    }
+                    Err(e) => {
+                        let _ = tx.send(StreamChunk::Error(e.to_string())).await;
+                    }
+                }
+            });
+
+            rx
+        }
+    };
+
+    // Wrap the mpsc receiver in a Stream so axum's Sse can consume it.
+    let chunk_stream = ReceiverStream::new(chunk_rx);
+
+    // State shared across the closure: we accumulate the full reply so we can
+    // write it to the cache once the stream finishes.
+    let id_clone = completion_id.clone();
+    let cache_key_clone = cache_key.clone();
+    let task_kind_str = format!("{:?}", task_kind);
+    let cache = Arc::clone(&state.repo_state.cache);
+
+    // We need mutable accumulator state across closure calls.  Use an Arc<Mutex>
+    // so the FnMut closure can share it with the cache-write spawned at the end.
+    let accumulated = Arc::new(tokio::sync::Mutex::new(String::new()));
+    let final_meta: Arc<tokio::sync::Mutex<Option<(String, bool, u32, u32)>>> =
+        Arc::new(tokio::sync::Mutex::new(None));
+
+    let acc_clone = Arc::clone(&accumulated);
+    let meta_clone = Arc::clone(&final_meta);
+
+    let sse_stream = chunk_stream
+        .map(move |chunk| -> Result<Event, std::convert::Infallible> {
+            let id = id_clone.clone();
+            let now = created;
+
+            match chunk {
+                StreamChunk::Error(e) => {
+                    // Emit an error frame that OpenAI clients recognise.
+                    let err_payload = serde_json::json!({
+                        "error": { "message": e, "type": "stream_error" }
+                    });
+                    Ok(Event::default().data(err_payload.to_string()))
+                }
+
+                StreamChunk::Delta(text) => {
+                    // Accumulate for cache write later (best-effort, non-blocking).
+                    if let Ok(mut acc) = acc_clone.try_lock() {
+                        acc.push_str(&text);
+                    }
+
+                    let chunk_resp = OaiChunkResponse {
+                        id,
+                        object: "chat.completion.chunk",
+                        created: now,
+                        // Model name not yet known; use placeholder until Done.
+                        model: "streaming".to_string(),
+                        choices: vec![OaiChunkChoice {
+                            index: 0,
+                            delta: OaiDelta {
+                                role: None,
+                                content: Some(text),
+                            },
+                            finish_reason: None,
+                        }],
+                        usage: None,
+                    };
+                    let data =
+                        serde_json::to_string(&chunk_resp).unwrap_or_else(|_| "{}".to_string());
+                    Ok(Event::default().data(data))
+                }
+
+                StreamChunk::Done {
+                    model_used,
+                    used_fallback,
+                    prompt_tokens,
+                    completion_tokens,
+                } => {
+                    // Store final metadata so we can cache after the stream ends.
+                    let pt = prompt_tokens.unwrap_or(0);
+                    let ct = completion_tokens.unwrap_or(0);
+                    if let Ok(mut m) = meta_clone.try_lock() {
+                        *m = Some((model_used.clone(), used_fallback, pt, ct));
+                    }
+
+                    let final_chunk = OaiChunkResponse {
+                        id,
+                        object: "chat.completion.chunk",
+                        created: now,
+                        model: model_used,
+                        choices: vec![OaiChunkChoice {
+                            index: 0,
+                            delta: OaiDelta {
+                                role: None,
+                                content: None,
+                            },
+                            finish_reason: Some("stop".to_string()),
+                        }],
+                        usage: Some(OaiUsage {
+                            prompt_tokens: pt,
+                            completion_tokens: ct,
+                            total_tokens: pt + ct,
+                        }),
+                    };
+                    let data =
+                        serde_json::to_string(&final_chunk).unwrap_or_else(|_| "{}".to_string());
+                    Ok(Event::default().data(data))
+                }
+            }
+        })
+        // Append the mandatory `data: [DONE]` sentinel.
+        .chain(stream::once(async move {
+            // Best-effort cache write once the stream is complete.
+            let acc = accumulated.lock().await;
+            if let Some((model_used, used_fallback, pt, ct)) = final_meta.lock().await.clone() {
+                let cached_val = CachedProxyResponse {
+                    content: acc.clone(),
+                    model_used: model_used.clone(),
+                    used_fallback,
+                    task_kind: task_kind_str,
+                    rag_chunks_used,
+                    repo_context_injected,
+                    prompt_tokens: pt,
+                    completion_tokens: ct,
+                };
+                let key = cache_key_clone;
+                tokio::spawn(async move {
+                    if let Err(e) = cache
+                        .set(&key, &cached_val, Some(PROXY_CACHE_TTL_SECS))
+                        .await
+                    {
+                        warn!(error = %e, "Proxy stream: failed to cache response");
+                    }
+                });
+            }
+
+            Ok::<Event, std::convert::Infallible>(Event::default().data("[DONE]"))
+        }));
+
+    // Emit a role-establishing first chunk before the model content arrives.
+    let first_chunk = OaiChunkResponse {
+        id: completion_id.clone(),
+        object: "chat.completion.chunk",
+        created,
+        model: "streaming".to_string(),
+        choices: vec![OaiChunkChoice {
+            index: 0,
+            delta: OaiDelta {
+                role: Some("assistant".to_string()),
+                content: None,
+            },
+            finish_reason: None,
+        }],
+        usage: None,
+    };
+    let first_data = serde_json::to_string(&first_chunk).unwrap_or_else(|_| "{}".to_string());
+    let first_event = stream::once(async move {
+        Ok::<Event, std::convert::Infallible>(Event::default().data(first_data))
+    });
+
+    let full_stream = first_event.chain(sse_stream);
+
+    Sse::new(full_stream)
+        .keep_alive(KeepAlive::default())
+        .into_response()
+}
+
+// ---------------------------------------------------------------------------
+// Handler — GET /v1/models
+// ---------------------------------------------------------------------------
+//
+// Returns an OpenAI-compatible model list.  Each entry carries the capability
+// flags and token-limit fields that Zed and other smart clients inspect when
+// building their "Add Model" UI:
+//
+//   max_tokens              — total context window (prompt + completion)
+//   max_completion_tokens   — upper bound on generated tokens
+//   max_output_tokens       — alias used by some clients (same value)
+//   supports_tools          — whether the model accepts `tools` / `functions`
+//   supports_parallel_tool_calls — whether parallel function calls are ok
+//   supports_images         — whether image content parts are accepted
+//   supports_prompt_cache_key    — proprietary cache-key extension
+//   supports_chat_completions    — always true for every entry here
 
 #[derive(Serialize)]
 struct ModelList {
@@ -499,34 +827,93 @@ struct ModelEntry {
     object: &'static str,
     created: u64,
     owned_by: &'static str,
+
+    // ── Token limits ────────────────────────────────────────────────
+    /// Total context window (prompt + completion).
+    max_tokens: u32,
+    /// Maximum tokens the model will generate in one turn.
+    max_completion_tokens: u32,
+    /// Alias for `max_completion_tokens` (used by some clients, e.g. Zed).
+    max_output_tokens: u32,
+
+    // ── Capability flags ────────────────────────────────────────────
+    /// Whether `tools` / `functions` are accepted.  RustAssistant does not
+    /// forward tool definitions, so this is `false` for all entries.
+    supports_tools: bool,
+    /// Whether parallel tool-call responses are supported.
+    supports_parallel_tool_calls: bool,
+    /// Whether image content parts are accepted.
+    supports_images: bool,
+    /// Whether a `prompt_cache_key` extension field is understood.
+    supports_prompt_cache_key: bool,
+    /// Always `true` — every entry here is a chat-completions model.
+    supports_chat_completions: bool,
 }
 
-async fn handle_list_models(State(state): State<ProxyState>) -> impl IntoResponse {
-    // Attempt to fetch live Ollama model list; fall back to a static list.
-    let mut entries: Vec<ModelEntry> = Vec::new();
-
-    // Static/virtual model aliases that are always available.
-    let static_aliases = ["auto", "local", "remote"];
-    let now = unix_now();
-    for alias in static_aliases {
-        entries.push(ModelEntry {
-            id: alias.to_string(),
+impl ModelEntry {
+    /// Construct a RustAssistant virtual model entry.
+    fn ra(id: &str, max_tokens: u32, max_completion_tokens: u32, now: u64) -> Self {
+        Self {
+            id: id.to_string(),
             object: "model",
             created: now,
             owned_by: "rustassistant",
-        });
+            max_tokens,
+            max_completion_tokens,
+            max_output_tokens: max_completion_tokens,
+            supports_tools: false,
+            supports_parallel_tool_calls: false,
+            supports_images: false,
+            supports_prompt_cache_key: false,
+            supports_chat_completions: true,
+        }
     }
 
-    // Try to get the live Ollama model list and expose them too.
+    /// Construct an Ollama passthrough model entry.
+    fn ollama(id: String, now: u64) -> Self {
+        Self {
+            id,
+            object: "model",
+            created: now,
+            owned_by: "ollama",
+            // Ollama models vary; 16 k is a safe default for 7-B class models.
+            max_tokens: 16_384,
+            max_completion_tokens: 8_192,
+            max_output_tokens: 8_192,
+            supports_tools: false,
+            supports_parallel_tool_calls: false,
+            supports_images: false,
+            supports_prompt_cache_key: false,
+            supports_chat_completions: true,
+        }
+    }
+}
+
+async fn handle_list_models(State(state): State<ProxyState>) -> impl IntoResponse {
+    let now = unix_now();
+    let mut entries: Vec<ModelEntry> = Vec::new();
+
+    // ── Primary entry: the canonical "rustassistant" model ──────────────────
+    // This is what you configure in Zed / curl.  RustAssistant routes the
+    // request to Ollama or Grok automatically based on task complexity.
+    // Context window: 128 k (Grok upper-bound); completion cap: 32 k.
+    entries.push(ModelEntry::ra("rustassistant", 131_072, 32_768, now));
+
+    // ── Routing aliases ──────────────────────────────────────────────────────
+    // "auto"   — same as "rustassistant" (ModelRouter decides)
+    // "local"  — force Ollama regardless of task kind
+    // "remote" — force Grok regardless of task kind
+    entries.push(ModelEntry::ra("auto", 131_072, 32_768, now));
+    entries.push(ModelEntry::ra("local", 16_384, 8_192, now));
+    entries.push(ModelEntry::ra("remote", 131_072, 32_768, now));
+
+    // ── Live Ollama models ───────────────────────────────────────────────────
+    // Expose each installed Ollama model directly so clients can target them
+    // by tag (e.g. "qwen2.5-coder:7b") if they want to bypass routing.
     match state.repo_state.ollama_client.list_models().await {
         Ok(models) => {
             for m in models {
-                entries.push(ModelEntry {
-                    id: m,
-                    object: "model",
-                    created: now,
-                    owned_by: "ollama",
-                });
+                entries.push(ModelEntry::ollama(m, now));
             }
         }
         Err(e) => {
