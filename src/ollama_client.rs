@@ -29,7 +29,7 @@ use tracing::{debug, info, warn};
 
 const DEFAULT_BASE_URL: &str = "http://localhost:11434";
 const DEFAULT_MODEL: &str = "qwen2.5-coder:7b";
-const DEFAULT_TIMEOUT_SECS: u64 = 120;
+const DEFAULT_TIMEOUT_SECS: u64 = 180;
 const DEFAULT_MAX_RETRIES: usize = 2;
 const INITIAL_RETRY_DELAY_MS: u64 = 500;
 
@@ -56,6 +56,10 @@ struct OllamaOptions {
     temperature: f32,
     /// Maximum tokens to generate (maps to `num_predict` in Ollama).
     num_predict: u32,
+    /// KV-cache / context window size passed to llama.cpp via Ollama.
+    /// Ollama defaults to 4096; with 16 GB VRAM and a 7B model we can
+    /// safely use 16384 (uses ~896 MiB extra VRAM for KV cache).
+    num_ctx: u32,
 }
 
 /// Ollama non-streaming response body.
@@ -177,8 +181,21 @@ impl OllamaClient {
         temperature: f32,
         max_tokens: u32,
     ) -> Result<OllamaCompletionResponse> {
+        self.complete_with_ctx(system_prompt, user_prompt, temperature, max_tokens, 16384)
+            .await
+    }
+
+    /// Like [`complete`] but with an explicit context-window size (`num_ctx`).
+    pub async fn complete_with_ctx(
+        &self,
+        system_prompt: Option<&str>,
+        user_prompt: &str,
+        temperature: f32,
+        max_tokens: u32,
+        num_ctx: u32,
+    ) -> Result<OllamaCompletionResponse> {
         match self
-            .try_ollama(system_prompt, user_prompt, temperature, max_tokens)
+            .try_ollama(system_prompt, user_prompt, temperature, max_tokens, num_ctx)
             .await
         {
             Ok(resp) => Ok(resp),
@@ -247,6 +264,7 @@ impl OllamaClient {
         user_prompt: &str,
         temperature: f32,
         max_tokens: u32,
+        num_ctx: u32,
     ) -> Result<OllamaCompletionResponse> {
         let url = format!("{}/api/chat", self.config.base_url);
 
@@ -269,6 +287,7 @@ impl OllamaClient {
             options: OllamaOptions {
                 temperature,
                 num_predict: max_tokens,
+                num_ctx,
             },
         };
 
@@ -427,12 +446,14 @@ mod tests {
             options: OllamaOptions {
                 temperature: 0.2,
                 num_predict: 512,
+                num_ctx: 16384,
             },
         };
 
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains("\"stream\":false"));
         assert!(json.contains("\"num_predict\":512"));
+        assert!(json.contains("\"num_ctx\":"));
         assert!(json.contains("qwen2.5-coder:7b"));
     }
 

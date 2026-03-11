@@ -207,6 +207,8 @@ services:
             - OLLAMA_MAX_LOADED_MODELS=3
             - OLLAMA_NUM_GPU=1
             - OLLAMA_FLASH_ATTENTION=1
+            - OLLAMA_CONTEXT_LENGTH=16384
+            - OLLAMA_NUM_PARALLEL=2
             - NVIDIA_VISIBLE_DEVICES=all
             - NVIDIA_DRIVER_CAPABILITIES=compute,utility
         networks:

@@ -452,12 +452,13 @@ async fn dispatch_ollama(
 
     let config = OllamaClientConfig {
         model: model.to_string(),
+        timeout: std::time::Duration::from_secs(180),
         ..OllamaClientConfig::default()
     };
     let client = OllamaClient::new(config, None);
 
     let resp = client
-        .complete(Some(system_prompt), user_message, 0.3, 4096)
+        .complete_with_ctx(Some(system_prompt), user_message, 0.3, 4096, 16384)
         .await?;
 
     let tokens =
