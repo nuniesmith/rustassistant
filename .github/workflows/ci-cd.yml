@@ -386,11 +386,19 @@ jobs:
                   echo "Stopping existing services..."
                   docker compose down --remove-orphans 2>/dev/null || true
 
-                  echo "Starting services..."
-                  docker compose up -d --remove-orphans
+                  # Start core services only — exclude the one-shot model-puller
+                  # so a slow Ollama CUDA init can't abort the whole deploy.
+                  # ra-ollama-init is started separately with || true so its exit
+                  # code (or a dependency-wait failure) never fails the pipeline.
+                  echo "Starting core services (postgres, redis, ollama, app)..."
+                  docker compose up -d --remove-orphans \
+                      ra-postgres ra-redis ra-ollama rustassistant
+
+                  echo "Starting model-puller (non-blocking)..."
+                  docker compose up -d ra-ollama-init || true
 
                   echo ""
-                  echo "Waiting for services to become healthy (30s)..."
+                  echo "Waiting for core services to stabilise (30s)..."
                   sleep 30
 
                   echo ""
