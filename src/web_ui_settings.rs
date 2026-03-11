@@ -138,7 +138,8 @@ async fn settings_page_handler(State(state): State<Arc<WebAppState>>) -> impl In
     let ollama_model =
         std::env::var("LOCAL_MODEL").unwrap_or_else(|_| "qwen2.5-coder:7b".to_string());
     let ollama_timeout = std::env::var("OLLAMA_TIMEOUT_SECS").unwrap_or_else(|_| "120".to_string());
-    let grok_model = std::env::var("REMOTE_MODEL").unwrap_or_else(|_| "grok-4-1-fast-reasoning".to_string());
+    let grok_model =
+        std::env::var("REMOTE_MODEL").unwrap_or_else(|_| "grok-4-1-fast-reasoning".to_string());
     let grok_key_set = std::env::var("XAI_API_KEY")
         .map(|k| !k.is_empty())
         .unwrap_or(false);
@@ -538,11 +539,6 @@ node_modules/
             "Not set"
         },
         grok_model_sel_2 = if grok_model == "grok-4-1-fast-reasoning" {
-            "selected"
-        } else {
-            ""
-        },
-        grok_model_sel_41 = if grok_model.contains("4-1") || grok_model.contains("4.1") {
             "selected"
         } else {
             ""

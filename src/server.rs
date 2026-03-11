@@ -164,7 +164,8 @@ pub async fn run_server(config: Config) -> Result<()> {
 
     let model_router = Arc::new(ModelRouter::new(ModelRouterConfig {
         remote_api_key: std::env::var("XAI_API_KEY").unwrap_or_default(),
-        remote_model: std::env::var("REMOTE_MODEL").unwrap_or_else(|_| "grok-4-1-fast-reasoning".to_string()),
+        remote_model: std::env::var("REMOTE_MODEL")
+            .unwrap_or_else(|_| "grok-4-1-fast-reasoning".to_string()),
         local_model: std::env::var("LOCAL_MODEL")
             .unwrap_or_else(|_| "qwen2.5-coder:7b".to_string()),
         local_base_url: std::env::var("OLLAMA_BASE_URL")

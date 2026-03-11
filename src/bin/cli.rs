@@ -1584,7 +1584,8 @@ async fn handle_test_api(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     };
 
     // ── 2. Model in use ────────────────────────────────────────────────────
-    let model = std::env::var("XAI_MODEL").unwrap_or_else(|_| "grok-4-1-fast-reasoning".to_string());
+    let model =
+        std::env::var("XAI_MODEL").unwrap_or_else(|_| "grok-4-1-fast-reasoning".to_string());
     println!("  {} Model: {}", "🤖".dimmed(), model.cyan());
 
     // ── 3. Build client ────────────────────────────────────────────────────
