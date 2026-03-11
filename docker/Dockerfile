@@ -63,7 +63,6 @@ COPY src ./src
 COPY askama.toml ./askama.toml
 COPY static ./static
 COPY migrations ./migrations
-COPY .sqlx ./.sqlx
 
 # Build the actual binary with optimizations
 ENV SQLX_OFFLINE=true
