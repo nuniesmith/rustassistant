@@ -384,81 +384,23 @@ jobs:
                   echo ""
                   echo "🔍 GPU preflight check..."
 
-                  # ── Mask the CDI refresh service that fails on laptop GPUs ──
-                  # nvidia-container-toolkit ≥1.19 adds nvidia-cdi-refresh.service
-                  # which fails on systems without nvidia-persistenced / fabricmanager
-                  # (e.g. laptop GPUs like the RTX 3080).  The CDI path is not used
-                  # here — we use the classic runtime: nvidia path — so mask it to
-                  # prevent the failed unit from polluting logs and blocking upgrades.
-                  sudo systemctl mask nvidia-cdi-refresh.service 2>/dev/null || true
-
-                  # ── Re-run nvidia-ctk configure in case the toolkit was upgraded ──
-                  # An apt upgrade of nvidia-container-toolkit can reset daemon.json.
-                  echo "  Ensuring nvidia runtime is configured in Docker daemon..."
-                  sudo nvidia-ctk runtime configure --runtime=docker 2>/dev/null || true
-
-                  # Force mode=legacy in the container runtime config to bypass CDI.
-                  # toolkit 1.19.0 changed "auto" to try CDI first; CDI spec generation
-                  # fails on laptop GPUs without nvidia-persistenced / fabricmanager,
-                  # causing /dev/nvidia0 to NOT be injected into containers.
-                  # The --mode flag does not exist in this toolkit version so we patch
-                  # the config file directly with sed. This is idempotent.
-                  RUNTIME_CFG="/etc/nvidia-container-runtime/config.toml"
-                  if [ -f "$RUNTIME_CFG" ]; then
-                      CURRENT_MODE=$(grep "^mode" "$RUNTIME_CFG" 2>/dev/null || echo "mode = \"auto\"")
-                      echo "  Current runtime mode: ${CURRENT_MODE}"
-                      if ! grep -q '^mode = "legacy"' "$RUNTIME_CFG"; then
-                          echo "  Patching mode to legacy (was: ${CURRENT_MODE})..."
-                          sudo sed -i 's/^mode = .*/mode = "legacy"/' "$RUNTIME_CFG"
-                          # If the line didn't exist at all, append it under [nvidia-container-runtime]
-                          if ! grep -q '^mode' "$RUNTIME_CFG"; then
-                              sudo sed -i '/^\[nvidia-container-runtime\]/a mode = "legacy"' "$RUNTIME_CFG"
-                          fi
-                      fi
-                      echo "  Runtime mode after patch: $(grep '^mode' "$RUNTIME_CFG")"
-                  else
-                      echo "  ⚠️  ${RUNTIME_CFG} not found — skipping mode patch"
-                  fi
-
-                  # Try to find nvidia-smi — the deploy user may not have it in PATH
-                  # but it is usually at /usr/bin/nvidia-smi or accessible via sudo.
-                  NVIDIA_SMI=""
-                  for candidate in nvidia-smi /usr/bin/nvidia-smi /usr/local/bin/nvidia-smi; do
-                      if command -v "$candidate" > /dev/null 2>&1 || [ -x "$candidate" ]; then
-                          NVIDIA_SMI="$candidate"
-                          break
-                      fi
-                  done
-                  if [ -z "$NVIDIA_SMI" ]; then
-                      if sudo nvidia-smi --query-gpu=name --format=csv,noheader > /dev/null 2>&1; then
-                          NVIDIA_SMI="sudo nvidia-smi"
-                      fi
-                  fi
-
-                  if [ -n "$NVIDIA_SMI" ]; then
-                      GPU_NAME=$($NVIDIA_SMI --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 || echo "unknown")
-                      echo "  ✅ Host GPU: ${GPU_NAME}"
-                  else
-                      echo "  ⚠️  nvidia-smi not accessible to deploy user — skipping host check"
-                      echo "     (GPU passthrough is still controlled by the Docker nvidia runtime)"
-                  fi
-
-                  # Ensure nvidia runtime is registered with Docker.
-                  # This is what actually matters — Docker controls GPU access.
-                  # Always restart Docker so the mode=legacy change takes effect,
-                  # even if the nvidia runtime was already registered.
-                  echo "  Restarting Docker to apply runtime config..."
-                  sudo systemctl restart docker
-                  sleep 5
+                  # ── Verify nvidia runtime is registered with Docker ────
+                  echo "  Checking nvidia runtime is registered with Docker..."
                   if ! docker info 2>/dev/null | grep -q "nvidia"; then
-                      echo "  ❌ nvidia runtime not registered with Docker after restart"
+                      echo "  ❌ nvidia runtime not registered with Docker"
                       echo "  📋 daemon.json:"
                       cat /etc/docker/daemon.json 2>/dev/null || echo "  (not found)"
-                      echo "  📋 container-runtime config:"
-                      grep "^mode" /etc/nvidia-container-runtime/config.toml 2>/dev/null || true
                       exit 1
                   fi
-                  echo "  ✅ nvidia runtime registered with Docker (legacy mode)"
+                  echo "  ✅ nvidia runtime registered with Docker"
+
+                  # ── Check host GPU is visible ──────────────────────────
+                  GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 || echo "")
+                  if [ -n "$GPU_NAME" ]; then
+                      echo "  ✅ Host GPU: ${GPU_NAME}"
+                  else
+                      echo "  ⚠️  nvidia-smi returned no GPU — skipping host check"
+                  fi
 
                   echo "✅ GPU preflight passed"
 
