@@ -403,29 +403,31 @@ jobs:
                   fi
 
                   # ── Wait for NVML / nvidia-container-cli to be ready ──
-                  # After a reboot or Docker restart the nvidia kernel modules
-                  # may not be fully initialised yet.  nvidia-container-cli
-                  # exercises the same NVML path the container runtime uses, so
-                  # we poll it before launching any GPU containers.  Without this
-                  # wait Docker throws:
-                  #   nvidia-container-cli: detection error: nvml error: unknown error
+                  # Even after nvidia-modprobe recreates the device nodes, NVML
+                  # (which nvidia-container-cli and docker use internally) can
+                  # take a moment to settle.  Poll until it responds cleanly.
                   echo "  Waiting for nvidia-container-cli NVML readiness..."
                   NVML_READY=0
-                  for attempt in $(seq 1 24); do
+                  for attempt in $(seq 1 12); do
                       if nvidia-container-cli info > /dev/null 2>&1; then
                           NVML_READY=1
                           break
                       fi
-                      echo "    attempt ${attempt}/24 — NVML not ready yet, waiting 5s..."
+                      # On each failed attempt re-run nvidia-modprobe in case
+                      # a device node disappeared between the check above and now
+                      nvidia-modprobe -u -c 0 2>/dev/null || true
+                      echo "    attempt ${attempt}/12 — NVML not ready yet, waiting 5s..."
                       sleep 5
                   done
 
                   if [ "${NVML_READY}" = "0" ]; then
-                      echo "  ❌ NVML still not ready after 120s — aborting"
+                      echo "  ❌ NVML still not ready after 60s — aborting"
                       echo "  📋 nvidia-container-cli info output:"
                       nvidia-container-cli info 2>&1 || true
                       echo "  📋 nvidia-smi output:"
                       nvidia-smi 2>&1 || true
+                      echo "  📋 /dev/nvidia* nodes:"
+                      ls -la /dev/nvidia* 2>&1 || true
                       exit 1
                   fi
                   echo "  ✅ NVML ready (nvidia-container-cli info succeeded)"
@@ -444,6 +446,43 @@ jobs:
                   # correct runtime (Docker caches the runtime at creation time;
                   # a plain restart does NOT apply a runtime change).
                   docker rm -f ra-ollama 2>/dev/null || true
+
+                  # ── Re-initialize nvidia UVM device nodes ──────────────
+                  # docker compose down tears down ra-ollama which is the last
+                  # consumer of /dev/nvidia-uvm.  When the last user exits the
+                  # kernel destroys the UVM device node, so the next container
+                  # start fails to bind-mount it:
+                  #   OCI runtime: /dev/nvidia-uvm: no such file
+                  # nvidia-modprobe is a setuid binary that re-creates all nvidia
+                  # device nodes (/dev/nvidia0, /dev/nvidia-uvm, etc.) without
+                  # requiring sudo.  Run it unconditionally after every down so
+                  # the nodes are guaranteed to exist before containers start.
+                  echo "  Re-initializing nvidia device nodes after compose down..."
+                  if command -v nvidia-modprobe > /dev/null 2>&1; then
+                      nvidia-modprobe -u -c 0 2>/dev/null && \
+                          echo "  ✅ nvidia-modprobe succeeded" || \
+                          echo "  ⚠️  nvidia-modprobe returned non-zero (may be harmless)"
+                  else
+                      echo "  ⚠️  nvidia-modprobe not found — skipping UVM re-init"
+                      echo "     Install with: sudo apt install -y nvidia-modprobe"
+                  fi
+
+                  # Give the kernel a moment to finish creating the device nodes
+                  sleep 2
+
+                  # Confirm the critical device nodes are present before proceeding
+                  MISSING_DEVS=""
+                  for dev in /dev/nvidia0 /dev/nvidiactl /dev/nvidia-uvm; do
+                      if [ ! -e "$dev" ]; then
+                          MISSING_DEVS="${MISSING_DEVS} ${dev}"
+                      fi
+                  done
+                  if [ -n "$MISSING_DEVS" ]; then
+                      echo "  ❌ Missing nvidia device nodes:${MISSING_DEVS}"
+                      echo "     Run 'nvidia-modprobe -u -c 0' on the host to restore them"
+                      exit 1
+                  fi
+                  echo "  ✅ All nvidia device nodes present"
 
                   # Start core services only — exclude the one-shot model-puller
                   # so a slow Ollama CUDA init can't abort the whole deploy.
