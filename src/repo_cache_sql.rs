@@ -64,7 +64,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info};
 
@@ -155,7 +155,7 @@ pub enum EvictionPolicy {
 
 /// SQLite-based repository cache
 pub struct RepoCacheSql {
-    pub pool: PgPool,
+    pub pool: SqlitePool,
 }
 
 impl RepoCacheSql {
@@ -236,7 +236,7 @@ impl RepoCacheSql {
         }
 
         let database_url = format!("sqlite:{}?mode=rwc", path.display());
-        let pool = PgPool::connect(&database_url)
+        let pool = SqlitePool::connect(&database_url)
             .await
             .context("Failed to connect to cache database")?;
 

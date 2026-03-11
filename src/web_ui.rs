@@ -509,7 +509,11 @@ fn render_queue_page(items: Vec<QueueItemDisplay>) -> String {
 
                 let desc_html = if let Some(desc) = &item.description {
                     let preview = if desc.len() > 300 {
-                        format!("{}…", &desc[..300])
+                        let mut boundary = 300;
+                        while boundary > 0 && !desc.is_char_boundary(boundary) {
+                            boundary -= 1;
+                        }
+                        format!("{}…", &desc[..boundary])
                     } else {
                         desc.clone()
                     };

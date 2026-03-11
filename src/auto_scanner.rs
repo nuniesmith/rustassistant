@@ -1714,11 +1714,16 @@ impl AutoScanner {
 
                     // Truncate per-file analysis to keep total context manageable
                     let analysis_text = &entry.result_json;
-                    let truncated = if analysis_text.len() > 2000 {
-                        &analysis_text[..2000]
+                    let truncated_boundary = if analysis_text.len() > 2000 {
+                        let mut b = 2000;
+                        while b > 0 && !analysis_text.is_char_boundary(b) {
+                            b -= 1;
+                        }
+                        b
                     } else {
-                        analysis_text
+                        analysis_text.len()
                     };
+                    let truncated = &analysis_text[..truncated_boundary];
 
                     project_context.push_str(&format!(
                         "\n## {}\n- Complexity: {:.0}\n- Issues: {}\n- Analysis: {}\n",
@@ -1901,11 +1906,16 @@ Respond in ONLY valid JSON (no markdown fences):
         let total_issues: usize = batch.iter().map(|(_, count, _, _)| count).sum();
         let mut project_context = String::new();
         for (path, issues, complexity, analysis_json) in &batch {
-            let truncated = if analysis_json.len() > 2000 {
-                &analysis_json[..2000]
+            let truncated_boundary = if analysis_json.len() > 2000 {
+                let mut b = 2000;
+                while b > 0 && !analysis_json.is_char_boundary(b) {
+                    b -= 1;
+                }
+                b
             } else {
-                analysis_json
+                analysis_json.len()
             };
+            let truncated = &analysis_json[..truncated_boundary];
             project_context.push_str(&format!(
                 "\n## {}\n- Complexity: {:.0}\n- Issues: {}\n- Analysis: {}\n",
                 path, complexity, issues, truncated

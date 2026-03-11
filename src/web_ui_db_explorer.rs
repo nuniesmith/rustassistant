@@ -434,7 +434,11 @@ pub async fn db_table_handler(
                     match val {
                         Some(v) => {
                             let display = if v.len() > 120 {
-                                format!("{}…", html_escape(&v[..120]))
+                                let mut boundary = 120;
+                                while boundary > 0 && !v.is_char_boundary(boundary) {
+                                    boundary -= 1;
+                                }
+                                format!("{}…", html_escape(&v[..boundary]))
                             } else {
                                 html_escape(&v)
                             };
@@ -621,7 +625,13 @@ pub async fn db_query_handler(
                                         match val {
                                             Some(v) => {
                                                 let d = if v.len() > 200 {
-                                                    format!("{}…", html_escape(&v[..200]))
+                                                    let mut boundary = 200;
+                                                    while boundary > 0
+                                                        && !v.is_char_boundary(boundary)
+                                                    {
+                                                        boundary -= 1;
+                                                    }
+                                                    format!("{}…", html_escape(&v[..boundary]))
                                                 } else {
                                                     html_escape(&v)
                                                 };

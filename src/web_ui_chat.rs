@@ -598,6 +598,20 @@ async fn load_repo_context(state: &WebAppState, repo_id: &str) -> Option<String>
 
     // Try to load todo.md
     let base = std::path::PathBuf::from(&repo.path);
+
+    /// Truncate `s` to at most `max_bytes` bytes, respecting UTF-8 char boundaries.
+    fn truncate_at_char_boundary(s: &str, max_bytes: usize) -> &str {
+        if s.len() <= max_bytes {
+            return s;
+        }
+        // Walk backwards from max_bytes until we land on a char boundary.
+        let mut boundary = max_bytes;
+        while boundary > 0 && !s.is_char_boundary(boundary) {
+            boundary -= 1;
+        }
+        &s[..boundary]
+    }
+
     let todo_paths = ["todo.md", "TODO.md", "Todo.md"];
     for name in &todo_paths {
         let p = base.join(name);
@@ -606,7 +620,7 @@ async fn load_repo_context(state: &WebAppState, repo_id: &str) -> Option<String>
                 let truncated = if contents.len() > 8000 {
                     format!(
                         "{}...\n\n(truncated, {} bytes total)",
-                        &contents[..8000],
+                        truncate_at_char_boundary(&contents, 8000),
                         contents.len()
                     )
                 } else {
@@ -628,7 +642,10 @@ async fn load_repo_context(state: &WebAppState, repo_id: &str) -> Option<String>
         if p.exists() {
             if let Ok(contents) = std::fs::read_to_string(&p) {
                 let truncated = if contents.len() > 4000 {
-                    format!("{}...\n\n(truncated)", &contents[..4000])
+                    format!(
+                        "{}...\n\n(truncated)",
+                        truncate_at_char_boundary(&contents, 4000)
+                    )
                 } else {
                     contents
                 };

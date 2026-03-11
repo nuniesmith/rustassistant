@@ -126,9 +126,9 @@ pub async fn get_recent_events(
             r#"
             SELECT id, repo_id, event_type, message, details, level, created_at
             FROM scan_events
-            WHERE level = $11
+            WHERE level = $1
             ORDER BY created_at DESC
-            LIMIT $22
+            LIMIT $2
             "#,
         )
         .bind(level)
@@ -141,7 +141,7 @@ pub async fn get_recent_events(
             SELECT id, repo_id, event_type, message, details, level, created_at
             FROM scan_events
             ORDER BY created_at DESC
-            LIMIT $11
+            LIMIT $1
             "#,
         )
         .bind(limit)
@@ -160,9 +160,9 @@ pub async fn get_repo_events(
         r#"
         SELECT id, repo_id, event_type, message, details, level, created_at
         FROM scan_events
-        WHERE repo_id = $11
+        WHERE repo_id = $1
         ORDER BY created_at DESC
-        LIMIT $22
+        LIMIT $2
         "#,
     )
     .bind(repo_id)
@@ -174,7 +174,7 @@ pub async fn get_repo_events(
 /// Prune old events (keep last N days)
 pub async fn prune_events(pool: &PgPool, keep_days: i64) -> Result<u64, sqlx::Error> {
     let cutoff = chrono::Utc::now().timestamp() - (keep_days * 86400);
-    let result = sqlx::query("DELETE FROM scan_events WHERE created_at < $11")
+    let result = sqlx::query("DELETE FROM scan_events WHERE created_at < $1")
         .bind(cutoff)
         .execute(pool)
         .await?;
@@ -198,10 +198,10 @@ pub async fn update_scan_status(
     sqlx::query(
         r#"
         UPDATE repositories
-        SET scan_status = $11,
-            scan_progress = $22,
-            updated_at = $33
-        WHERE id = $44
+        SET scan_status = $1,
+            scan_progress = $2,
+            updated_at = $3
+        WHERE id = $4
         "#,
     )
     .bind(status)
@@ -258,11 +258,11 @@ pub async fn update_scan_file_progress(
         r#"
         UPDATE repositories
         SET scan_status = 'scanning',
-            scan_progress = $11,
-            scan_files_processed = $22,
-            scan_files_total = $33,
-            updated_at = $44
-        WHERE id = $55
+            scan_progress = $1,
+            scan_files_processed = $2,
+            scan_files_total = $3,
+            updated_at = $4
+        WHERE id = $5
         "#,
     )
     .bind(&progress_json)
@@ -291,19 +291,20 @@ pub async fn mark_scan_complete(
         UPDATE repositories
         SET scan_status = 'idle',
             scan_progress = NULL,
-            scan_files_processed = $11,
-            scan_files_total = $21,
-            last_scan_issues_found = $32,
-            last_scan_duration_ms = $43,
-            last_scanned_at = $54,
+            scan_files_processed = $1,
+            scan_files_total = $2,
+            last_scan_issues_found = $3,
+            last_scan_duration_ms = $4,
+            last_scanned_at = $5,
             last_error = NULL,
-            updated_at = $64
-        WHERE id = $75
+            updated_at = $6
+        WHERE id = $7
         "#,
     )
     .bind(files_scanned)
     .bind(issues_found)
     .bind(duration_ms)
+    .bind(now)
     .bind(now)
     .bind(repo_id)
     .execute(pool)
@@ -334,9 +335,9 @@ pub async fn mark_scan_error(pool: &PgPool, repo_id: &str, error: &str) -> Resul
         UPDATE repositories
         SET scan_status = 'error',
             scan_progress = NULL,
-            last_error = $11,
-            updated_at = $22
-        WHERE id = $33
+            last_error = $1,
+            updated_at = $2
+        WHERE id = $3
         "#,
     )
     .bind(error)

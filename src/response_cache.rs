@@ -44,7 +44,7 @@ const DEFAULT_TTL_HOURS: i64 = 24;
 
 /// Response cache for LLM API calls
 pub struct ResponseCache {
-    pool: sqlx::PgPool,
+    pool: sqlx::SqlitePool,
 }
 
 /// Cached response entry
@@ -75,7 +75,7 @@ impl ResponseCache {
     /// Create a new response cache
     pub async fn new(database_path: &str) -> Result<Self> {
         let database_url = format!("sqlite:{}?mode=rwc", database_path);
-        let pool = sqlx::PgPool::connect(&database_url)
+        let pool = sqlx::SqlitePool::connect(&database_url)
             .await
             .context("Failed to connect to cache database")?;
 
