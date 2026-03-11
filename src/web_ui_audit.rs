@@ -982,10 +982,9 @@ pub async fn render_repo_audit_history(pool: &PgPool, repo_id: &str) -> String {
     };
 
     if runs.is_empty() {
-        return format!(
-            r#"<div style="color:#475569;font-size:0.82rem;">No audits yet.
+        return r#"<div style="color:#475569;font-size:0.82rem;">No audits yet.
             <a href="/audit/new" style="color:#38bdf8;">Start one</a></div>"#
-        );
+            .to_string();
     }
 
     let rows: String = runs

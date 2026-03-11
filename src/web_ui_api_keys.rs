@@ -354,13 +354,13 @@ fn render_key_table(keys: &[ApiKeyRow]) -> String {
                 .last_used
                 .as_deref()
                 .and_then(|s| s.parse::<DateTime<Utc>>().ok())
-                .map(|dt| format_relative_time(dt))
+                .map(format_relative_time)
                 .unwrap_or_else(|| "Never".to_string());
 
             let created = k
                 .created_at
                 .parse::<DateTime<Utc>>()
-                .map(|dt| format_relative_time(dt))
+                .map(format_relative_time)
                 .unwrap_or_else(|_| k.created_at.clone());
 
             let desc = k

@@ -342,15 +342,14 @@ impl OllamaClient {
                                                 break 'outer;
                                             }
                                             if let Some(msg) = chunk.message {
-                                                if !msg.content.is_empty() {
-                                                    if tx
+                                                if !msg.content.is_empty()
+                                                    && tx
                                                         .send(StreamChunk::Delta(msg.content))
                                                         .await
                                                         .is_err()
-                                                    {
-                                                        // Receiver dropped — client disconnected.
-                                                        return;
-                                                    }
+                                                {
+                                                    // Receiver dropped — client disconnected.
+                                                    return;
                                                 }
                                             }
                                         }

@@ -655,9 +655,9 @@ async fn handle_streaming(
 
     // We need mutable accumulator state across closure calls.  Use an Arc<Mutex>
     // so the FnMut closure can share it with the cache-write spawned at the end.
+    type FinalMeta = Arc<tokio::sync::Mutex<Option<(String, bool, u32, u32)>>>;
     let accumulated = Arc::new(tokio::sync::Mutex::new(String::new()));
-    let final_meta: Arc<tokio::sync::Mutex<Option<(String, bool, u32, u32)>>> =
-        Arc::new(tokio::sync::Mutex::new(None));
+    let final_meta: FinalMeta = Arc::new(tokio::sync::Mutex::new(None));
 
     let acc_clone = Arc::clone(&accumulated);
     let meta_clone = Arc::clone(&final_meta);
@@ -891,21 +891,19 @@ impl ModelEntry {
 
 async fn handle_list_models(State(state): State<ProxyState>) -> impl IntoResponse {
     let now = unix_now();
-    let mut entries: Vec<ModelEntry> = Vec::new();
 
-    // ── Primary entry: the canonical "rustassistant" model ──────────────────
-    // This is what you configure in Zed / curl.  RustAssistant routes the
-    // request to Ollama or Grok automatically based on task complexity.
-    // Context window: 128 k (Grok upper-bound); completion cap: 32 k.
-    entries.push(ModelEntry::ra("rustassistant", 131_072, 32_768, now));
-
-    // ── Routing aliases ──────────────────────────────────────────────────────
+    // ── Static entries ───────────────────────────────────────────────────────
+    // "rustassistant" — canonical single model to configure in Zed / curl.
+    //   RustAssistant routes to Ollama or Grok automatically.
     // "auto"   — same as "rustassistant" (ModelRouter decides)
     // "local"  — force Ollama regardless of task kind
     // "remote" — force Grok regardless of task kind
-    entries.push(ModelEntry::ra("auto", 131_072, 32_768, now));
-    entries.push(ModelEntry::ra("local", 16_384, 8_192, now));
-    entries.push(ModelEntry::ra("remote", 131_072, 32_768, now));
+    let mut entries: Vec<ModelEntry> = vec![
+        ModelEntry::ra("rustassistant", 131_072, 32_768, now),
+        ModelEntry::ra("auto", 131_072, 32_768, now),
+        ModelEntry::ra("local", 16_384, 8_192, now),
+        ModelEntry::ra("remote", 131_072, 32_768, now),
+    ];
 
     // ── Live Ollama models ───────────────────────────────────────────────────
     // Expose each installed Ollama model directly so clients can target them
