@@ -93,7 +93,7 @@ impl Default for ModelRouterConfig {
         Self {
             local_model: "qwen2.5-coder:7b".to_string(),
             local_base_url: "http://localhost:11434".to_string(),
-            remote_model: "grok-2-latest".to_string(),
+            remote_model: "grok-4-1-fast-reasoning".to_string(),
             remote_api_key: String::new(),
             force_remote: false,
             fallback_to_remote: true,

@@ -1442,7 +1442,7 @@
                         role: "assistant",
                         content:
                             "Hey! I'm wired to **Grok** (remote) and **Qwen2.5-Coder** (local). Ask me anything about your repo — I'll route scaffold/stub tasks to the local model and complex reasoning to Grok.",
-                        model: "grok-2-latest",
+                        model: "grok-4-1-fast-reasoning",
                         time: "now",
                         quality: null,
                     },
@@ -1787,7 +1787,7 @@
                     return {
                         content:
                             "**Code Review** (via Grok)\n\nThe `handle_chat` fn looks solid. A few notes:\n1. The `call_model_stub` should be replaced with real dispatch — it currently just returns a placeholder string.\n2. Consider adding a Redis cache key as `hash(repo_id + prompt)` before calling the model.\n3. Error handling in `serve_cache_file` could propagate the IO error more specifically.",
-                        model: "grok-2-latest",
+                        model: "grok-4-1-fast-reasoning",
                         taskKind: "CodeReview",
                         quality: 88,
                         showActions: true,
@@ -1795,7 +1795,7 @@
                 }
                 return {
                     content: `I can help with that. Based on your repo context, here's what I found:\n\nThe **${lower.includes("repo") ? "rustassistant" : "project"}** is structured around an Axum web server with:\n- REST API at \`/api/v1/\` (repo CRUD + chat)\n- Background \`SyncScheduler\` for keeping \`.rustassistant/\` caches fresh\n- \`ModelRouter\` for local/remote model routing\n\nAsk me to scaffold, review, or explain any part of it!`,
-                    model: "grok-2-latest",
+                    model: "grok-4-1-fast-reasoning",
                     taskKind: "RepoQuestion",
                     quality: 65,
                     showActions: true,
@@ -2567,7 +2567,7 @@
                                     qwen2.5-coder:7b
                                 </span>
                                 <span className="model-badge remote">
-                                    grok-2-latest
+                                    grok-4-1-fast-reasoning
                                 </span>
                             </div>
                         </div>

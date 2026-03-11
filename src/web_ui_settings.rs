@@ -138,7 +138,7 @@ async fn settings_page_handler(State(state): State<Arc<WebAppState>>) -> impl In
     let ollama_model =
         std::env::var("LOCAL_MODEL").unwrap_or_else(|_| "qwen2.5-coder:7b".to_string());
     let ollama_timeout = std::env::var("OLLAMA_TIMEOUT_SECS").unwrap_or_else(|_| "120".to_string());
-    let grok_model = std::env::var("REMOTE_MODEL").unwrap_or_else(|_| "grok-2-latest".to_string());
+    let grok_model = std::env::var("REMOTE_MODEL").unwrap_or_else(|_| "grok-4-1-fast-reasoning".to_string());
     let grok_key_set = std::env::var("XAI_API_KEY")
         .map(|k| !k.is_empty())
         .unwrap_or(false);
@@ -232,8 +232,7 @@ async fn settings_page_handler(State(state): State<Arc<WebAppState>>) -> impl In
                             <div class="form-group">
                                 <label for="grok_model">Model</label>
                                 <select id="grok_model" name="grok_model" class="settings-select">
-                                    <option value="grok-2-latest" {grok_model_sel_2}>grok-2-latest</option>
-                                    <option value="grok-4-1-fast-reasoning" {grok_model_sel_41}>grok-4-1-fast-reasoning</option>
+                                    <option value="grok-4-1-fast-reasoning" {grok_model_sel_2}>grok-4-1-fast-reasoning</option>
                                 </select>
                             </div>
                             <div class="form-group">
@@ -538,7 +537,7 @@ node_modules/
         } else {
             "Not set"
         },
-        grok_model_sel_2 = if grok_model == "grok-2-latest" {
+        grok_model_sel_2 = if grok_model == "grok-4-1-fast-reasoning" {
             "selected"
         } else {
             ""

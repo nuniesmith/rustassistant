@@ -53,6 +53,7 @@ pub fn create_chat_router(state: Arc<WebAppState>) -> Router {
         .route("/chat/send", post(chat_send_handler))
         .route("/chat/models", get(chat_models_handler))
         .route("/chat/clear", post(chat_clear_handler))
+        .route("/chat/repos", get(chat_repos_handler))
         .with_state(state)
 }
 
@@ -112,7 +113,6 @@ async fn chat_page_handler(State(state): State<Arc<WebAppState>>) -> impl IntoRe
                         </optgroup>
                         <optgroup label="Remote (Grok)">
                             <option value="grok:grok-4-1-fast-reasoning">Grok 4.1 Fast Reasoning</option>
-                            <option value="grok:grok-2-latest">Grok 2 Latest</option>
                         </optgroup>
                     </select>
                     <div id="model-status" class="model-status"
@@ -124,8 +124,23 @@ async fn chat_page_handler(State(state): State<Arc<WebAppState>>) -> impl IntoRe
                 </div>
 
                 <div class="sidebar-section">
-                    <h3>📦 Repository Context</h3>
-                    <select id="repo-select" class="chat-select">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.35rem;">
+                        <h3 style="margin:0;">📦 Repository Context</h3>
+                        <button class="btn btn-xs btn-muted"
+                                title="Refresh repo list"
+                                hx-get="/chat/repos"
+                                hx-target="#repo-select"
+                                hx-swap="innerHTML"
+                                hx-indicator="#repo-refresh-spinner">
+                            <span id="repo-refresh-spinner" class="htmx-indicator">⏳</span>
+                            <span>↻</span>
+                        </button>
+                    </div>
+                    <select id="repo-select" class="chat-select"
+                            hx-get="/chat/repos"
+                            hx-trigger="load"
+                            hx-target="#repo-select"
+                            hx-swap="innerHTML">
                         <option value="">No repository (general chat)</option>
                         {repo_options}
                     </select>
@@ -400,6 +415,23 @@ async fn chat_models_handler(State(state): State<Arc<WebAppState>>) -> impl Into
     statuses.push(rag_status);
 
     Html(statuses.join("<br>"))
+}
+
+/// GET /chat/repos — Return repo <option> list as an HTMX partial so the
+/// dropdown stays fresh without a full page reload.
+async fn chat_repos_handler(State(state): State<Arc<WebAppState>>) -> impl IntoResponse {
+    let repos = load_repos(&state).await;
+
+    let mut options = String::from(r#"<option value="">No repository (general chat)</option>"#);
+    for (id, name) in &repos {
+        options.push_str(&format!(
+            r#"<option value="{id}">{name}</option>"#,
+            id = html_escape(id),
+            name = html_escape(name),
+        ));
+    }
+
+    Html(options)
 }
 
 /// POST /chat/clear — Clear conversation and return empty chat area

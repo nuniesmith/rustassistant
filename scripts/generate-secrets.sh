@@ -182,7 +182,7 @@ REPOS_PATH="$(resolve_secret "$ARG_REPOS_PATH" "REPOS_BASE_PATH" \
 REPOS_PATH="${REPOS_PATH:-/home/jordan/repos}"
 
 REMOTE_MODEL="$(resolve_secret "$ARG_REMOTE_MODEL" "REMOTE_MODEL" "" "true")"
-REMOTE_MODEL="${REMOTE_MODEL:-grok-2-latest}"
+REMOTE_MODEL="${REMOTE_MODEL:-grok-4-1-fast-reasoning}"
 
 LOCAL_MODEL="$(resolve_secret "$ARG_LOCAL_MODEL" "LOCAL_MODEL" "" "true")"
 LOCAL_MODEL="${LOCAL_MODEL:-qwen2.5-coder:7b}"

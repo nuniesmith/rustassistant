@@ -351,7 +351,7 @@ jobs:
                       "" \
                       "XAI_API_KEY=${SECRET_XAI_API_KEY}" \
                       "XAI_BASE_URL=https://api.x.ai/v1" \
-                      "REMOTE_MODEL=grok-2-latest" \
+                      "REMOTE_MODEL=grok-4-1-fast-reasoning" \
                       "LOCAL_MODEL=qwen2.5-coder:7b" \
                       "FORCE_REMOTE_MODEL=false" \
                       "" \

@@ -66,7 +66,7 @@ services:
             # ── AI Providers ─────────────────────────────────────
             - XAI_API_KEY=${XAI_API_KEY:-}
             - XAI_BASE_URL=${XAI_BASE_URL:-https://api.x.ai/v1}
-            - REMOTE_MODEL=${REMOTE_MODEL:-grok-2-latest}
+            - REMOTE_MODEL=${REMOTE_MODEL:-grok-4-1-fast-reasoning}
             - OLLAMA_BASE_URL=http://ra-ollama:11434
             - LOCAL_MODEL=${LOCAL_MODEL:-qwen2.5-coder:7b}
             - FORCE_REMOTE_MODEL=${FORCE_REMOTE_MODEL:-false}
