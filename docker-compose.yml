@@ -198,6 +198,13 @@ services:
         image: ollama/ollama:latest
         container_name: ra-ollama
         restart: unless-stopped
+        # Use the nvidia container runtime so the GPU is visible to llama.cpp.
+        # This is the correct way for plain `docker compose` (not Swarm).
+        # Requires nvidia-container-toolkit on the host:
+        #   sudo apt install -y nvidia-container-toolkit
+        #   sudo nvidia-ctk runtime configure --runtime=docker
+        #   sudo systemctl restart docker
+        runtime: nvidia
         ports:
             - "${RA_OLLAMA_PORT:-11434}:11434"
         volumes:
@@ -205,27 +212,21 @@ services:
         environment:
             - OLLAMA_KEEP_ALIVE=24h
             - OLLAMA_MAX_LOADED_MODELS=3
-            - OLLAMA_NUM_GPU=1
             - OLLAMA_FLASH_ATTENTION=1
             - OLLAMA_CONTEXT_LENGTH=16384
             - OLLAMA_NUM_PARALLEL=2
+            # Tell the nvidia runtime which GPU(s) to expose
             - NVIDIA_VISIBLE_DEVICES=all
             - NVIDIA_DRIVER_CAPABILITIES=compute,utility
         networks:
             - ra-net
-
-        # Bare-metal Linux NVIDIA GPU passthrough via nvidia-container-toolkit.
-        # Requires: nvidia-container-toolkit installed on the host.
-        #   sudo apt install -y nvidia-container-toolkit
-        #   sudo nvidia-ctk runtime configure --runtime=docker
-        #   sudo systemctl restart docker
-        deploy:
-            resources:
-                reservations:
-                    devices:
-                        - driver: nvidia
-                          count: 1
-                          capabilities: [gpu]
+        # device_requests is the compose v2 way to request a GPU.
+        # Combined with `runtime: nvidia` above this is belt-and-suspenders:
+        # one of the two mechanisms will always work depending on toolkit version.
+        device_requests:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
         healthcheck:
             test: ["CMD", "curl", "-sf", "http://localhost:11434/api/tags"]
