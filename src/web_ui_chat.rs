@@ -776,7 +776,7 @@ async fn check_rag_status(state: &WebAppState) -> String {
 async fn load_repos(state: &WebAppState) -> Vec<(String, String)> {
     let pool = &state.db.pool;
     let rows: Vec<(String, String)> =
-        sqlx::query_as("SELECT id, name FROM registered_repos ORDER BY name")
+        sqlx::query_as("SELECT id, name FROM repositories ORDER BY name")
             .fetch_all(pool)
             .await
             .unwrap_or_default();

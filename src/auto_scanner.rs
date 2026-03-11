@@ -807,29 +807,88 @@ impl AutoScanner {
     ) -> Result<()> {
         use std::process::Command;
 
-        // Look at files changed in the last 5 commits
-        let output = Command::new("git")
+        // Try to get files changed in the last 5 commits first.
+        // This may fail for repos that have fewer than 5 commits (e.g. HEAD~5
+        // doesn't exist), so we fall back to listing every tracked file in HEAD.
+        let diff_output = Command::new("git")
             .args(["diff", "--name-only", "HEAD~5", "HEAD"])
             .current_dir(repo_path)
             .output();
 
-        match output {
-            Ok(out) if out.status.success() => {
+        let used_diff = match diff_output {
+            Ok(ref out) if out.status.success() => {
                 let stdout = String::from_utf8_lossy(&out.stdout);
+                let mut found = false;
                 for line in stdout.lines() {
                     let file_path = line.trim();
                     if !file_path.is_empty() && Self::should_analyze_file(file_path) {
                         let full_path = repo_path.join(file_path);
                         if full_path.exists() {
                             changed_set.insert(full_path);
+                            found = true;
                         } else {
                             debug!("Skipping {} - file does not exist on disk", file_path);
                         }
                     }
                 }
+                found
             }
             _ => {
-                debug!("Could not get recent commits for {}", repo_path.display());
+                debug!(
+                    "Could not get recent commits for {} (too few commits or git error) — \
+                     falling back to full tree listing",
+                    repo_path.display()
+                );
+                false
+            }
+        };
+
+        // Fallback: list every file tracked in HEAD so a brand-new or shallow
+        // clone still gets a full initial scan instead of being silently skipped.
+        if !used_diff {
+            info!(
+                "First-scan fallback: listing all tracked files in HEAD for {}",
+                repo_path.display()
+            );
+            let ls_output = Command::new("git")
+                .args(["ls-tree", "-r", "--name-only", "HEAD"])
+                .current_dir(repo_path)
+                .output();
+
+            match ls_output {
+                Ok(out) if out.status.success() => {
+                    let stdout = String::from_utf8_lossy(&out.stdout);
+                    for line in stdout.lines() {
+                        let file_path = line.trim();
+                        if !file_path.is_empty() && Self::should_analyze_file(file_path) {
+                            let full_path = repo_path.join(file_path);
+                            if full_path.exists() {
+                                changed_set.insert(full_path);
+                            } else {
+                                debug!("Skipping {} - file does not exist on disk", file_path);
+                            }
+                        }
+                    }
+                    info!(
+                        "ls-tree listed {} analyzable files for {}",
+                        changed_set.len(),
+                        repo_path.display()
+                    );
+                }
+                Ok(out) => {
+                    warn!(
+                        "git ls-tree failed for {}: {}",
+                        repo_path.display(),
+                        String::from_utf8_lossy(&out.stderr).trim()
+                    );
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to run git ls-tree for {}: {}",
+                        repo_path.display(),
+                        e
+                    );
+                }
             }
         }
 
