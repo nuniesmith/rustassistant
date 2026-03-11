@@ -209,6 +209,17 @@ services:
             - "${RA_OLLAMA_PORT:-11434}:11434"
         volumes:
             - ra_ollama_models:/root/.ollama
+        # Explicitly bind-mount all nvidia device nodes.
+        # This bypasses the nvidia runtime's device-injection logic entirely,
+        # which breaks on cgroup v2 + toolkit 1.19.0 (legacy mode fails to
+        # allow /dev/nvidia0 via eBPF device rules).  Direct bind-mounts are
+        # always reliable regardless of cgroup version or toolkit mode.
+        devices:
+            - /dev/nvidia0:/dev/nvidia0
+            - /dev/nvidiactl:/dev/nvidiactl
+            - /dev/nvidia-uvm:/dev/nvidia-uvm
+            - /dev/nvidia-uvm-tools:/dev/nvidia-uvm-tools
+            - /dev/nvidia-modeset:/dev/nvidia-modeset
         environment:
             - OLLAMA_KEEP_ALIVE=24h
             - OLLAMA_MAX_LOADED_MODELS=3
