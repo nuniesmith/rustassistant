@@ -10,7 +10,8 @@
 //   - Model selection (Ollama local, Grok remote, Auto-route)
 //   - Repository context injection (select a repo to chat about)
 //   - RAG-powered context retrieval from indexed codebase
-//   - Conversation history with multi-turn context
+//   - Conversation history with multi-turn context (persisted to localStorage)
+//   - Chat log: named sessions stored in localStorage, restorable, clearable
 //   - Task/batch dispatch suggestions from LLM responses
 //   - Markdown rendering of responses
 //   - Keyboard shortcuts (Enter to send, Shift+Enter for newline)
@@ -171,12 +172,29 @@ async fn chat_page_handler(State(state): State<Arc<WebAppState>>) -> impl IntoRe
                 </div>
 
                 <div class="sidebar-section">
-                    <button class="btn btn-sm btn-danger" style="width:100%;"
-                            hx-post="/chat/clear"
-                            hx-target="#chat-messages"
-                            hx-swap="innerHTML"
-                            onclick="clearHistory()">
-                        🗑️ Clear Conversation
+                    <div style="display:flex;gap:0.4rem;margin-bottom:0.4rem;">
+                        <button class="btn btn-sm btn-success" style="flex:1;"
+                                onclick="saveSession()">
+                            💾 Save Chat
+                        </button>
+                        <button class="btn btn-sm btn-danger" style="flex:1;"
+                                hx-post="/chat/clear"
+                                hx-target="#chat-messages"
+                                hx-swap="innerHTML"
+                                onclick="clearHistory()">
+                            🗑️ Clear
+                        </button>
+                    </div>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>🗂️ Chat Log</h3>
+                    <div id="chat-log-list" class="chat-log-list">
+                        <span class="hint">No saved sessions yet.</span>
+                    </div>
+                    <button class="btn btn-sm btn-danger" style="width:100%;margin-top:0.5rem;"
+                            onclick="clearAllSessions()">
+                        🗑️ Clear All Sessions
                     </button>
                 </div>
             </aside>
@@ -1255,6 +1273,52 @@ fn chat_extra_styles() -> String {
         40% { transform: scale(1); opacity: 1; }
     }
 
+    /* ── Chat Log ─────────────────────────────────────────────────── */
+    .chat-log-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+        max-height: 240px;
+        overflow-y: auto;
+    }
+    .chat-log-entry {
+        background: #0f172a;
+        border: 1px solid #334155;
+        border-radius: 6px;
+        padding: 0.5rem 0.6rem;
+        font-size: 0.78rem;
+    }
+    .chat-log-meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 0.25rem;
+        margin-bottom: 0.2rem;
+    }
+    .chat-log-name {
+        font-weight: 600;
+        color: #38bdf8;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 120px;
+    }
+    .chat-log-preview {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        margin-bottom: 0.35rem;
+    }
+    .chat-log-actions {
+        display: flex;
+        gap: 0.3rem;
+    }
+    .btn-xs {
+        padding: 0.15rem 0.4rem;
+        font-size: 0.72rem;
+        border-radius: 4px;
+    }
+
     /* ── Responsive ───────────────────────────────────────────────── */
     @media (max-width: 900px) {
         .chat-layout {
@@ -1275,9 +1339,169 @@ fn chat_extra_styles() -> String {
     </style>
     <script>
     // ── Chat Client Logic ─────────────────────────────────────────
+    const LS_HISTORY_KEY   = 'ra_chat_history';
+    const LS_MESSAGES_KEY  = 'ra_chat_messages';
+    const LS_TOKENS_KEY    = 'ra_chat_tokens';
+    const LS_COST_KEY      = 'ra_chat_cost';
+    const LS_SESSIONS_KEY  = 'ra_chat_sessions';
+
     let conversationHistory = [];
     let totalTokens = 0;
     let totalCost = 0;
+
+    // ── Persistence helpers ───────────────────────────────────────
+
+    function persistState() {
+        try {
+            localStorage.setItem(LS_HISTORY_KEY,  JSON.stringify(conversationHistory));
+            localStorage.setItem(LS_TOKENS_KEY,   String(totalTokens));
+            localStorage.setItem(LS_COST_KEY,     String(totalCost));
+            const el = document.getElementById('chat-messages');
+            if (el) localStorage.setItem(LS_MESSAGES_KEY, el.innerHTML);
+        } catch(e) { /* quota exceeded — silent */ }
+    }
+
+    function restoreState() {
+        try {
+            const hist = localStorage.getItem(LS_HISTORY_KEY);
+            if (hist) conversationHistory = JSON.parse(hist);
+
+            totalTokens = parseFloat(localStorage.getItem(LS_TOKENS_KEY) || '0');
+            totalCost   = parseFloat(localStorage.getItem(LS_COST_KEY)   || '0');
+
+            const msgs = localStorage.getItem(LS_MESSAGES_KEY);
+            const el = document.getElementById('chat-messages');
+            if (msgs && el) {
+                el.innerHTML = msgs;
+                scrollToBottom();
+            }
+
+            document.getElementById('history-json').value = JSON.stringify(conversationHistory);
+
+            const counterEl = document.getElementById('token-counter');
+            if (counterEl && (totalTokens > 0 || totalCost > 0)) {
+                counterEl.textContent = 'Tokens: ' + totalTokens.toLocaleString() +
+                                        ' | Cost: $' + totalCost.toFixed(6);
+            }
+        } catch(e) { /* corrupted storage — ignore */ }
+    }
+
+    // ── Session log ───────────────────────────────────────────────
+
+    function loadSessions() {
+        try {
+            return JSON.parse(localStorage.getItem(LS_SESSIONS_KEY) || '[]');
+        } catch(e) { return []; }
+    }
+
+    function saveSessions(sessions) {
+        try {
+            localStorage.setItem(LS_SESSIONS_KEY, JSON.stringify(sessions));
+        } catch(e) {}
+    }
+
+    function renderSessionLog() {
+        const container = document.getElementById('chat-log-list');
+        if (!container) return;
+        const sessions = loadSessions();
+        if (sessions.length === 0) {
+            container.innerHTML = '<span class="hint">No saved sessions yet.</span>';
+            return;
+        }
+        container.innerHTML = sessions.slice().reverse().map(function(s) {
+            const date = new Date(s.ts).toLocaleString();
+            const preview = s.preview || '(empty)';
+            return '<div class="chat-log-entry" data-id="' + s.id + '">' +
+                '<div class="chat-log-meta">' +
+                    '<span class="chat-log-name" title="' + date + '">' + htmlEscape(s.name) + '</span>' +
+                    '<span class="hint">' + date + '</span>' +
+                '</div>' +
+                '<div class="chat-log-preview hint">' + htmlEscape(preview) + '</div>' +
+                '<div class="chat-log-actions">' +
+                    '<button class="btn btn-xs btn-muted" onclick="restoreSession(\'' + s.id + '\')">↩ Restore</button>' +
+                    '<button class="btn btn-xs btn-danger" onclick="deleteSession(\'' + s.id + '\')">✕</button>' +
+                '</div>' +
+            '</div>';
+        }).join('');
+    }
+
+    function saveSession() {
+        if (conversationHistory.length === 0) {
+            alert('Nothing to save — start a conversation first.');
+            return;
+        }
+        const defaultName = 'Chat ' + new Date().toLocaleString();
+        const name = prompt('Save session as:', defaultName);
+        if (!name) return;
+
+        const sessions = loadSessions();
+        const el = document.getElementById('chat-messages');
+        const firstUserMsg = conversationHistory.find(function(e){ return e[0] === 'user'; });
+        const preview = firstUserMsg ? firstUserMsg[1].substring(0, 80) : '(no messages)';
+
+        sessions.push({
+            id:       Date.now().toString(36) + Math.random().toString(36).slice(2),
+            name:     name,
+            ts:       Date.now(),
+            preview:  preview,
+            history:  conversationHistory.slice(),
+            messages: el ? el.innerHTML : '',
+            tokens:   totalTokens,
+            cost:     totalCost,
+        });
+
+        saveSessions(sessions);
+        renderSessionLog();
+    }
+
+    function restoreSession(id) {
+        const sessions = loadSessions();
+        const session = sessions.find(function(s){ return s.id === id; });
+        if (!session) return;
+
+        if (!confirm('Restore "' + session.name + '"? Your current chat will be lost.')) return;
+
+        conversationHistory = session.history || [];
+        totalTokens = session.tokens || 0;
+        totalCost   = session.cost   || 0;
+
+        const el = document.getElementById('chat-messages');
+        if (el && session.messages) el.innerHTML = session.messages;
+
+        document.getElementById('history-json').value = JSON.stringify(conversationHistory);
+
+        const counterEl = document.getElementById('token-counter');
+        if (counterEl) {
+            counterEl.textContent = 'Tokens: ' + totalTokens.toLocaleString() +
+                                    ' | Cost: $' + totalCost.toFixed(6);
+        }
+
+        persistState();
+        scrollToBottom();
+    }
+
+    function deleteSession(id) {
+        if (!confirm('Delete this session?')) return;
+        const sessions = loadSessions().filter(function(s){ return s.id !== id; });
+        saveSessions(sessions);
+        renderSessionLog();
+    }
+
+    function clearAllSessions() {
+        if (!confirm('Delete ALL saved sessions? This cannot be undone.')) return;
+        saveSessions([]);
+        renderSessionLog();
+    }
+
+    function htmlEscape(str) {
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    // ── Core chat helpers ─────────────────────────────────────────
 
     function scrollToBottom() {
         const el = document.getElementById('chat-messages');
@@ -1290,6 +1514,13 @@ fn chat_extra_styles() -> String {
         totalCost = 0;
         document.getElementById('history-json').value = '[]';
         updateTokenCounter(0, 0);
+        // Wipe persisted current session (saved sessions are untouched)
+        try {
+            localStorage.removeItem(LS_HISTORY_KEY);
+            localStorage.removeItem(LS_MESSAGES_KEY);
+            localStorage.removeItem(LS_TOKENS_KEY);
+            localStorage.removeItem(LS_COST_KEY);
+        } catch(e) {}
     }
 
     function updateTokenCounter(tokens, cost) {
@@ -1360,6 +1591,9 @@ fn chat_extra_styles() -> String {
 
             document.getElementById('history-json').value = JSON.stringify(conversationHistory);
 
+            // Persist current session to localStorage so navigation doesn't lose it
+            persistState();
+
         } catch (err) {
             messagesEl.insertAdjacentHTML('beforeend',
                 '<div class="error-message">Network error: ' + err.message + '</div>');
@@ -1372,8 +1606,13 @@ fn chat_extra_styles() -> String {
         }
     }
 
-    // Quick prompt buttons
+    // ── Init ──────────────────────────────────────────────────────
     document.addEventListener('DOMContentLoaded', function() {
+        // Restore previous session on page load
+        restoreState();
+        // Render saved session list
+        renderSessionLog();
+
         document.querySelectorAll('.quick-prompt').forEach(function(btn) {
             btn.addEventListener('click', function() {
                 const prompt = this.getAttribute('data-prompt');
