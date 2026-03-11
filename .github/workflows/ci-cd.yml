@@ -234,28 +234,28 @@ jobs:
               with:
                   oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
                   oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
-                  target-ip: ${{ secrets.ORYX_TAILSCALE_IP }}
-                  target-ssh-port: ${{ secrets.ORYX_SSH_PORT || '22' }}
+                  target-ip: ${{ secrets.PROD_TAILSCALE_IP }}
+                  target-ssh-port: ${{ secrets.PROD_SSH_PORT || '22' }}
 
             - name: 🔑 Setup SSH key
               run: |
                   mkdir -p ~/.ssh
-                  echo "${{ secrets.ORYX_SSH_KEY }}" > ~/.ssh/deploy_key
+                  echo "${{ secrets.PROD_SSH_KEY }}" > ~/.ssh/deploy_key
                   chmod 600 ~/.ssh/deploy_key
-                  ssh-keyscan -p ${{ secrets.ORYX_SSH_PORT || '22' }} ${{ secrets.ORYX_TAILSCALE_IP }} >> ~/.ssh/known_hosts 2>/dev/null || true
+                  ssh-keyscan -p ${{ secrets.PROD_SSH_PORT || '22' }} ${{ secrets.PROD_TAILSCALE_IP }} >> ~/.ssh/known_hosts 2>/dev/null || true
 
             - name: 🚀 Deploy via SSH
               env:
-                  ORYX_HOST: ${{ secrets.ORYX_TAILSCALE_IP }}
-                  ORYX_PORT: ${{ secrets.ORYX_SSH_PORT || '22' }}
-                  ORYX_USER: ${{ secrets.ORYX_SSH_USER || 'actions' }}
-                  # Secrets to inject into .env
+                  ORYX_HOST: ${{ secrets.PROD_TAILSCALE_IP }}
+                  ORYX_PORT: ${{ secrets.PROD_SSH_PORT || '22' }}
+                  ORYX_USER: ${{ secrets.PROD_SSH_USER || 'actions' }}
+                  # Secrets to inject into .env on the server
                   SECRET_XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
-                  SECRET_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN_DEPLOY }}
+                  SECRET_GITHUB_TOKEN: ${{ secrets.SECRET_GITHUB_TOKEN }}
                   SECRET_POSTGRES_PW: ${{ secrets.RA_POSTGRES_PASSWORD }}
                   SECRET_REDIS_PW: ${{ secrets.RA_REDIS_PASSWORD }}
                   SECRET_DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_ACTIONS }}
-                  SECRET_GITHUB_OWNER: ${{ secrets.GITHUB_OWNER || 'nuniesmith' }}
+                  SECRET_GITHUB_OWNER: ${{ secrets.SECRET_GITHUB_OWNER || 'nuniesmith' }}
               run: |
                   set -euo pipefail
                   SSH_CMD="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p ${ORYX_PORT} -i ~/.ssh/deploy_key ${ORYX_USER}@${ORYX_HOST}"
@@ -413,9 +413,9 @@ jobs:
 
             - name: 🔍 Verify deployment
               env:
-                  ORYX_HOST: ${{ secrets.ORYX_TAILSCALE_IP }}
-                  ORYX_PORT: ${{ secrets.ORYX_SSH_PORT || '22' }}
-                  ORYX_USER: ${{ secrets.ORYX_SSH_USER || 'actions' }}
+                  ORYX_HOST: ${{ secrets.PROD_TAILSCALE_IP }}
+                  ORYX_PORT: ${{ secrets.PROD_SSH_PORT || '22' }}
+                  ORYX_USER: ${{ secrets.PROD_SSH_USER || 'actions' }}
               run: |
                   SSH_CMD="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p ${ORYX_PORT} -i ~/.ssh/deploy_key ${ORYX_USER}@${ORYX_HOST}"
 
